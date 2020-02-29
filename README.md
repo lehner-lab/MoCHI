@@ -28,7 +28,7 @@ library(MoCHI)
 ?mochi
 ```
 
-# DiMSum command-line tool
+# MoCHI command-line tool
 
 Clone the DiMSum repository and install the R package locally. The * must be replaced by what is actually downloaded and built.
 
