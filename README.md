@@ -30,7 +30,7 @@ library(MoCHI)
 
 # MoCHI command-line tool
 
-Clone the DiMSum repository and install the R package locally. The * must be replaced by what is actually downloaded and built.
+Clone the MoCHI repository and install the R package locally. The * must be replaced by what is actually downloaded and built.
 
 ```
 git clone https://github.com/lehner-lab/MoCHI.git
