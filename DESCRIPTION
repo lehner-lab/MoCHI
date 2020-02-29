@@ -1,0 +1,10 @@
+Package: MoCHI
+Title: A module for calculating higher-order genetic interactions
+Version: 0.0.0.9000
+Authors@R: person("Andre", "Faure", email = "ajfaure@gmail.com", role = c("aut", "cre"))
+Description: A module for calculating higher-order genetic interactions.
+Depends: R (>= 3.5.2)
+License: What license is it under?
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 6.1.1
