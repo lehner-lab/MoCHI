@@ -20,7 +20,7 @@ mochi_stage_higher_order_epistasis <- function(
   ){
   #Whether or not to execute the system command
   this_stage <- 2
-  execute <- (dimsum_meta[["HOEStartStage"]] <= this_stage & (dimsum_meta[["HOEStopStage"]] == 0 | dimsum_meta[["HOEStopStage"]] >= this_stage))
+  execute <- (dimsum_meta[["mochiStartStage"]] <= this_stage & (dimsum_meta[["mochiStopStage"]] == 0 | dimsum_meta[["mochiStopStage"]] >= this_stage))
   #Epistasis paths
   dimsum_meta[["epistasis_path"]] <- file.path(epistasis_outpath)
 
@@ -48,18 +48,18 @@ mochi_stage_higher_order_epistasis <- function(
   L_CD_fit <- mochi__add_fitness_to_landscapes(
     landscape_list = L_DS,
     fitness_dt = P,
-    numCores = dimsum_meta[['numCores']]-1)
+    numCores = dimsum_meta[['numCores']])
 
   #Calculate all individual terms of epistasis
   CD_ep <- mochi__calculate_individual_epistatis_terms(
     input_list = L_CD_fit,
     single_mut_dt = P_single,
-    numCores = dimsum_meta[['numCores']]-1)
+    numCores = dimsum_meta[['numCores']])
 
   #General tendecies of epistasis at any order
   EpGlobal <- mochi__calculate_global_epistasis_tendencies(
     input_dt = CD_ep,
-    numCores = dimsum_meta[['numCores']]-1)
+    numCores = dimsum_meta[['numCores']])
 
   #Save results
   save(L_CD_fit, CD_ep, EpGlobal, file = file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_epistasis_terms.RData')))

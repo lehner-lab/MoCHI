@@ -22,7 +22,7 @@ mochi_stage_combinatorial_complete_landscapes <- function(
   ){
   #Whether or not to execute the system command
   this_stage <- 1
-  execute <- (dimsum_meta[["HOEStartStage"]] <= this_stage & (dimsum_meta[["HOEStopStage"]] == 0 | dimsum_meta[["HOEStopStage"]] >= this_stage))
+  execute <- (dimsum_meta[["mochiStartStage"]] <= this_stage & (dimsum_meta[["mochiStopStage"]] == 0 | dimsum_meta[["mochiStopStage"]] >= this_stage))
   #Epistasis paths
   dimsum_meta[["epistasis_path"]] <- file.path(epistasis_outpath)
 
@@ -46,11 +46,22 @@ mochi_stage_combinatorial_complete_landscapes <- function(
   ###########################
 
   #load variant data from RData file
-  load(file.path(dimsum_meta[["fitness_path"]], paste0(dimsum_meta[["projectName"]], '_fitness_replicates.RData')))
+  if(!file.exists(file.path(dimsum_meta[["fitness_path"]], paste0(dimsum_meta[["projectName"]], '_fitness_replicates.RData')))){
+    stop(paste0("Cannot determine combinatorial complete landscapes. Fitness file not found."), call. = FALSE)
+  }else{
+    load(file.path(dimsum_meta[["fitness_path"]], paste0(dimsum_meta[["projectName"]], '_fitness_replicates.RData')))
+  }
 
-  #Remove sequences with STOP codons or silent mutations if amino acid sequence
+  #Remove sequences with STOP codons or silent mutations if amino acid sequence, check for duplicates
   if(sequence_type == "aminoacid"){
     all_variants <- all_variants[STOP==F & !(Nham_aa==0 & WT==F)]
+    if(all_variants[duplicated(aa_seq),.N]!=0){
+      stop(paste0("Cannot determine combinatorial complete landscapes. Duplicate genotypes not permitted."), call. = FALSE)
+    }
+  }else{
+    if(all_variants[duplicated(nt_seq),.N]!=0){
+      stop(paste0("Cannot determine combinatorial complete landscapes. Duplicate genotypes not permitted."), call. = FALSE)
+    }
   }
 
   #Encode genotypes
@@ -67,7 +78,7 @@ mochi_stage_combinatorial_complete_landscapes <- function(
   L_DS <- mochi__get_all_combinatorial_complete_landscapes(
     order_max = order_max,
     all_variants_char = P[,var],
-    numCores = dimsum_meta[['numCores']]-1)
+    numCores = dimsum_meta[['numCores']])
 
   #Save all combinatorial complete landscapes of all orders
   save(L_DS, file = file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_complete_landscapes.RData')))

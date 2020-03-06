@@ -14,6 +14,7 @@ mochi__encode_genotypes <- function(
   sequenceType = "nucleotide"
   ){
 
+  #Set and check sequence type
   if(sequenceType == "nucleotide"){
     input_dt[, seq := .SD,,.SDcols = "nt_seq"]
   }else if(sequenceType == "aminoacid"){
