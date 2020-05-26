@@ -18,8 +18,8 @@ mochi__construct_var2id_list <- function(
   temp <- data.table(count = 1:prod(sapply(lapply(as.list(as.data.frame(var_mat)), unique), length)))
   rep_each <- 1
   for(pos in 1:nchar(input_dt[1,var])){
-    temp[, paste0("Mut_var", pos) := rep(unique(var_mat[,pos]), each = rep_each)]
-    rep_each <- rep_each * length(unique(var_mat[,pos]))
+    temp[, paste0("Mut_var", pos) := rep(unique(var_mat[,pos])[which(unique(var_mat[,pos]) != "0")], each = rep_each)]
+    rep_each <- rep_each * length(unique(var_mat[,pos])[which(unique(var_mat[,pos]) != "0")])
     var_dict <- rownames(var_mat)[var_mat[,pos]!="0"]
     names(var_dict) <- var_mat[,pos][var_mat[,pos]!="0"]
     temp[, paste0("Mut_id", pos) := var_dict[unlist(.SD)],,.SDcols = paste0("Mut_var", pos)]
