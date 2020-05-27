@@ -10,7 +10,7 @@ Welcome to the GitHub repository for MoCHI: A module for calculating higher-orde
 
 To run the DiMSum pipeline you will need the following software and associated packages:
 
-* **[R](https://www.r-project.org/) >=v3.5.2** (data.table, ggplot2, optparse, parallel, plyr, reshape2, Biostrings)
+* **[R](https://www.r-project.org/) >=v3.5.2** (data.table, ggplot2, optparse, parallel, plyr, reshape2, stringr)
 
 # Installation and loading
 
