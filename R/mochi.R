@@ -15,6 +15,8 @@
 #' @export
 #' @import data.table
 mochi <- function(
+  workspacePath,
+  inputFile,
   outputPath,
   projectName,
   startStage=1,

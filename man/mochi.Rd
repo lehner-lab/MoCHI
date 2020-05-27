@@ -4,10 +4,14 @@
 \alias{mochi}
 \title{Run MoCHI pipeline}
 \usage{
-mochi(outputPath, projectName, startStage = 1, stopStage = 0,
-  numCores = 1, maxOrder = 2)
+mochi(workspacePath, inputFile, outputPath, projectName, startStage = 1,
+  stopStage = 0, numCores = 1, maxOrder = 2)
 }
 \arguments{
+\item{workspacePath}{Path to DiMSum workspace .RData file after successful completion of stage 7}
+
+\item{inputFile}{Path to plain text file with 'WT', 'fitness', 'sigma' and 'nt_seq' or ('aa_seq' and 'STOP') columns}
+
 \item{outputPath}{Path to directory to use for output files}
 
 \item{projectName}{Project name}
@@ -19,10 +23,6 @@ mochi(outputPath, projectName, startStage = 1, stopStage = 0,
 \item{numCores}{Number of available CPU cores (default:1)}
 
 \item{maxOrder}{Maximum number of nucleotide or amino acid substitutions for coding or non-coding sequences respectively (default:2)}
-
-\item{workspacePath}{Path to DiMSum workspace .RData file after successful completion of stage 7}
-
-\item{inputFile}{Path to plain text file with 'WT', 'fitness', 'sigma' and 'nt_seq' or ('aa_seq' and 'STOP') columns}
 }
 \value{
 Nothing
