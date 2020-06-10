@@ -5,7 +5,8 @@
 \title{Run MoCHI pipeline}
 \usage{
 mochi(workspacePath, inputFile, outputPath, projectName, startStage = 1,
-  stopStage = 0, numCores = 1, maxOrder = 2)
+  stopStage = 0, numCores = 1, maxOrder = 2, numReplicates = 2,
+  FDR_threshold = 0.1)
 }
 \arguments{
 \item{workspacePath}{Path to DiMSum workspace .RData file after successful completion of stage 7}
@@ -23,6 +24,10 @@ mochi(workspacePath, inputFile, outputPath, projectName, startStage = 1,
 \item{numCores}{Number of available CPU cores (default:1)}
 
 \item{maxOrder}{Maximum number of nucleotide or amino acid substitutions for coding or non-coding sequences respectively (default:2)}
+
+\item{numReplicates}{Number of biological replicates (or sample size) from which fitness and error estimates derived (default:2)}
+
+\item{FDR_threshold}{FDR threshold for significant specific and background averaged terms (default:0.1)}
 }
 \value{
 Nothing

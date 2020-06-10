@@ -10,6 +10,8 @@
 #' @param stopStage Stop at a specified pipeline stage (default:0 i.e. no stop condition)
 #' @param numCores Number of available CPU cores (default:1)
 #' @param maxOrder Maximum number of nucleotide or amino acid substitutions for coding or non-coding sequences respectively (default:2)
+#' @param numReplicates Number of biological replicates (or sample size) from which fitness and error estimates derived (default:2)
+#' @param FDR_threshold FDR threshold for significant specific and background averaged terms (default:0.1)
 #'
 #' @return Nothing
 #' @export
@@ -22,7 +24,9 @@ mochi <- function(
   startStage=1,
   stopStage=0,
   numCores=1,
-  maxOrder=2
+  maxOrder=2,
+  numReplicates=2,
+  FDR_threshold=0.1
   ){
 
   #Display welcome
@@ -45,7 +49,9 @@ mochi <- function(
     "mochiStartStage" = list(arg_list[["startStage"]], c("integer")), #strictly positive integer -- checked in mochi__validate_input
     "mochiStopStage" = list(arg_list[["stopStage"]], c("integer")), #positive integer (zero inclusive) -- checked in mochi__validate_input
     "numCores" = list(arg_list[["numCores"]], c("integer")), #strictly positive integer -- checked in mochi__validate_input
-    "maxOrder" = list(arg_list[["maxOrder"]], c("integer")) #strictly positive integer -- checked in mochi__validate_input
+    "maxOrder" = list(arg_list[["maxOrder"]], c("integer")), #strictly positive integer -- checked in mochi__validate_input
+    "numReplicates" = list(arg_list[["numReplicates"]], c("integer")), #strictly positive integer -- checked in mochi__validate_input
+    "FDR_threshold" = list(arg_list[["FDR_threshold"]], c("double")) #positive double less than 1 (zero exclusive) -- checked in mochi__validate_input
     )
 
   #Validate input
@@ -82,6 +88,8 @@ mochi <- function(
     exp_metadata[['mochiStopStage']] <- arg_list[["stopStage"]]
     exp_metadata[['numCores']] <- arg_list[["numCores"]]
     exp_metadata[['maxOrder']] <- arg_list[["maxOrder"]]
+    exp_metadata[['numReplicates']] <- arg_list[["numReplicates"]]
+    exp_metadata[['FDR_threshold']] <- arg_list[["FDR_threshold"]]
   }
 
   ### Pipeline stages

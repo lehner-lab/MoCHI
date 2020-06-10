@@ -21,9 +21,9 @@ mochi_stage_higher_order_epistasis_report <- function(
   load(file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_epistasis_terms.RData')))
 
   #Plot effect of all single mutants in different backgrounds - first order
-  EpGlobal[, perc_positive := positive_fdr10/n_bckg*100]
-  EpGlobal[, perc_negative := negative_fdr10/n_bckg*100]
-  EpGlobal[, perc_neutral := neutral_fdr10/n_bckg*100]
+  EpGlobal[, perc_positive := positive_fdr/n_bckg*100]
+  EpGlobal[, perc_negative := negative_fdr/n_bckg*100]
+  EpGlobal[, perc_neutral := neutral_fdr/n_bckg*100]
   EpGlobal[, Mutant_sig := paste0(Mutant, c("", " (*)")[as.numeric(global_state!="Neutral")+1])]
 
   #Plot effect of all single mutants in different backgrounds - first order

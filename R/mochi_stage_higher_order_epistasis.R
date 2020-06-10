@@ -54,11 +54,14 @@ mochi_stage_higher_order_epistasis <- function(
   CD_ep <- mochi__calculate_individual_epistatis_terms(
     input_list = L_CD_fit,
     single_mut_dt = P_single,
+    degreesFreedom = dimsum_meta[['numReplicates']]-1,
     numCores = dimsum_meta[['numCores']])
 
   #General tendecies of epistasis at any order
   EpGlobal <- mochi__calculate_global_epistasis_tendencies(
     input_dt = CD_ep,
+    degreesFreedom = dimsum_meta[['numReplicates']]-1,
+    FDR_threshold = dimsum_meta[['FDR_threshold']],
     numCores = dimsum_meta[['numCores']])
 
   #Save results
@@ -88,7 +91,7 @@ mochi_stage_higher_order_epistasis <- function(
   SummaryEpGlobal <- rbindlist(lapply(unique(EpGlobal[,n]), function(x){
     data.table(
       n = x, 
-      sig_global_ep = sum(EpGlobal[n==x, global_qval_all < 0.1]), 
+      sig_global_ep = sum(EpGlobal[n==x, global_qval_all < dimsum_meta[['FDR_threshold']]]), 
       n_comb = EpGlobal[n == x,.N])
   }))
   print(SummaryEpGlobal)

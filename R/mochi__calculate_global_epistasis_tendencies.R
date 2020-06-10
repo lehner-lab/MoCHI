@@ -4,6 +4,8 @@
 #' Calculate general tendecies of epistasis at any order.
 #'
 #' @param input_dt data.table as provided by calculate_individual_epistatis_terms (required)
+#' @param degreesFreedom an integer degrees of freedom (default:5)
+#' @param FDR_threshold FDR threshold for significant specific and background averaged terms (default:0.1)
 #' @param numCores number of available CPU cores (default:1)
 #'
 #' @return A data.table with background averaged epistasis terms, direction and significance
@@ -11,6 +13,8 @@
 #' @import data.table
 mochi__calculate_global_epistasis_tendencies <- function(
   input_dt,
+  degreesFreedom = 5,
+  FDR_threshold = 0.1,
   numCores = 1
   ){
   L_Mutants <- tapply(input_dt[,Mutant], input_dt[,n], unique)
@@ -20,20 +24,20 @@ mochi__calculate_global_epistasis_tendencies <- function(
       n_bckg <- sum(temp[,Mutant] == y)
       mean_ep_term <- temp[Mutant==y, mean(ep_term)]
       global_SE <- temp[Mutant==y, (1/n_bckg) * sqrt(sum(ep_term_SE^2))]
-      positive_fdr10 = temp[Mutant==y,sum(ep_term > 0 & qval_all < 0.1)]
-      negative_fdr10 = temp[Mutant==y,sum(ep_term < 0 & qval_all < 0.1)]
+      positive_fdr = temp[Mutant==y,sum(ep_term > 0 & qval_all < FDR_threshold)]
+      negative_fdr = temp[Mutant==y,sum(ep_term < 0 & qval_all < FDR_threshold)]
       data.table(
         Mutant = y, 
         mean_ep_term = mean_ep_term, 
         n_bckg = n_bckg,
-        positive_fdr10 = positive_fdr10, 
-        negative_fdr10 = negative_fdr10,
-        neutral_fdr10 = n_bckg - (positive_fdr10 + negative_fdr10),
+        positive_fdr = positive_fdr, 
+        negative_fdr = negative_fdr,
+        neutral_fdr = n_bckg - (positive_fdr + negative_fdr),
         global_SE = global_SE, 
         global_pval = mochi__ttest(
           av = mean_ep_term, 
           se = global_SE, 
-          df = 5))
+          degreesFreedom = degreesFreedom))
     })
     DS <- rbindlist(DS_list)
     DS[, global_qval_order := p.adjust(global_pval, method = "fdr")]
@@ -46,8 +50,8 @@ mochi__calculate_global_epistasis_tendencies <- function(
   merged_list[, global_qval_all := p.adjust(global_pval, method = "fdr")]
   #Global state
   merged_list[, global_state := "Neutral"]
-  merged_list[global_qval_all < 0.1 & mean_ep_term < 0, global_state := "Negative"]
-  merged_list[global_qval_all < 0.1 & mean_ep_term >= 0, global_state := "Positive"]
+  merged_list[global_qval_all < FDR_threshold & mean_ep_term < 0, global_state := "Negative"]
+  merged_list[global_qval_all < FDR_threshold & mean_ep_term >= 0, global_state := "Positive"]
   merged_list[, n := factor(n)]
   return(merged_list)
 }

@@ -67,6 +67,16 @@ mochi__validate_input <- function(
     stop("Invalid 'maxOrder' argument. Only positive integers allowed (zero exclusive).", call. = FALSE)
   }
 
+  #Check numReplicates argument
+  if(mochi_meta[["numReplicates"]]<=0){
+    stop("Invalid 'numReplicates' argument. Only positive integers allowed (zero exclusive).", call. = FALSE)
+  }
+
+  #Check FDR_threshold positive double less than 1
+  if(mochi_meta[["FDR_threshold"]]<=0 | mochi_meta[["FDR_threshold"]]>=1){
+    stop("Invalid 'FDR_threshold' argument. Only positive doubles less than 1 allowed (zero exclusive).", call. = FALSE)
+  }
+
   #Check if either workspacePath or (inputFile, outputPath and projectName) specified
   if(!( !is.null(mochi_meta[["workspacePath"]]) | (!is.null(mochi_meta[["inputFile"]]) & !is.null(mochi_meta[["outputPath"]]) & !is.null(mochi_meta[["projectName"]])))) {
     stop(paste0("One or more mandatory arguments missing. If workspacePath not supplied, inputFile, outputPath and projectName need to be supplied. "), call. = FALSE)

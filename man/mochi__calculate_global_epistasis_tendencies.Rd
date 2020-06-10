@@ -4,10 +4,15 @@
 \alias{mochi__calculate_global_epistasis_tendencies}
 \title{mochi__calculate_global_epistasis_tendencies}
 \usage{
-mochi__calculate_global_epistasis_tendencies(input_dt, numCores = 1)
+mochi__calculate_global_epistasis_tendencies(input_dt,
+  degreesFreedom = 5, FDR_threshold = 0.1, numCores = 1)
 }
 \arguments{
 \item{input_dt}{data.table as provided by calculate_individual_epistatis_terms (required)}
+
+\item{degreesFreedom}{an integer degrees of freedom (default:5)}
+
+\item{FDR_threshold}{FDR threshold for significant specific and background averaged terms (default:0.1)}
 
 \item{numCores}{number of available CPU cores (default:1)}
 }

@@ -4,14 +4,14 @@
 \alias{mochi__ttest}
 \title{mochi__ttest}
 \usage{
-mochi__ttest(av, se, df = 5, mu = 0)
+mochi__ttest(av, se, degreesFreedom = 5, mu = 0)
 }
 \arguments{
 \item{av}{sample mean (required)}
 
 \item{se}{sample standard error (required)}
 
-\item{df}{an integer degrees of freedom (default:5)}
+\item{degreesFreedom}{an integer degrees of freedom (default:5)}
 
 \item{mu}{population mean (default:0)}
 }

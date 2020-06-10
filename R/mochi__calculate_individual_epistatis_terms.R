@@ -5,6 +5,7 @@
 #'
 #' @param input_list list of combinatoral landscape data.tables with corresponding fitness and error as provided by mochi__add_fitness_to_landscapes (required)
 #' @param single_mut_dt data.table of single substitution variants (required)
+#' @param degreesFreedom an integer degrees of freedom (default:5)
 #' @param numCores number of available CPU cores (default:1)
 #'
 #' @return A data.table with individual epistatic terms
@@ -13,6 +14,7 @@
 mochi__calculate_individual_epistatis_terms <- function(
   input_list,
   single_mut_dt,
+  degreesFreedom = 5,
   numCores = 1
   ){
   
@@ -57,8 +59,8 @@ mochi__calculate_individual_epistatis_terms <- function(
     l_cd_fit_temp[, pval := mochi__ttest(
       av = ep_term, 
       se = ep_term_SE, 
-      mu=0, 
-      df=5)]
+      mu = 0, 
+      degreesFreedom = degreesFreedom)]
     l_cd_fit_temp[, qval_order := p.adjust(pval, method = "fdr")]
     l_cd_fit_temp[, id_bckg := unlist(P_var2id[unlist(.SD)]),,.SDcols = grep("^id_0_", names(l_cd_fit_temp))]
     l_cd_fit_temp[, id_mut := unlist(P_var2id[unlist(.SD)]),,.SDcols = grep(paste0("^id_", x, "_"), names(l_cd_fit_temp))]

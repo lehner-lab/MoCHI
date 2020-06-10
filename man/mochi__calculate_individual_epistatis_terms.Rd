@@ -5,12 +5,14 @@
 \title{mochi__calculate_individual_epistatis_terms}
 \usage{
 mochi__calculate_individual_epistatis_terms(input_list, single_mut_dt,
-  numCores = 1)
+  degreesFreedom = 5, numCores = 1)
 }
 \arguments{
 \item{input_list}{list of combinatoral landscape data.tables with corresponding fitness and error as provided by mochi__add_fitness_to_landscapes (required)}
 
 \item{single_mut_dt}{data.table of single substitution variants (required)}
+
+\item{degreesFreedom}{an integer degrees of freedom (default:5)}
 
 \item{numCores}{number of available CPU cores (default:1)}
 }
