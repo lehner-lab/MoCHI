@@ -39,11 +39,11 @@ mochi__validate_input <- function(
   mochi_meta <- sapply(input_list, '[', 1)
 
   #Reformat directory paths and check if they exist (remove trailing "/" if present)
-  for(input_arg in c("outputPath")){
-    mochi_meta[[input_arg]] <- gsub("/$", "", mochi_meta[[input_arg]])
+  if(!is.null(mochi_meta[["outputPath"]])){
+    mochi_meta[["outputPath"]] <- gsub("/$", "", mochi_meta[["outputPath"]])
     #Check if directory paths exist
-    if(!file.exists(mochi_meta[[input_arg]])){
-      stop(paste0("Invalid '", input_arg, "' argument (directory not found)"), call. = FALSE)
+    if(!file.exists(mochi_meta[["outputPath"]])){
+      stop(paste0("Invalid '", "outputPath", "' argument (directory not found)"), call. = FALSE)
     }
   }
 
@@ -73,8 +73,12 @@ mochi__validate_input <- function(
   }
 
   #Check FDR_threshold positive double less than 1
-  if(mochi_meta[["FDR_threshold"]]<=0 | mochi_meta[["FDR_threshold"]]>=1){
-    stop("Invalid 'FDR_threshold' argument. Only positive doubles less than 1 allowed (zero exclusive).", call. = FALSE)
+  if(mochi_meta[["FDR_threshold"]]<=0 | mochi_meta[["FDR_threshold"]]>1){
+    stop("Invalid 'FDR_threshold' argument. Only positive doubles <=1 allowed (zero exclusive).", call. = FALSE)
+  }
+  #Set FDR_threshold to 2 if FDR_threshold==1 (this effectively disables the threshold because all mutants will have FDR<FDR_threshold)
+  if(mochi_meta[["FDR_threshold"]]==1){
+    mochi_meta[["FDR_threshold"]] <- 2
   }
 
   #Check if either workspacePath or (inputFile, outputPath and projectName) specified

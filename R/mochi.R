@@ -11,7 +11,7 @@
 #' @param numCores Number of available CPU cores (default:1)
 #' @param maxOrder Maximum number of nucleotide or amino acid substitutions for coding or non-coding sequences respectively (default:2)
 #' @param numReplicates Number of biological replicates (or sample size) from which fitness and error estimates derived (default:2)
-#' @param FDR_threshold FDR threshold for significant specific and background averaged terms (default:0.1)
+#' @param FDR_threshold FDR threshold for significant specific and background averaged terms (default:0.1; 1 disables the treshold)
 #'
 #' @return Nothing
 #' @export
@@ -80,10 +80,10 @@ mochi <- function(
   if(!is.null(exp_metadata[["workspacePath"]])){
     #Load data
     load(exp_metadata[["workspacePath"]])
-    if(!'7_fitness' %in% names(pipeline)){
-      stop(paste0("Invalid '", "workspacePath", "' argument (stage 7)"), call. = FALSE)
+    if(!'5_analyse' %in% names(pipeline)){
+      stop(paste0("Invalid '", "workspacePath", "' argument (stage 5)"), call. = FALSE)
     }
-    exp_metadata <- pipeline[['7_fitness']]
+    exp_metadata <- pipeline[['5_analyse']]
     exp_metadata[['mochiStartStage']] <- arg_list[["startStage"]]
     exp_metadata[['mochiStopStage']] <- arg_list[["stopStage"]]
     exp_metadata[['numCores']] <- arg_list[["numCores"]]

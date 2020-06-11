@@ -4,8 +4,12 @@
 \alias{mochi__calculate_individual_epistatis_terms}
 \title{mochi__calculate_individual_epistatis_terms}
 \usage{
-mochi__calculate_individual_epistatis_terms(input_list, single_mut_dt,
-  degreesFreedom = 5, numCores = 1)
+mochi__calculate_individual_epistatis_terms(
+  input_list,
+  single_mut_dt,
+  degreesFreedom = 5,
+  numCores = 1
+)
 }
 \arguments{
 \item{input_list}{list of combinatoral landscape data.tables with corresponding fitness and error as provided by mochi__add_fitness_to_landscapes (required)}

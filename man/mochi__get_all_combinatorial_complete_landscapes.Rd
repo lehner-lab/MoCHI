@@ -5,8 +5,11 @@
 \alias{mochi__get_all_combinatorial_complete_landscapes}
 \title{mochi__get_all_combinatorial_complete_landscapes}
 \usage{
-mochi__get_all_combinatorial_complete_landscapes(order_max = 1,
-  all_variants_char, numCores = 1)
+mochi__get_all_combinatorial_complete_landscapes(
+  order_max = 1,
+  all_variants_char,
+  numCores = 1
+)
 }
 \arguments{
 \item{order_max}{an integer number of maximum mutations to consider (default:1)}

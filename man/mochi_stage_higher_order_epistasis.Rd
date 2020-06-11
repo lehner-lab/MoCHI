@@ -4,8 +4,13 @@
 \alias{mochi_stage_higher_order_epistasis}
 \title{mochi_stage_higher_order_epistasis}
 \usage{
-mochi_stage_higher_order_epistasis(dimsum_meta, epistasis_outpath,
-  report = TRUE, report_outpath = NULL, save_workspace = TRUE)
+mochi_stage_higher_order_epistasis(
+  dimsum_meta,
+  epistasis_outpath,
+  report = TRUE,
+  report_outpath = NULL,
+  save_workspace = TRUE
+)
 }
 \arguments{
 \item{dimsum_meta}{an experiment metadata object (required)}
