@@ -34,6 +34,8 @@ library(MoCHI)
 ###########################
 
 mochi(
+  workspacePath=arg_list[["workspacePath"]],
+  inputFile=arg_list[["inputFile"]],
   outputPath=arg_list[["outputPath"]],
   projectName=arg_list[["projectName"]],
   startStage=arg_list[["startStage"]],

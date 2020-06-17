@@ -5,10 +5,10 @@
 \title{Run MoCHI pipeline}
 \usage{
 mochi(
-  workspacePath,
-  inputFile,
-  outputPath,
-  projectName,
+  workspacePath = NULL,
+  inputFile = NULL,
+  outputPath = NULL,
+  projectName = NULL,
   startStage = 1,
   stopStage = 0,
   numCores = 1,

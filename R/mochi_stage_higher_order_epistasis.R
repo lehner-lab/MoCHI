@@ -55,14 +55,14 @@ mochi_stage_higher_order_epistasis <- function(
     input_list = L_CD_fit,
     single_mut_dt = P_single,
     degreesFreedom = dimsum_meta[['numReplicates']]-1,
-    test_type = dimsum_meta[['test_type']],
+    test_type = dimsum_meta[['testType']],
     numCores = dimsum_meta[['numCores']])
 
   #General tendecies of epistasis at any order
   EpGlobal <- mochi__calculate_global_epistasis_tendencies(
     input_dt = CD_ep,
     degreesFreedom = dimsum_meta[['numReplicates']]-1,
-    test_type = dimsum_meta[['test_type']],    
+    test_type = dimsum_meta[['testType']],    
     FDR_threshold = dimsum_meta[['FDR_threshold']],
     numCores = dimsum_meta[['numCores']])
 

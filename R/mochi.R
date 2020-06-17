@@ -18,10 +18,10 @@
 #' @export
 #' @import data.table
 mochi <- function(
-  workspacePath,
-  inputFile,
-  outputPath,
-  projectName,
+  workspacePath=NULL,
+  inputFile=NULL,
+  outputPath=NULL,
+  projectName=NULL,
   startStage=1,
   stopStage=0,
   numCores=1,
@@ -44,17 +44,17 @@ mochi <- function(
   ###########################
 
   mochi_arg_list <- list(
-    "workspacePath" = list(arg_list[["workspacePath"]], c("character", "NULL")), #file exists (if not NULL) -- checked in dimsum__validate_input
-    "inputFile" = list(arg_list[["inputFile"]], c("character", "NULL")), #file exists (if not NULL) -- checked in dimsum__validate_input
-    "outputPath" = list(arg_list[["outputPath"]], c("character", "NULL")), #directory exists (if not NULL) -- checked in mochi__validate_input
-    "projectName" = list(arg_list[["projectName"]], c("character", "NULL")), #character string (if not NULL) -- checked in mochi__validate_input
-    "mochiStartStage" = list(arg_list[["startStage"]], c("integer")), #strictly positive integer -- checked in mochi__validate_input
-    "mochiStopStage" = list(arg_list[["stopStage"]], c("integer")), #positive integer (zero inclusive) -- checked in mochi__validate_input
-    "numCores" = list(arg_list[["numCores"]], c("integer")), #strictly positive integer -- checked in mochi__validate_input
-    "maxOrder" = list(arg_list[["maxOrder"]], c("integer")), #strictly positive integer -- checked in mochi__validate_input
-    "numReplicates" = list(arg_list[["numReplicates"]], c("integer")), #strictly positive integer -- checked in mochi__validate_input
-    "FDR_threshold" = list(arg_list[["FDR_threshold"]], c("double")), #positive double less than 1 (zero exclusive) -- checked in mochi__validate_input
-    "testType" = list(arg_list[["testType"]], c("character")) #character string (either 'ttest' or 'ztest') -- checked in mochi__validate_input
+    "workspacePath" = list(workspacePath, c("character", "NULL")), #file exists (if not NULL) -- checked in dimsum__validate_input
+    "inputFile" = list(inputFile, c("character", "NULL")), #file exists (if not NULL) -- checked in dimsum__validate_input
+    "outputPath" = list(outputPath, c("character", "NULL")), #directory exists (if not NULL) -- checked in mochi__validate_input
+    "projectName" = list(projectName, c("character", "NULL")), #character string (if not NULL) -- checked in mochi__validate_input
+    "mochiStartStage" = list(startStage, c("integer")), #strictly positive integer -- checked in mochi__validate_input
+    "mochiStopStage" = list(stopStage, c("integer")), #positive integer (zero inclusive) -- checked in mochi__validate_input
+    "numCores" = list(numCores, c("integer")), #strictly positive integer -- checked in mochi__validate_input
+    "maxOrder" = list(maxOrder, c("integer")), #strictly positive integer -- checked in mochi__validate_input
+    "numReplicates" = list(numReplicates, c("integer")), #strictly positive integer -- checked in mochi__validate_input
+    "FDR_threshold" = list(FDR_threshold, c("double")), #positive double less than 1 (zero exclusive) -- checked in mochi__validate_input
+    "testType" = list(testType, c("character")) #character string (either 'ttest' or 'ztest') -- checked in mochi__validate_input
     )
 
   #Validate input
@@ -81,19 +81,23 @@ mochi <- function(
 
   #If workspace file supplied
   if(!is.null(exp_metadata[["workspacePath"]])){
+    #Save variables overwritten by loading workspace
+    mochiStartStage <- startStage
+    mochiStopStage <- stopStage
+    mochiNumCores <- numCores
     #Load data
     load(exp_metadata[["workspacePath"]])
     if(!'5_analyse' %in% names(pipeline)){
       stop(paste0("Invalid '", "workspacePath", "' argument (stage 5)"), call. = FALSE)
     }
     exp_metadata <- pipeline[['5_analyse']]
-    exp_metadata[['mochiStartStage']] <- arg_list[["startStage"]]
-    exp_metadata[['mochiStopStage']] <- arg_list[["stopStage"]]
-    exp_metadata[['numCores']] <- arg_list[["numCores"]]
-    exp_metadata[['maxOrder']] <- arg_list[["maxOrder"]]
-    exp_metadata[['numReplicates']] <- arg_list[["numReplicates"]]
-    exp_metadata[['FDR_threshold']] <- arg_list[["FDR_threshold"]]
-    exp_metadata[['testType']] <- arg_list[["testType"]]
+    exp_metadata[['mochiStartStage']] <- mochiStartStage
+    exp_metadata[['mochiStopStage']] <- mochiStopStage
+    exp_metadata[['numCores']] <- mochiNumCores
+    exp_metadata[['maxOrder']] <- maxOrder
+    exp_metadata[['numReplicates']] <- numReplicates
+    exp_metadata[['FDR_threshold']] <- FDR_threshold
+    exp_metadata[['testType']] <- testType
   }
 
   ### Pipeline stages
