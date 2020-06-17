@@ -7,6 +7,7 @@
 mochi__calculate_global_epistasis_tendencies(
   input_dt,
   degreesFreedom = 5,
+  test_type = "ztest",
   FDR_threshold = 0.1,
   numCores = 1
 )
@@ -15,6 +16,8 @@ mochi__calculate_global_epistasis_tendencies(
 \item{input_dt}{data.table as provided by calculate_individual_epistatis_terms (required)}
 
 \item{degreesFreedom}{an integer degrees of freedom (default:5)}
+
+\item{test_type}{type of test: either "ztest" or "ttest" (default:"ztest")}
 
 \item{FDR_threshold}{FDR threshold for significant specific and background averaged terms (default:0.1)}
 

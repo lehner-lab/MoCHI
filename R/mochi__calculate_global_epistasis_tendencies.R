@@ -5,6 +5,7 @@
 #'
 #' @param input_dt data.table as provided by calculate_individual_epistatis_terms (required)
 #' @param degreesFreedom an integer degrees of freedom (default:5)
+#' @param test_type type of test: either "ztest" or "ttest" (default:"ztest")
 #' @param FDR_threshold FDR threshold for significant specific and background averaged terms (default:0.1)
 #' @param numCores number of available CPU cores (default:1)
 #'
@@ -14,6 +15,7 @@
 mochi__calculate_global_epistasis_tendencies <- function(
   input_dt,
   degreesFreedom = 5,
+  test_type = "ztest",
   FDR_threshold = 0.1,
   numCores = 1
   ){
@@ -34,10 +36,11 @@ mochi__calculate_global_epistasis_tendencies <- function(
         negative_fdr = negative_fdr,
         neutral_fdr = n_bckg - (positive_fdr + negative_fdr),
         global_SE = global_SE, 
-        global_pval = mochi__ttest(
+        global_pval = mochi__pvalue(
           av = mean_ep_term, 
           se = global_SE, 
-          degreesFreedom = degreesFreedom))
+          degreesFreedom = degreesFreedom,
+          test_type = test_type))
     })
     DS <- rbindlist(DS_list)
     DS[, global_qval_order := p.adjust(global_pval, method = "fdr")]

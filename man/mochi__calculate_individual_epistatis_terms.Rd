@@ -8,6 +8,7 @@ mochi__calculate_individual_epistatis_terms(
   input_list,
   single_mut_dt,
   degreesFreedom = 5,
+  test_type = "ztest",
   numCores = 1
 )
 }
@@ -17,6 +18,8 @@ mochi__calculate_individual_epistatis_terms(
 \item{single_mut_dt}{data.table of single substitution variants (required)}
 
 \item{degreesFreedom}{an integer degrees of freedom (default:5)}
+
+\item{test_type}{type of test: either "ztest" or "ttest" (default:"ztest")}
 
 \item{numCores}{number of available CPU cores (default:1)}
 }
