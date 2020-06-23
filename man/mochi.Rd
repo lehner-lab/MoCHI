@@ -4,19 +4,10 @@
 \alias{mochi}
 \title{Run MoCHI pipeline}
 \usage{
-mochi(
-  workspacePath = NULL,
-  inputFile = NULL,
-  outputPath = NULL,
-  projectName = NULL,
-  startStage = 1,
-  stopStage = 0,
-  numCores = 1,
-  maxOrder = 2,
-  numReplicates = 2,
-  FDR_threshold = 0.1,
-  testType = "ztest"
-)
+mochi(workspacePath = NULL, inputFile = NULL, outputPath = NULL,
+  projectName = NULL, startStage = 1, stopStage = 0, numCores = 1,
+  maxOrder = 2, numReplicates = 2, FDR_threshold = 0.1,
+  testType = "ztest")
 }
 \arguments{
 \item{workspacePath}{Path to DiMSum workspace .RData file after successful completion of stage 7}

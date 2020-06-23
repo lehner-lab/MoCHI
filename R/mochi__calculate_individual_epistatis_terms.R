@@ -27,35 +27,11 @@ mochi__calculate_individual_epistatis_terms <- function(
   output_list <- parallel::mclapply(as.list(as.numeric(names(input_list))),function(x){
     l_cd_fit_temp <- data.table::copy(input_list[[as.character(x)]])
 
-    orders = x:0
-    sums_v = rep(T, length(orders))
-    if (orders[1] %% 2 == 0) {
-      sums_v[!(orders) %% 2 == 0] = F
-    } else{
-      sums_v[(orders) %% 2 == 0] = F
-    }
+    #Calculate epistatic terms of order x
+    vh_mat <- mochi__v_matrix(x)%*%mochi__h_matrix(x)
+    ep_term <- as.data.table(as.matrix(l_cd_fit_temp[,.SD,,.SDcols = grep("^fit_", names(l_cd_fit_temp))])%*%as.matrix(vh_mat[dim(vh_mat)[1],]))
 
-    temp = do.call("cbind", lapply(orders, function(y){
-      order_regex = paste0("fit_", y, "_")
-      if (y == x | y == 0) {
-        l_cd_fit_temp[,.SD,, .SDcols = grep(order_regex, names(l_cd_fit_temp))]
-      } else {
-        rowSums(l_cd_fit_temp[,.SD,, .SDcols = grep(order_regex, names(l_cd_fit_temp))])
-      }
-    }))
-    
-    if (sum(sums_v) > 1) {
-      ep_term = rowSums(temp[,.SD,,.SDcols = which(sums_v)])
-    } else {
-      ep_term = temp[,.SD,,.SDcols = which(sums_v)]
-    }
-    
-    if (sum(!sums_v) > 1) {
-      ep_term = ep_term - rowSums(temp[,.SD,,.SDcols = which(!sums_v)])
-    } else {
-      ep_term = ep_term - temp[,.SD,,.SDcols = which(!sums_v)]
-    }
-
+    #Calculate significance of epistatic terms
     l_cd_fit_temp[, ep_term := ep_term]
     l_cd_fit_temp[, ep_term_SE := sqrt(rowSums(.SD^2)),,.SDcols = grep("^se_", names(l_cd_fit_temp))]
     l_cd_fit_temp[, pval := mochi__pvalue(
