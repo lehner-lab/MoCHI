@@ -4,9 +4,14 @@
 \alias{mochi_stage_combinatorial_complete_landscapes}
 \title{mochi_stage_combinatorial_complete_landscapes}
 \usage{
-mochi_stage_combinatorial_complete_landscapes(dimsum_meta,
-  epistasis_outpath, order_max = 1, report = TRUE,
-  report_outpath = NULL, save_workspace = TRUE)
+mochi_stage_combinatorial_complete_landscapes(
+  dimsum_meta,
+  epistasis_outpath,
+  order_max = 1,
+  report = TRUE,
+  report_outpath = NULL,
+  save_workspace = TRUE
+)
 }
 \arguments{
 \item{dimsum_meta}{an experiment metadata object (required)}

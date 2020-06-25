@@ -4,8 +4,7 @@
 \alias{mochi__create_dir}
 \title{mochi__create_dir}
 \usage{
-mochi__create_dir(mochi_dir, execute, message = NULL,
-  overwrite_dir = TRUE)
+mochi__create_dir(mochi_dir, execute, message = NULL, overwrite_dir = TRUE)
 }
 \arguments{
 \item{mochi_dir}{directory path string (required)}

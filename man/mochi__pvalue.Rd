@@ -4,8 +4,7 @@
 \alias{mochi__pvalue}
 \title{mochi__pvalue}
 \usage{
-mochi__pvalue(av, se, degreesFreedom = 5, mu = 0,
-  test_type = "ztest")
+mochi__pvalue(av, se, degreesFreedom = 5, mu = 0, test_type = "ztest")
 }
 \arguments{
 \item{av}{sample mean (required)}

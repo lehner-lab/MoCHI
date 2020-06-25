@@ -4,9 +4,13 @@
 \alias{mochi__calculate_global_epistasis_tendencies}
 \title{mochi__calculate_global_epistasis_tendencies}
 \usage{
-mochi__calculate_global_epistasis_tendencies(input_dt,
-  degreesFreedom = 5, test_type = "ztest", FDR_threshold = 0.1,
-  numCores = 1)
+mochi__calculate_global_epistasis_tendencies(
+  input_dt,
+  degreesFreedom = 5,
+  test_type = "ztest",
+  FDR_threshold = 0.1,
+  numCores = 1
+)
 }
 \arguments{
 \item{input_dt}{data.table as provided by calculate_individual_epistatis_terms (required)}
