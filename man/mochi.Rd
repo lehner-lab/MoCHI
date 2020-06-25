@@ -15,7 +15,8 @@ mochi(
   maxOrder = 2,
   numReplicates = 2,
   FDR_threshold = 0.1,
-  testType = "ztest"
+  testType = "ztest",
+  orderSubset = "all"
 )
 }
 \arguments{
@@ -40,6 +41,8 @@ mochi(
 \item{FDR_threshold}{FDR threshold for significant specific and background averaged terms (default:0.1; 1 disables the treshold)}
 
 \item{testType}{Type of statistical test to use: either 'ztest' or 'ttest' (default:'ztest')}
+
+\item{orderSubset}{Comma-separated list of (integer) orders of epistatic terms to retain for fitness reconstruction or 'all' (default:'all')}
 }
 \value{
 Nothing

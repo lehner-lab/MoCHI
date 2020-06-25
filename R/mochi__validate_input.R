@@ -86,6 +86,15 @@ mochi__validate_input <- function(
     stop("Invalid 'testType' argument. Only 'ttest' or 'ztest' allowed.", call. = FALSE)
   }
 
+  #Check orderSubset comma-separated list of integers or "all"
+  if(mochi_meta[["orderSubset"]] != "all"){
+    if(sum(!unlist(strsplit(strsplit(mochi_meta[["orderSubset"]], ",")[[1]], "")) %in% strsplit("0123456789", "")[[1]])!=0){
+      stop("Invalid 'orderSubset' argument. Only comma-separated list of integers or 'all' allowed.", call. = FALSE)
+    }
+  }else{
+    mochi_meta[["orderSubset"]] <- paste0(0:mochi_meta[["maxOrder"]], collapse=",")
+  }
+
   #Check if either workspacePath or (inputFile, outputPath and projectName) specified
   if(!( !is.null(mochi_meta[["workspacePath"]]) | (!is.null(mochi_meta[["inputFile"]]) & !is.null(mochi_meta[["outputPath"]]) & !is.null(mochi_meta[["projectName"]])))) {
     stop(paste0("One or more mandatory arguments missing. If workspacePath not supplied, inputFile, outputPath and projectName need to be supplied. "), call. = FALSE)

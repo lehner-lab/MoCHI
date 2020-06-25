@@ -13,6 +13,7 @@
 #' @param numReplicates Number of biological replicates (or sample size) from which fitness and error estimates derived. Used to calculate degrees of freedom if 'testType' is 'ttest' (default:2)
 #' @param FDR_threshold FDR threshold for significant specific and background averaged terms (default:0.1; 1 disables the treshold)
 #' @param testType Type of statistical test to use: either 'ztest' or 'ttest' (default:'ztest')
+#' @param orderSubset Comma-separated list of (integer) orders of epistatic terms to retain for fitness reconstruction or 'all' (default:'all')
 #'
 #' @return Nothing
 #' @export
@@ -28,7 +29,8 @@ mochi <- function(
   maxOrder=2,
   numReplicates=2,
   FDR_threshold=0.1,
-  testType="ztest"
+  testType="ztest",
+  orderSubset="all"
   ){
 
   #Display welcome
@@ -54,7 +56,8 @@ mochi <- function(
     "maxOrder" = list(maxOrder, c("integer")), #strictly positive integer -- checked in mochi__validate_input
     "numReplicates" = list(numReplicates, c("integer")), #strictly positive integer -- checked in mochi__validate_input
     "FDR_threshold" = list(FDR_threshold, c("double")), #positive double less than 1 (zero exclusive) -- checked in mochi__validate_input
-    "testType" = list(testType, c("character")) #character string (either 'ttest' or 'ztest') -- checked in mochi__validate_input
+    "testType" = list(testType, c("character")), #character string (either 'ttest' or 'ztest') -- checked in mochi__validate_input
+    "orderSubset" = list(orderSubset, c("character")) #comma-separated list of integers or "all" -- checked in dimsum__validate_input
     )
 
   #Validate input
@@ -81,23 +84,23 @@ mochi <- function(
 
   #If workspace file supplied
   if(!is.null(exp_metadata[["workspacePath"]])){
-    #Save variables overwritten by loading workspace
-    mochiStartStage <- startStage
-    mochiStopStage <- stopStage
-    mochiNumCores <- numCores
+    #Save MoCHI exp_metadata
+    exp_metadata_mochi <- exp_metadata
     #Load data
     load(exp_metadata[["workspacePath"]])
     if(!'5_analyse' %in% names(pipeline)){
       stop(paste0("Invalid '", "workspacePath", "' argument (stage 5)"), call. = FALSE)
     }
+    #Additional arguments
     exp_metadata <- pipeline[['5_analyse']]
-    exp_metadata[['mochiStartStage']] <- mochiStartStage
-    exp_metadata[['mochiStopStage']] <- mochiStopStage
-    exp_metadata[['numCores']] <- mochiNumCores
-    exp_metadata[['maxOrder']] <- maxOrder
-    exp_metadata[['numReplicates']] <- numReplicates
-    exp_metadata[['FDR_threshold']] <- FDR_threshold
-    exp_metadata[['testType']] <- testType
+    exp_metadata[['mochiStartStage']] <- exp_metadata_mochi[['mochiStartStage']]
+    exp_metadata[['mochiStopStage']] <- exp_metadata_mochi[['mochiStopStage']]
+    exp_metadata[['numCores']] <- exp_metadata_mochi[['numCores']]
+    exp_metadata[['maxOrder']] <- exp_metadata_mochi[['maxOrder']]
+    exp_metadata[['numReplicates']] <- exp_metadata_mochi[['numReplicates']]
+    exp_metadata[['FDR_threshold']] <- exp_metadata_mochi[['FDR_threshold']]
+    exp_metadata[['testType']] <- exp_metadata_mochi[['testType']]
+    exp_metadata[['orderSubset']] <- exp_metadata_mochi[['orderSubset']]
   }
 
   ### Pipeline stages

@@ -51,11 +51,18 @@ mochi_stage_higher_order_epistasis <- function(
     numCores = dimsum_meta[['numCores']])
 
   #Calculate all individual terms of epistasis
-  CD_ep <- mochi__calculate_individual_epistatis_terms(
+  CD_ep <- mochi__calculate_individual_epistasis_terms(
     input_list = L_CD_fit,
     single_mut_dt = P_single,
     degreesFreedom = dimsum_meta[['numReplicates']]-1,
     test_type = dimsum_meta[['testType']],
+    numCores = dimsum_meta[['numCores']])
+
+  #Calculate all individual terms of epistasis
+  CD_rec <- mochi__reconstruct_fitness(
+    input_list = L_CD_fit,
+    single_mut_dt = P_single,
+    order_subset = dimsum_meta[['orderSubset']],
     numCores = dimsum_meta[['numCores']])
 
   #General tendecies of epistasis at any order
@@ -67,7 +74,8 @@ mochi_stage_higher_order_epistasis <- function(
     numCores = dimsum_meta[['numCores']])
 
   #Save results
-  save(L_CD_fit, CD_ep, EpGlobal, file = file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_epistasis_terms.RData')))
+  save(L_CD_fit, CD_ep, CD_rec, EpGlobal, file = file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_epistasis_terms.RData')))
+  save(CD_rec, file = file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_reconstructed_fitness.RData')))
 
   #Summary report and tables
   ###########################
