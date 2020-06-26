@@ -65,35 +65,35 @@ mochi_stage_combinatorial_complete_landscapes <- function(
   }
 
   #Encode genotypes
-  P_list <- mochi__encode_genotypes(
+  fitness_list <- mochi__encode_genotypes(
     input_dt = all_variants, 
     sequenceType = sequence_type)
-  P <- P_list[["P"]]
-  P_single <- P_list[["P_single"]]
+  fitness_dt <- fitness_list[["all"]]
+  genokey_dt <- fitness_list[["genotype_key"]]
 
   #Save genotype fitness
-  save(P, P_single, file = file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_genotypes_fitness.RData')))
+  save(fitness_dt, genokey_dt, file = file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_genotypes_fitness.RData')))
 
   #Get all combinatorial complete landscapes of all orders
-  L_DS <- mochi__get_all_combinatorial_complete_landscapes(
+  cclands_list <- mochi__get_all_combinatorial_complete_landscapes(
     order_max = order_max,
-    all_variants_char = P[,var],
+    all_variants_char = fitness_dt[,var],
     numCores = dimsum_meta[['numCores']])
 
   #Save all combinatorial complete landscapes of all orders
-  save(L_DS, file = file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_complete_landscapes.RData')))
+  save(cclands_list, file = file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_complete_landscapes.RData')))
 
   #Get a summary of the combinatorial of complete landscapes and the number of backgrounds where each n combination of mutations are found
-  DS_summary = do.call("rbind", lapply(names(L_DS), function(x){
-    n_bckg <- plyr::count(L_DS[[x]], c(1:3))[,"freq"]
+  cclands_summary = do.call("rbind", lapply(names(cclands_list), function(x){
+    n_bckg <- plyr::count(cclands_list[[x]], c(1:3))[,"freq"]
     data.table(
       n = as.numeric(x), 
       n_comb=length(n_bckg),
-      n_landscapes = dim(L_DS[[x]])[1], 
+      n_landscapes = dim(cclands_list[[x]])[1], 
       min_bckg = min(n_bckg), 
       median_bckg = median(n_bckg), 
       max_bckg = max(n_bckg))
   }))
-  print(DS_summary)
+  print(cclands_summary)
 
 }

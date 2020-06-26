@@ -7,7 +7,7 @@
 mochi__construct_var2id_list(input_dt)
 }
 \arguments{
-\item{input_dt}{data.table of single substitution variants (required)}
+\item{input_dt}{data.table with genotype codes of single substitution variants (required)}
 }
 \value{
 A data.table

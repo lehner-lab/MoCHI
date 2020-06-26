@@ -10,7 +10,7 @@ mochi(
   outputPath = NULL,
   projectName = NULL,
   startStage = 1,
-  stopStage = 0,
+  stopStage = 2,
   numCores = 1,
   maxOrder = 2,
   numReplicates = 2,
@@ -30,7 +30,7 @@ mochi(
 
 \item{startStage}{Start at a specified pipeline stage (default:1)}
 
-\item{stopStage}{Stop at a specified pipeline stage (default:0 i.e. no stop condition)}
+\item{stopStage}{Stop at a specified pipeline stage (default:2)}
 
 \item{numCores}{Number of available CPU cores (default:1)}
 

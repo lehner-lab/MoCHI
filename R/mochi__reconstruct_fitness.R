@@ -4,7 +4,7 @@
 #' Reconstruct fitness from individual terms of epistasis.
 #'
 #' @param input_list list of combinatoral landscape data.tables with corresponding fitness and error as provided by mochi__add_fitness_to_landscapes (required)
-#' @param single_mut_dt data.table of single substitution variants (required)
+#' @param genotype_key data.table with genotype codes of single substitution variants (required)
 #' @param order_subset comma-separated list of (integer) orders of epistatic terms to retain for fitness reconstruction (required)
 #' @param numCores number of available CPU cores (default:1)
 #'
@@ -13,7 +13,7 @@
 #' @import data.table
 mochi__reconstruct_fitness <- function(
   input_list,
-  single_mut_dt,
+  genotype_key,
   order_subset,
   numCores = 1
   ){
@@ -22,7 +22,7 @@ mochi__reconstruct_fitness <- function(
   order_subset <- as.integer(strsplit(order_subset, ",")[[1]])
 
   #List to convert from variant id (single character variant string where WT=0) to id (comma-separated mutation string) 
-  P_var2id <- mochi__construct_var2id_list(input_dt = single_mut_dt)
+  P_var2id <- mochi__construct_var2id_list(input_dt = genotype_key)
 
   # Calculate all individual terms of epistasis
   output_list <- parallel::mclapply(as.list(as.numeric(names(input_list))),function(x){

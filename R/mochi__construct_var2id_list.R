@@ -3,7 +3,7 @@
 #'
 #' Get mapping of ids to variants for all possible combinations of single mutants supplied in data.table with id and var columns.
 #'
-#' @param input_dt data.table of single substitution variants (required)
+#' @param input_dt data.table with genotype codes of single substitution variants (required)
 #'
 #' @return A data.table 
 #' @export

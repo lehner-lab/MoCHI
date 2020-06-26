@@ -6,7 +6,7 @@
 \usage{
 mochi__reconstruct_fitness(
   input_list,
-  single_mut_dt,
+  genotype_key,
   order_subset,
   numCores = 1
 )
@@ -14,7 +14,7 @@ mochi__reconstruct_fitness(
 \arguments{
 \item{input_list}{list of combinatoral landscape data.tables with corresponding fitness and error as provided by mochi__add_fitness_to_landscapes (required)}
 
-\item{single_mut_dt}{data.table of single substitution variants (required)}
+\item{genotype_key}{data.table with genotype codes of single substitution variants (required)}
 
 \item{order_subset}{comma-separated list of (integer) orders of epistatic terms to retain for fitness reconstruction (required)}
 

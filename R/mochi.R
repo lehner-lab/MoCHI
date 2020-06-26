@@ -7,7 +7,7 @@
 #' @param outputPath Path to directory to use for output files
 #' @param projectName Project name
 #' @param startStage Start at a specified pipeline stage (default:1)
-#' @param stopStage Stop at a specified pipeline stage (default:0 i.e. no stop condition)
+#' @param stopStage Stop at a specified pipeline stage (default:2)
 #' @param numCores Number of available CPU cores (default:1)
 #' @param maxOrder Maximum number of nucleotide or amino acid substitutions for coding or non-coding sequences respectively (default:2)
 #' @param numReplicates Number of biological replicates (or sample size) from which fitness and error estimates derived. Used to calculate degrees of freedom if 'testType' is 'ttest' (default:2)
@@ -24,7 +24,7 @@ mochi <- function(
   outputPath=NULL,
   projectName=NULL,
   startStage=1,
-  stopStage=0,
+  stopStage=2,
   numCores=1,
   maxOrder=2,
   numReplicates=2,
@@ -115,6 +115,12 @@ mochi <- function(
 
   #Obtain all epistatic terms, background relative and background averaged terms
   mochi_stage_higher_order_epistasis(
+    dimsum_meta = exp_metadata,
+    epistasis_outpath = file.path(exp_metadata[["tmp_path"]], "epistasis"),
+    report_outpath = file.path(exp_metadata[["tmp_path"]], "epistasis"))
+
+  #Reconstruct fitness from individual terms of epistasis
+  mochi_stage_reconstruct_fitness(
     dimsum_meta = exp_metadata,
     epistasis_outpath = file.path(exp_metadata[["tmp_path"]], "epistasis"),
     report_outpath = file.path(exp_metadata[["tmp_path"]], "epistasis"))

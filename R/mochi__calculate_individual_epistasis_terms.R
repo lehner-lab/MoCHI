@@ -4,7 +4,7 @@
 #' Calculate all individual terms of epistasis.
 #'
 #' @param input_list list of combinatoral landscape data.tables with corresponding fitness and error as provided by mochi__add_fitness_to_landscapes (required)
-#' @param single_mut_dt data.table of single substitution variants (required)
+#' @param genotype_key data.table with genotype codes of single substitution variants (required)
 #' @param degreesFreedom an integer degrees of freedom (default:5)
 #' @param test_type type of test: either "ztest" or "ttest" (default:"ztest")
 #' @param numCores number of available CPU cores (default:1)
@@ -14,14 +14,14 @@
 #' @import data.table
 mochi__calculate_individual_epistasis_terms <- function(
   input_list,
-  single_mut_dt,
+  genotype_key,
   degreesFreedom = 5,
   test_type = "ztest",
   numCores = 1
   ){
   
   #List to convert from variant id (single character variant string where WT=0) to id (comma-separated mutation string) 
-  P_var2id <- mochi__construct_var2id_list(input_dt = single_mut_dt)
+  P_var2id <- mochi__construct_var2id_list(input_dt = genotype_key)
 
   # Calculate all individual terms of epistasis
   output_list <- parallel::mclapply(as.list(as.numeric(names(input_list))),function(x){

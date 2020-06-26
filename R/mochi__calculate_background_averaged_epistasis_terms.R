@@ -1,5 +1,5 @@
 
-#' mochi__calculate_global_epistasis_tendencies
+#' mochi__calculate_background_averaged_epistasis_terms
 #'
 #' Calculate general tendecies of epistasis at any order.
 #'
@@ -12,7 +12,7 @@
 #' @return A data.table with background averaged epistasis terms, direction and significance
 #' @export
 #' @import data.table
-mochi__calculate_global_epistasis_tendencies <- function(
+mochi__calculate_background_averaged_epistasis_terms <- function(
   input_dt,
   degreesFreedom = 5,
   test_type = "ztest",

@@ -45,37 +45,31 @@ mochi_stage_higher_order_epistasis <- function(
   load(file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_complete_landscapes.RData')))
 
   #Add fitness to landscapes
-  L_CD_fit <- mochi__add_fitness_to_landscapes(
-    landscape_list = L_DS,
-    fitness_dt = P,
+  cclands_fitness_list <- mochi__add_fitness_to_landscapes(
+    landscape_list = cclands_list,
+    fitness_dt = fitness_dt,
     numCores = dimsum_meta[['numCores']])
 
   #Calculate all individual terms of epistasis
-  CD_ep <- mochi__calculate_individual_epistasis_terms(
-    input_list = L_CD_fit,
-    single_mut_dt = P_single,
+  cclands_epistasis_dt <- mochi__calculate_individual_epistasis_terms(
+    input_list = cclands_fitness_list,
+    genotype_key = genokey_dt,
     degreesFreedom = dimsum_meta[['numReplicates']]-1,
     test_type = dimsum_meta[['testType']],
     numCores = dimsum_meta[['numCores']])
 
-  #Calculate all individual terms of epistasis
-  CD_rec <- mochi__reconstruct_fitness(
-    input_list = L_CD_fit,
-    single_mut_dt = P_single,
-    order_subset = dimsum_meta[['orderSubset']],
-    numCores = dimsum_meta[['numCores']])
-
-  #General tendecies of epistasis at any order
-  EpGlobal <- mochi__calculate_global_epistasis_tendencies(
-    input_dt = CD_ep,
+  #Calculate background averaged terms of epistasis
+  bckgavg_epistasis_dt <- mochi__calculate_background_averaged_epistasis_terms(
+    input_dt = cclands_epistasis_dt,
     degreesFreedom = dimsum_meta[['numReplicates']]-1,
     test_type = dimsum_meta[['testType']],    
     FDR_threshold = dimsum_meta[['FDR_threshold']],
     numCores = dimsum_meta[['numCores']])
 
   #Save results
-  save(L_CD_fit, CD_ep, CD_rec, EpGlobal, file = file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_epistasis_terms.RData')))
-  save(CD_rec, file = file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_reconstructed_fitness.RData')))
+  save(cclands_fitness_list, file = file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_complete_landscapes_fitness.RData')))
+  save(cclands_epistasis_dt, file = file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_individual_epistasis_terms.RData')))
+  save(bckgavg_epistasis_dt, file = file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_background_averaged_epistasis_terms.RData')))
 
   #Summary report and tables
   ###########################
@@ -86,27 +80,27 @@ mochi_stage_higher_order_epistasis <- function(
     report_outpath = dimsum_meta[["epistasis_path"]])
 
   #Get a summary of the combinatorial of complete landscapes and the number of backgrounds where each n combination of mutations are found
-  DS_summary = do.call("rbind", lapply(names(L_CD_fit), function(x){
-    n_bckg <- plyr::count(L_CD_fit[[x]], c(1:3))[,"freq"]
+  cclands_summary = do.call("rbind", lapply(names(cclands_fitness_list), function(x){
+    n_bckg <- plyr::count(cclands_fitness_list[[x]], c(1:3))[,"freq"]
     data.table(
       n = as.numeric(x), 
       n_comb=length(n_bckg),
-      n_landscapes = dim(L_CD_fit[[x]])[1], 
+      n_landscapes = dim(cclands_fitness_list[[x]])[1], 
       min_bckg = min(n_bckg), 
       median_bckg = median(n_bckg), 
       max_bckg = max(n_bckg))
   }))
 
   #Background averaged epistasis summary
-  SummaryEpGlobal <- rbindlist(lapply(unique(EpGlobal[,n]), function(x){
+  baepistasis_summary <- rbindlist(lapply(unique(bckgavg_epistasis_dt[,n]), function(x){
     data.table(
       n = x, 
-      sig_global_ep = sum(EpGlobal[n==x, global_qval_all < dimsum_meta[['FDR_threshold']]]), 
-      n_comb = EpGlobal[n == x,.N])
+      sig_global_ep = sum(bckgavg_epistasis_dt[n==x, global_qval_all < dimsum_meta[['FDR_threshold']]]), 
+      n_comb = bckgavg_epistasis_dt[n == x,.N])
   }))
-  print(SummaryEpGlobal)
+  print(baepistasis_summary)
 
   #Save summary tables
-  save(DS_summary, SummaryEpGlobal, file = file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_epistasis_summary_tables.RData')))
+  save(cclands_summary, baepistasis_summary, file = file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_epistasis_summary_tables.RData')))
 
 }

@@ -18,18 +18,18 @@ mochi_stage_higher_order_epistasis_report <- function(
   suppressWarnings(dir.create(report_outpath))
 
   #Load data
-  load(file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_epistasis_terms.RData')))
+  load(file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_background_averaged_epistasis_terms.RData')))
 
   #Plot effect of all single mutants in different backgrounds - first order
-  EpGlobal[, perc_positive := positive_fdr/n_bckg*100]
-  EpGlobal[, perc_negative := negative_fdr/n_bckg*100]
-  EpGlobal[, perc_neutral := neutral_fdr/n_bckg*100]
-  EpGlobal[, Mutant_sig := paste0(Mutant, c("", " (*)")[as.numeric(global_state!="Neutral")+1])]
+  bckgavg_epistasis_dt[, perc_positive := positive_fdr/n_bckg*100]
+  bckgavg_epistasis_dt[, perc_negative := negative_fdr/n_bckg*100]
+  bckgavg_epistasis_dt[, perc_neutral := neutral_fdr/n_bckg*100]
+  bckgavg_epistasis_dt[, Mutant_sig := paste0(Mutant, c("", " (*)")[as.numeric(global_state!="Neutral")+1])]
 
   #Plot effect of all single mutants in different backgrounds - first order
   for(this_order in 1:3){
-    plot_dt <- reshape2::melt(EpGlobal[n == this_order,.SD,.SDcols = c("Mutant_sig", "perc_positive", "perc_negative", "perc_neutral")], id = "Mutant_sig")
-    plot_dt[,Mutant_sig := factor(Mutant_sig, levels = as.character(EpGlobal[n==this_order,Mutant_sig][order(EpGlobal[n==this_order,(perc_negative+1)/(perc_positive+1)])]))]
+    plot_dt <- reshape2::melt(bckgavg_epistasis_dt[n == this_order,.SD,.SDcols = c("Mutant_sig", "perc_positive", "perc_negative", "perc_neutral")], id = "Mutant_sig")
+    plot_dt[,Mutant_sig := factor(Mutant_sig, levels = as.character(bckgavg_epistasis_dt[n==this_order,Mutant_sig][order(bckgavg_epistasis_dt[n==this_order,(perc_negative+1)/(perc_positive+1)])]))]
     plot_dt[,variable := factor(variable, levels = c("perc_negative", "perc_neutral", "perc_positive"))]
     if(this_order==1){
       fill_cols <- c("blue", "lightgrey", "red")

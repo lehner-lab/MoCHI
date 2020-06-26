@@ -6,7 +6,7 @@
 \usage{
 mochi__calculate_individual_epistasis_terms(
   input_list,
-  single_mut_dt,
+  genotype_key,
   degreesFreedom = 5,
   test_type = "ztest",
   numCores = 1
@@ -15,7 +15,7 @@ mochi__calculate_individual_epistasis_terms(
 \arguments{
 \item{input_list}{list of combinatoral landscape data.tables with corresponding fitness and error as provided by mochi__add_fitness_to_landscapes (required)}
 
-\item{single_mut_dt}{data.table of single substitution variants (required)}
+\item{genotype_key}{data.table with genotype codes of single substitution variants (required)}
 
 \item{degreesFreedom}{an integer degrees of freedom (default:5)}
 

@@ -66,5 +66,7 @@ mochi__encode_genotypes <- function(
 
   #Final data.table
   P <- P[,.SD,,.SDcols = c("fitness", "SE", "id", "var")]
-  return(list(P = P, P_single = P_single))
+  return(list(
+    all = P, 
+    genotype_key = P_single))
 }
