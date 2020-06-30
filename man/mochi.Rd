@@ -14,7 +14,8 @@ mochi(
   numCores = 1,
   maxOrder = 2,
   numReplicates = 2,
-  FDR_threshold = 0.1,
+  significanceThreshold = 0.1,
+  adjustmentMethod = "fdr",
   testType = "ztest",
   orderSubset = "all"
 )
@@ -38,7 +39,9 @@ mochi(
 
 \item{numReplicates}{Number of biological replicates (or sample size) from which fitness and error estimates derived. Used to calculate degrees of freedom if 'testType' is 'ttest' (default:2)}
 
-\item{FDR_threshold}{FDR threshold for significant specific and background averaged terms (default:0.1; 1 disables the treshold)}
+\item{significanceThreshold}{Significance threshold for specific and background averaged terms (default:0.1; 1 disables the treshold)}
+
+\item{adjustmentMethod}{Method for adjusting P-values for multiple comparisons; any method in p.adjust.methods is permitted (default:'fdr')}
 
 \item{testType}{Type of statistical test to use: either 'ztest' or 'ttest' (default:'ztest')}
 

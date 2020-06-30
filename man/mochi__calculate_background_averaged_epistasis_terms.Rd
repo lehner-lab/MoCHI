@@ -8,8 +8,9 @@
 mochi__calculate_background_averaged_epistasis_terms(
   input_dt,
   degreesFreedom = 5,
-  test_type = "ztest",
-  FDR_threshold = 0.1,
+  testType = "ztest",
+  significanceThreshold = 0.1,
+  adjustmentMethod = "fdr",
   numCores = 1
 )
 }
@@ -18,9 +19,11 @@ mochi__calculate_background_averaged_epistasis_terms(
 
 \item{degreesFreedom}{an integer degrees of freedom (default:5)}
 
-\item{test_type}{type of test: either "ztest" or "ttest" (default:"ztest")}
+\item{testType}{type of test: either "ztest" or "ttest" (default:"ztest")}
 
-\item{FDR_threshold}{FDR threshold for significant specific and background averaged terms (default:0.1)}
+\item{significanceThreshold}{Significance threshold for specific and background averaged terms (default:0.1)}
+
+\item{adjustmentMethod}{Method for adjusting P-values for multiple comparisons; any method in p.adjust.methods is permitted (default:'fdr')}
 
 \item{numCores}{number of available CPU cores (default:1)}
 }

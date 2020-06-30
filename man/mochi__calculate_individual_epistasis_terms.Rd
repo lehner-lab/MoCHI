@@ -8,7 +8,8 @@ mochi__calculate_individual_epistasis_terms(
   input_list,
   genotype_key,
   degreesFreedom = 5,
-  test_type = "ztest",
+  testType = "ztest",
+  adjustmentMethod = "fdr",
   numCores = 1
 )
 }
@@ -19,7 +20,9 @@ mochi__calculate_individual_epistasis_terms(
 
 \item{degreesFreedom}{an integer degrees of freedom (default:5)}
 
-\item{test_type}{type of test: either "ztest" or "ttest" (default:"ztest")}
+\item{testType}{type of test: either "ztest" or "ttest" (default:"ztest")}
+
+\item{adjustmentMethod}{Method for adjusting P-values for multiple comparisons; any method in p.adjust.methods is permitted (default:'fdr')}
 
 \item{numCores}{number of available CPU cores (default:1)}
 }

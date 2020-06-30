@@ -55,15 +55,17 @@ mochi_stage_higher_order_epistasis <- function(
     input_list = cclands_fitness_list,
     genotype_key = genokey_dt,
     degreesFreedom = dimsum_meta[['numReplicates']]-1,
-    test_type = dimsum_meta[['testType']],
+    testType = dimsum_meta[['testType']],
+    adjustmentMethod = dimsum_meta[['adjustmentMethod']],
     numCores = dimsum_meta[['numCores']])
 
   #Calculate background averaged terms of epistasis
   bckgavg_epistasis_dt <- mochi__calculate_background_averaged_epistasis_terms(
     input_dt = cclands_epistasis_dt,
     degreesFreedom = dimsum_meta[['numReplicates']]-1,
-    test_type = dimsum_meta[['testType']],    
-    FDR_threshold = dimsum_meta[['FDR_threshold']],
+    testType = dimsum_meta[['testType']],    
+    significanceThreshold = dimsum_meta[['significanceThreshold']],
+    adjustmentMethod = dimsum_meta[['adjustmentMethod']],
     numCores = dimsum_meta[['numCores']])
 
   #Save results
@@ -95,7 +97,7 @@ mochi_stage_higher_order_epistasis <- function(
   baepistasis_summary <- rbindlist(lapply(unique(bckgavg_epistasis_dt[,n]), function(x){
     data.table(
       n = x, 
-      sig_global_ep = sum(bckgavg_epistasis_dt[n==x, global_qval_all < dimsum_meta[['FDR_threshold']]]), 
+      sig_global_ep = sum(bckgavg_epistasis_dt[n==x, global_qval_all < dimsum_meta[['significanceThreshold']]]), 
       n_comb = bckgavg_epistasis_dt[n == x,.N])
   }))
   print(baepistasis_summary)

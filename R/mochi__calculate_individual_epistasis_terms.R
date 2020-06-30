@@ -6,7 +6,8 @@
 #' @param input_list list of combinatoral landscape data.tables with corresponding fitness and error as provided by mochi__add_fitness_to_landscapes (required)
 #' @param genotype_key data.table with genotype codes of single substitution variants (required)
 #' @param degreesFreedom an integer degrees of freedom (default:5)
-#' @param test_type type of test: either "ztest" or "ttest" (default:"ztest")
+#' @param testType type of test: either "ztest" or "ttest" (default:"ztest")
+#' @param adjustmentMethod Method for adjusting P-values for multiple comparisons; any method in p.adjust.methods is permitted (default:'fdr')
 #' @param numCores number of available CPU cores (default:1)
 #'
 #' @return A data.table with individual epistatic terms
@@ -16,7 +17,8 @@ mochi__calculate_individual_epistasis_terms <- function(
   input_list,
   genotype_key,
   degreesFreedom = 5,
-  test_type = "ztest",
+  testType = "ztest",
+  adjustmentMethod = "fdr",
   numCores = 1
   ){
   
@@ -38,8 +40,8 @@ mochi__calculate_individual_epistasis_terms <- function(
       av = ep_term, 
       se = ep_term_SE, 
       degreesFreedom = degreesFreedom,
-      test_type = test_type)]
-    l_cd_fit_temp[, qval_order := p.adjust(pval, method = "fdr")]
+      testType = testType)]
+    l_cd_fit_temp[, qval_order := p.adjust(pval, method = adjustmentMethod)]
     l_cd_fit_temp[, id_bckg := unlist(P_var2id[unlist(.SD)]),,.SDcols = grep("^id_0_", names(l_cd_fit_temp))]
     l_cd_fit_temp[, id_mut := unlist(P_var2id[unlist(.SD)]),,.SDcols = grep(paste0("^id_", x, "_"), names(l_cd_fit_temp))]
     l_cd_fit_temp[, Mutant := mapply(mochi__string_subtract, .SD[[2]], .SD[[1]]),,.SDcols = range(grep("^id_.*_", names(l_cd_fit_temp)))]
@@ -55,7 +57,7 @@ mochi__calculate_individual_epistasis_terms <- function(
     output_list[[x]][, n := as.numeric(x)]
     output_list[[x]][,.SD,,.SDcols = grep("(^id_[1-9])|(^fit_[1-9])|(^se_)", names(output_list[[x]]), invert = T)]
   }))
-  merged_list[, qval_all := p.adjust(pval, method = "fdr")]
+  merged_list[, qval_all := p.adjust(pval, method = adjustmentMethod)]
 
   return(merged_list)
 }

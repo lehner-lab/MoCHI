@@ -72,13 +72,13 @@ mochi__validate_input <- function(
     stop("Invalid 'numReplicates' argument. Only positive integers allowed (zero exclusive).", call. = FALSE)
   }
 
-  #Check FDR_threshold positive double less than 1
-  if(mochi_meta[["FDR_threshold"]]<=0 | mochi_meta[["FDR_threshold"]]>1){
-    stop("Invalid 'FDR_threshold' argument. Only positive doubles <=1 allowed (zero exclusive).", call. = FALSE)
+  #Check significanceThreshold positive double less than 1
+  if(mochi_meta[["significanceThreshold"]]<=0 | mochi_meta[["significanceThreshold"]]>1){
+    stop("Invalid 'significanceThreshold' argument. Only positive doubles <=1 allowed (zero exclusive).", call. = FALSE)
   }
-  #Set FDR_threshold to 2 if FDR_threshold==1 (this effectively disables the threshold because all mutants will have FDR<FDR_threshold)
-  if(mochi_meta[["FDR_threshold"]]==1){
-    mochi_meta[["FDR_threshold"]] <- 2
+  #Set significanceThreshold to 2 if significanceThreshold==1 (this effectively disables the threshold because all mutants will have corrected P-value<significanceThreshold)
+  if(mochi_meta[["significanceThreshold"]]==1){
+    mochi_meta[["significanceThreshold"]] <- 2
   }
 
   #Check testType argument
@@ -93,6 +93,11 @@ mochi__validate_input <- function(
     }
   }else{
     mochi_meta[["orderSubset"]] <- paste0(0:mochi_meta[["maxOrder"]], collapse=",")
+  }
+
+  #Check adjustmentMethod argument
+  if(!mochi_meta[["adjustmentMethod"]] %in% p.adjust.methods){
+    stop(paste0("Invalid 'adjustmentMethod' argument. Only the following allowed: ", paste0(p.adjust.methods, collapse = ", ")), call. = FALSE)
   }
 
   #Check if either workspacePath or (inputFile, outputPath and projectName) specified

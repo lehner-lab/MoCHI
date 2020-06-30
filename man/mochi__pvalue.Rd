@@ -4,7 +4,7 @@
 \alias{mochi__pvalue}
 \title{mochi__pvalue}
 \usage{
-mochi__pvalue(av, se, degreesFreedom = 5, mu = 0, test_type = "ztest")
+mochi__pvalue(av, se, degreesFreedom = 5, mu = 0, testType = "ztest")
 }
 \arguments{
 \item{av}{sample mean (required)}
@@ -15,7 +15,7 @@ mochi__pvalue(av, se, degreesFreedom = 5, mu = 0, test_type = "ztest")
 
 \item{mu}{population mean (default:0)}
 
-\item{test_type}{type of test: either "ztest" or "ttest" (default:"ztest")}
+\item{testType}{type of test: either "ztest" or "ttest" (default:"ztest")}
 }
 \value{
 P-value

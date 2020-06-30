@@ -11,7 +11,8 @@
 #' @param numCores Number of available CPU cores (default:1)
 #' @param maxOrder Maximum number of nucleotide or amino acid substitutions for coding or non-coding sequences respectively (default:2)
 #' @param numReplicates Number of biological replicates (or sample size) from which fitness and error estimates derived. Used to calculate degrees of freedom if 'testType' is 'ttest' (default:2)
-#' @param FDR_threshold FDR threshold for significant specific and background averaged terms (default:0.1; 1 disables the treshold)
+#' @param significanceThreshold Significance threshold for specific and background averaged terms (default:0.1; 1 disables the treshold)
+#' @param adjustmentMethod Method for adjusting P-values for multiple comparisons; any method in p.adjust.methods is permitted (default:'fdr')
 #' @param testType Type of statistical test to use: either 'ztest' or 'ttest' (default:'ztest')
 #' @param orderSubset Comma-separated list of (integer) orders of epistatic terms to retain for fitness reconstruction or 'all' (default:'all')
 #'
@@ -28,7 +29,8 @@ mochi <- function(
   numCores=1,
   maxOrder=2,
   numReplicates=2,
-  FDR_threshold=0.1,
+  significanceThreshold=0.1,
+  adjustmentMethod="fdr",
   testType="ztest",
   orderSubset="all"
   ){
@@ -55,7 +57,8 @@ mochi <- function(
     "numCores" = list(numCores, c("integer")), #strictly positive integer -- checked in mochi__validate_input
     "maxOrder" = list(maxOrder, c("integer")), #strictly positive integer -- checked in mochi__validate_input
     "numReplicates" = list(numReplicates, c("integer")), #strictly positive integer -- checked in mochi__validate_input
-    "FDR_threshold" = list(FDR_threshold, c("double")), #positive double less than 1 (zero exclusive) -- checked in mochi__validate_input
+    "significanceThreshold" = list(significanceThreshold, c("double")), #positive double less than 1 (zero exclusive) -- checked in mochi__validate_input
+    "adjustmentMethod" = list(adjustmentMethod, c("character")), #character string in p.adjust.methods -- checked in mochi__validate_input
     "testType" = list(testType, c("character")), #character string (either 'ttest' or 'ztest') -- checked in mochi__validate_input
     "orderSubset" = list(orderSubset, c("character")) #comma-separated list of integers or "all" -- checked in dimsum__validate_input
     )
@@ -98,7 +101,8 @@ mochi <- function(
     exp_metadata[['numCores']] <- exp_metadata_mochi[['numCores']]
     exp_metadata[['maxOrder']] <- exp_metadata_mochi[['maxOrder']]
     exp_metadata[['numReplicates']] <- exp_metadata_mochi[['numReplicates']]
-    exp_metadata[['FDR_threshold']] <- exp_metadata_mochi[['FDR_threshold']]
+    exp_metadata[['significanceThreshold']] <- exp_metadata_mochi[['significanceThreshold']]
+    exp_metadata[['adjustmentMethod']] <- exp_metadata_mochi[['adjustmentMethod']]
     exp_metadata[['testType']] <- exp_metadata_mochi[['testType']]
     exp_metadata[['orderSubset']] <- exp_metadata_mochi[['orderSubset']]
   }
