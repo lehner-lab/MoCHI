@@ -1,0 +1,8 @@
+n	total_possible_combinations	number_interactions_raw	number_interactions_1d	number_preserved_interactions_1d
+1	25	24	23	23
+2	217	203	155	150
+3	1061	611	500	406
+4	2335	950	824	701
+5	2318	853	789	734
+6	975	333	319	304
+7	123	32	32	31
