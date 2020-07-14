@@ -2,13 +2,13 @@ library(data.table)
 
 highest_order = 7
 
-load("mochi_output/S7_1D/tmp/epistasis/S7_1D_epistasis_terms.RData")
-Epistasis_1D <- EpGlobal
-rm(CD_ep, EpGlobal, L_CD_fit)
+load("mochi_output/S7_1D/tmp/epistasis/S7_1D_background_averaged_epistasis_terms.RData")
+Epistasis_1D <- bckgavg_epistasis_dt
+rm(bckgavg_epistasis_dt)
 
-load("mochi_output/S7_RAW/tmp/epistasis/S7_RAW_epistasis_terms.RData")
-Epistasis_Raw <- EpGlobal
-rm(CD_ep, EpGlobal, L_CD_fit)
+load("mochi_output/S7_RAW/tmp/epistasis/S7_RAW_background_averaged_epistasis_terms.RData")
+Epistasis_Raw <- bckgavg_epistasis_dt
+rm(bckgavg_epistasis_dt)
 
 
 
