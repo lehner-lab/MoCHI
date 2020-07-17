@@ -4,32 +4,24 @@
 \alias{mochi}
 \title{Run MoCHI pipeline}
 \usage{
-mochi(
-  workspacePath = NULL,
-  inputFile = NULL,
-  outputPath = NULL,
-  projectName = NULL,
-  startStage = 1,
-  stopStage = 2,
-  numCores = 1,
-  maxOrder = 2,
-  numReplicates = 2,
-  significanceThreshold = 0.1,
-  adjustmentMethod = "fdr",
-  testType = "ztest",
-  orderSubset = "all"
-)
+mochi(workspacePath = NULL, inputFile = NULL, outputPath = NULL,
+  projectName = NULL, analysisName = "mochi", startStage = 0,
+  stopStage = 2, numCores = 1, maxOrder = 2, numReplicates = 2,
+  significanceThreshold = 0.1, adjustmentMethod = "fdr",
+  testType = "ztest", orderSubset = "all", inferAdditiveTrait = F)
 }
 \arguments{
 \item{workspacePath}{Path to DiMSum workspace .RData file after successful completion of stage 7}
 
 \item{inputFile}{Path to plain text file with 'WT', 'fitness', 'sigma' and 'nt_seq' or ('aa_seq' and 'STOP') columns}
 
-\item{outputPath}{Path to directory to use for output files}
+\item{outputPath}{Path to directory to use for output files (required if inputFile supplied)}
 
-\item{projectName}{Project name}
+\item{projectName}{Project name (required if inputFile supplied)}
 
-\item{startStage}{Start at a specified pipeline stage (default:1)}
+\item{analysisName}{Analysis (or run) name (default:'mochi')}
+
+\item{startStage}{Start at a specified pipeline stage (default:0)}
 
 \item{stopStage}{Stop at a specified pipeline stage (default:2)}
 
@@ -46,6 +38,8 @@ mochi(
 \item{testType}{Type of statistical test to use: either 'ztest' or 'ttest' (default:'ztest')}
 
 \item{orderSubset}{Comma-separated list of (integer) orders of epistatic terms to retain for fitness reconstruction or 'all' (default:'all')}
+
+\item{inferAdditiveTrait}{Infer additive trait and remove associated global epistasis before calculating higher order genetic interactions (default:F)}
 }
 \value{
 Nothing

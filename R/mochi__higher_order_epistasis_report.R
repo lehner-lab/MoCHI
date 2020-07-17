@@ -1,16 +1,16 @@
 
-#' mochi_stage_higher_order_epistasis_report
+#' mochi__higher_order_epistasis_report
 #'
 #' Generate higher order epistasis summary plots.
 #'
-#' @param dimsum_meta an experiment metadata object (required)
+#' @param mochi_meta an experiment metadata object (required)
 #' @param report_outpath final report output path (required)
 #'
 #' @return Nothing
 #' @export
 #' @import data.table
-mochi_stage_higher_order_epistasis_report <- function(
-  dimsum_meta,
+mochi__higher_order_epistasis_report <- function(
+  mochi_meta,
   report_outpath
   ){
   #Create report directory (if doesn't already exist)
@@ -18,7 +18,7 @@ mochi_stage_higher_order_epistasis_report <- function(
   suppressWarnings(dir.create(report_outpath))
 
   #Load data
-  load(file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_background_averaged_epistasis_terms.RData')))
+  load(file.path(mochi_meta[["epistasis_path"]], paste0(mochi_meta[["projectName"]], '_background_averaged_epistasis_terms.RData')))
 
   #Plot effect of all single mutants in different backgrounds - first order
   bckgavg_epistasis_dt[, perc_positive := positive_sig/n_bckg*100]

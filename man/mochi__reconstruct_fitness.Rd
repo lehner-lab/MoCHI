@@ -4,12 +4,8 @@
 \alias{mochi__reconstruct_fitness}
 \title{mochi__reconstruct_fitness}
 \usage{
-mochi__reconstruct_fitness(
-  input_list,
-  genotype_key,
-  order_subset,
-  numCores = 1
-)
+mochi__reconstruct_fitness(input_list, genotype_key, order_subset,
+  numCores = 1)
 }
 \arguments{
 \item{input_list}{list of combinatoral landscape data.tables with corresponding fitness and error as provided by mochi__add_fitness_to_landscapes (required)}

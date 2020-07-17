@@ -4,14 +4,9 @@
 \alias{mochi__calculate_individual_epistasis_terms}
 \title{mochi__calculate_individual_epistasis_terms}
 \usage{
-mochi__calculate_individual_epistasis_terms(
-  input_list,
-  genotype_key,
-  degreesFreedom = 5,
-  testType = "ztest",
-  adjustmentMethod = "fdr",
-  numCores = 1
-)
+mochi__calculate_individual_epistasis_terms(input_list, genotype_key,
+  degreesFreedom = 5, testType = "ztest", adjustmentMethod = "fdr",
+  numCores = 1)
 }
 \arguments{
 \item{input_list}{list of combinatoral landscape data.tables with corresponding fitness and error as provided by mochi__add_fitness_to_landscapes (required)}

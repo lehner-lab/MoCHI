@@ -48,7 +48,7 @@ mochi__validate_input <- function(
   }
 
   #Check mochiStartStage argument
-  if(mochi_meta[["mochiStartStage"]]<=0){
+  if(mochi_meta[["mochiStartStage"]]<0){
     stop("Invalid 'mochiStartStage' argument. Only positive integers allowed (zero exclusive).", call. = FALSE)
   }
 

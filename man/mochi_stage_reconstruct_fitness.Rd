@@ -4,22 +4,19 @@
 \alias{mochi_stage_reconstruct_fitness}
 \title{mochi_stage_reconstruct_fitness}
 \usage{
-mochi_stage_reconstruct_fitness(
-  dimsum_meta,
-  epistasis_outpath,
-  report = TRUE,
-  report_outpath = NULL,
-  save_workspace = TRUE
-)
+mochi_stage_reconstruct_fitness(mochi_meta, reconstruct_outpath,
+  report = TRUE, report_outpath = NULL, save_workspace = TRUE)
 }
 \arguments{
-\item{dimsum_meta}{an experiment metadata object (required)}
+\item{mochi_meta}{an experiment metadata object (required)}
 
-\item{epistasis_outpath}{output path for saved objects (required)}
+\item{reconstruct_outpath}{output path for saved objects (required)}
 
 \item{report}{whether or not to generate fitness summary plots (default: TRUE)}
 
 \item{report_outpath}{fitness report output path}
+
+\item{save_workspace}{whether or not to save the current workspace (default: TRUE)}
 }
 \value{
 Nothing

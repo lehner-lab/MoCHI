@@ -3,18 +3,19 @@
 #'
 #' Determine combinatorial complete landscapes.
 #'
-#' @param dimsum_meta an experiment metadata object (required)
-#' @param epistasis_outpath output path for saved objects (required)
+#' @param mochi_meta an experiment metadata object (required)
+#' @param landscapes_outpath output path for saved objects (required)
 #' @param order_max an integer number of maximum mutations to consider (default:1)
 #' @param report whether or not to generate fitness summary plots (default: TRUE)
 #' @param report_outpath fitness report output path
+#' @param save_workspace whether or not to save the current workspace (default: TRUE)
 #'
 #' @return Nothing
 #' @export
 #' @import data.table
 mochi_stage_combinatorial_complete_landscapes <- function(
-  dimsum_meta,
-  epistasis_outpath,
+  mochi_meta,
+  landscapes_outpath,
   order_max = 1,
   report = TRUE,
   report_outpath = NULL,
@@ -22,19 +23,23 @@ mochi_stage_combinatorial_complete_landscapes <- function(
   ){
   #Whether or not to execute the system command
   this_stage <- 1
-  execute <- (dimsum_meta[["mochiStartStage"]] <= this_stage & (dimsum_meta[["mochiStopStage"]] == 0 | dimsum_meta[["mochiStopStage"]] >= this_stage))
-  #Epistasis paths
-  dimsum_meta[["epistasis_path"]] <- file.path(epistasis_outpath)
+  execute <- (mochi_meta[["mochiStartStage"]] <= this_stage & (mochi_meta[["mochiStopStage"]] == 0 | mochi_meta[["mochiStopStage"]] >= this_stage))
+
+  #Save current workspace for debugging purposes
+  if(save_workspace){mochi__save_metadata(mochi_meta = mochi_meta, n = 2)}
+
+  #Landscapes path
+  mochi_meta[["landscapes_path"]] <- landscapes_outpath
 
   #Create/overwrite fitness directory (if executed)
-  epistasis_outpath <- gsub("/$", "", epistasis_outpath)
-  mochi__create_dir(epistasis_outpath, execute = execute, message = "MoCHI STAGE: DETERMINE COMBINATORIAL COMPLETE LANDSCAPES", overwrite_dir = FALSE) 
+  landscapes_outpath <- gsub("/$", "", landscapes_outpath)
+  mochi__create_dir(landscapes_outpath, execute = execute, message = "MoCHI STAGE 1: DETERMINE COMBINATORIAL COMPLETE LANDSCAPES", overwrite_dir = FALSE) 
 
-  if(!execute){return()}
+  if(!execute){return(mochi_meta)}
 
   #Sequence type
   sequence_type <- "nucleotide"
-  if(dimsum_meta[["sequenceType"]]=="coding"){
+  if(mochi_meta[["sequenceType"]]=="coding"){
     sequence_type <- "aminoacid"
   }
 
@@ -45,11 +50,17 @@ mochi_stage_combinatorial_complete_landscapes <- function(
   ### Load variant data
   ###########################
 
+  #Set variant data path
+  variant_data_path <- file.path(mochi_meta[["fitness_path"]], paste0(mochi_meta[["projectName"]], '_fitness_replicates.RData'))
+  if(mochi_meta[["inferAdditiveTrait"]]){
+    variant_data_path <- file.path(mochi_meta[["additivetrait_path"]], paste0(mochi_meta[["projectName"]], '_fitness_replicates.RData'))
+  }
+
   #load variant data from RData file
-  if(!file.exists(file.path(dimsum_meta[["fitness_path"]], paste0(dimsum_meta[["projectName"]], '_fitness_replicates.RData')))){
+  if(!file.exists(variant_data_path)){
     stop(paste0("Cannot determine combinatorial complete landscapes. Fitness file not found."), call. = FALSE)
   }else{
-    load(file.path(dimsum_meta[["fitness_path"]], paste0(dimsum_meta[["projectName"]], '_fitness_replicates.RData')))
+    load(variant_data_path)
   }
 
   #Remove sequences with STOP codons or silent mutations if amino acid sequence, check for duplicates
@@ -72,16 +83,16 @@ mochi_stage_combinatorial_complete_landscapes <- function(
   genokey_dt <- fitness_list[["genotype_key"]]
 
   #Save genotype fitness
-  save(fitness_dt, genokey_dt, file = file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_genotypes_fitness.RData')))
+  save(fitness_dt, genokey_dt, file = file.path(landscapes_outpath, paste0(mochi_meta[["projectName"]], '_genotypes_fitness.RData')))
 
   #Get all combinatorial complete landscapes of all orders
   cclands_list <- mochi__get_all_combinatorial_complete_landscapes(
     order_max = order_max,
     all_variants_char = fitness_dt[,var],
-    numCores = dimsum_meta[['numCores']])
+    numCores = mochi_meta[['numCores']])
 
   #Save all combinatorial complete landscapes of all orders
-  save(cclands_list, file = file.path(dimsum_meta[["epistasis_path"]], paste0(dimsum_meta[["projectName"]], '_complete_landscapes.RData')))
+  save(cclands_list, file = file.path(landscapes_outpath, paste0(mochi_meta[["projectName"]], '_complete_landscapes.RData')))
 
   #Get a summary of the combinatorial of complete landscapes and the number of backgrounds where each n combination of mutations are found
   cclands_summary = do.call("rbind", lapply(names(cclands_list), function(x){
@@ -96,4 +107,5 @@ mochi_stage_combinatorial_complete_landscapes <- function(
   }))
   print(cclands_summary)
 
+  return(mochi_meta)
 }

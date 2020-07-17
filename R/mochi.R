@@ -4,9 +4,10 @@
 #'
 #' @param workspacePath Path to DiMSum workspace .RData file after successful completion of stage 7
 #' @param inputFile Path to plain text file with 'WT', 'fitness', 'sigma' and 'nt_seq' or ('aa_seq' and 'STOP') columns
-#' @param outputPath Path to directory to use for output files
-#' @param projectName Project name
-#' @param startStage Start at a specified pipeline stage (default:1)
+#' @param outputPath Path to directory to use for output files (required if inputFile supplied)
+#' @param projectName Project name (required if inputFile supplied)
+#' @param analysisName Analysis (or run) name (default:'mochi')
+#' @param startStage Start at a specified pipeline stage (default:0)
 #' @param stopStage Stop at a specified pipeline stage (default:2)
 #' @param numCores Number of available CPU cores (default:1)
 #' @param maxOrder Maximum number of nucleotide or amino acid substitutions for coding or non-coding sequences respectively (default:2)
@@ -15,6 +16,7 @@
 #' @param adjustmentMethod Method for adjusting P-values for multiple comparisons; any method in p.adjust.methods is permitted (default:'fdr')
 #' @param testType Type of statistical test to use: either 'ztest' or 'ttest' (default:'ztest')
 #' @param orderSubset Comma-separated list of (integer) orders of epistatic terms to retain for fitness reconstruction or 'all' (default:'all')
+#' @param inferAdditiveTrait Infer additive trait and remove associated global epistasis before calculating higher order genetic interactions (default:F)
 #'
 #' @return Nothing
 #' @export
@@ -24,7 +26,8 @@ mochi <- function(
   inputFile=NULL,
   outputPath=NULL,
   projectName=NULL,
-  startStage=1,
+  analysisName="mochi",
+  startStage=0,
   stopStage=2,
   numCores=1,
   maxOrder=2,
@@ -32,7 +35,8 @@ mochi <- function(
   significanceThreshold=0.1,
   adjustmentMethod="fdr",
   testType="ztest",
-  orderSubset="all"
+  orderSubset="all",
+  inferAdditiveTrait=F
   ){
 
   #Display welcome
@@ -48,10 +52,11 @@ mochi <- function(
   ###########################
 
   mochi_arg_list <- list(
-    "workspacePath" = list(workspacePath, c("character", "NULL")), #file exists (if not NULL) -- checked in dimsum__validate_input
-    "inputFile" = list(inputFile, c("character", "NULL")), #file exists (if not NULL) -- checked in dimsum__validate_input
+    "workspacePath" = list(workspacePath, c("character", "NULL")), #file exists (if not NULL) -- checked in mochi__validate_input
+    "inputFile" = list(inputFile, c("character", "NULL")), #file exists (if not NULL) -- checked in mochi__validate_input
     "outputPath" = list(outputPath, c("character", "NULL")), #directory exists (if not NULL) -- checked in mochi__validate_input
     "projectName" = list(projectName, c("character", "NULL")), #character string (if not NULL) -- checked in mochi__validate_input
+    "analysisName" = list(analysisName, c("character")), #character string -- checked in mochi__validate_input
     "mochiStartStage" = list(startStage, c("integer")), #strictly positive integer -- checked in mochi__validate_input
     "mochiStopStage" = list(stopStage, c("integer")), #positive integer (zero inclusive) -- checked in mochi__validate_input
     "numCores" = list(numCores, c("integer")), #strictly positive integer -- checked in mochi__validate_input
@@ -60,7 +65,8 @@ mochi <- function(
     "significanceThreshold" = list(significanceThreshold, c("double")), #positive double less than 1 (zero exclusive) -- checked in mochi__validate_input
     "adjustmentMethod" = list(adjustmentMethod, c("character")), #character string in p.adjust.methods -- checked in mochi__validate_input
     "testType" = list(testType, c("character")), #character string (either 'ttest' or 'ztest') -- checked in mochi__validate_input
-    "orderSubset" = list(orderSubset, c("character")) #comma-separated list of integers or "all" -- checked in dimsum__validate_input
+    "orderSubset" = list(orderSubset, c("character")), #comma-separated list of integers or "all" -- checked in mochi__validate_input
+    "inferAdditiveTrait" = list(inferAdditiveTrait, c("logical")) #logical -- checked in mochi__validate_input
     )
 
   #Validate input
@@ -96,6 +102,7 @@ mochi <- function(
     }
     #Additional arguments
     exp_metadata <- pipeline[['5_analyse']]
+    exp_metadata[['analysisName']] <- exp_metadata_mochi[['analysisName']]
     exp_metadata[['mochiStartStage']] <- exp_metadata_mochi[['mochiStartStage']]
     exp_metadata[['mochiStopStage']] <- exp_metadata_mochi[['mochiStopStage']]
     exp_metadata[['numCores']] <- exp_metadata_mochi[['numCores']]
@@ -105,29 +112,44 @@ mochi <- function(
     exp_metadata[['adjustmentMethod']] <- exp_metadata_mochi[['adjustmentMethod']]
     exp_metadata[['testType']] <- exp_metadata_mochi[['testType']]
     exp_metadata[['orderSubset']] <- exp_metadata_mochi[['orderSubset']]
+    exp_metadata[['inferAdditiveTrait']] <- exp_metadata_mochi[['inferAdditiveTrait']]
   }
+
+  #Create mochi directory (if doesn't already exist)
+  exp_metadata[["mochi_path"]] <- file.path(exp_metadata[["tmp_path"]], exp_metadata[["analysisName"]])
+  suppressWarnings(dir.create(exp_metadata[["mochi_path"]]))
 
   ### Pipeline stages
   ###########################
 
-  #Determine combinatorial complete landscapes
-  mochi_stage_combinatorial_complete_landscapes(
-    dimsum_meta = exp_metadata,
-    epistasis_outpath = file.path(exp_metadata[["tmp_path"]], "epistasis"),
-    order_max = exp_metadata[["maxOrder"]],
-    report_outpath = file.path(exp_metadata[["tmp_path"]], "epistasis"))
+  ### Start pipeline tracking
+  pipeline <- list()
+  pipeline[['initial']] <- exp_metadata
 
-  #Obtain all epistatic terms, background relative and background averaged terms
-  mochi_stage_higher_order_epistasis(
-    dimsum_meta = exp_metadata,
-    epistasis_outpath = file.path(exp_metadata[["tmp_path"]], "epistasis"),
-    report_outpath = file.path(exp_metadata[["tmp_path"]], "epistasis"))
+  ### Stage 0: Infer additive trait using artificial neural network
+  pipeline[['0_additivetrait']] <- mochi_stage_infer_additive_trait(
+    mochi_meta = pipeline[['initial']],
+    additivetrait_outpath = file.path(pipeline[['initial']][["tmp_path"]], exp_metadata[["analysisName"]], "0_additivetrait"),
+    report_outpath = file.path(pipeline[['initial']][["tmp_path"]], exp_metadata[["analysisName"]], "0_additivetrait"))
 
-  #Reconstruct fitness from individual terms of epistasis
-  mochi_stage_reconstruct_fitness(
-    dimsum_meta = exp_metadata,
-    epistasis_outpath = file.path(exp_metadata[["tmp_path"]], "epistasis"),
-    report_outpath = file.path(exp_metadata[["tmp_path"]], "epistasis"))
+  ### Stage 1: Determine combinatorial complete landscapes
+  pipeline[['1_landscapes']] <- mochi_stage_combinatorial_complete_landscapes(
+    mochi_meta = pipeline[['0_additivetrait']],
+    landscapes_outpath = file.path(pipeline[['0_additivetrait']][["tmp_path"]], exp_metadata[["analysisName"]], "1_landscapes"),
+    order_max = pipeline[['0_additivetrait']][["maxOrder"]],
+    report_outpath = file.path(pipeline[['0_additivetrait']][["tmp_path"]], exp_metadata[["analysisName"]], "1_landscapes"))
+
+  ### Stage 2: Obtain all epistatic terms, background relative and background averaged terms
+  pipeline[['2_epistasis']] <- mochi_stage_higher_order_epistasis(
+    mochi_meta = pipeline[['1_landscapes']],
+    epistasis_outpath = file.path(pipeline[['1_landscapes']][["tmp_path"]], exp_metadata[["analysisName"]], "2_epistasis"),
+    report_outpath = file.path(pipeline[['1_landscapes']][["tmp_path"]], exp_metadata[["analysisName"]], "2_epistasis"))
+
+  ### Stage 3: Reconstruct fitness from individual terms of epistasis
+  pipeline[['3_reconstruct']] <- mochi_stage_reconstruct_fitness(
+    mochi_meta = pipeline[['2_epistasis']],
+    reconstruct_outpath = file.path(pipeline[['2_epistasis']][["tmp_path"]], exp_metadata[["analysisName"]], "3_reconstruct"),
+    report_outpath = file.path(pipeline[['2_epistasis']][["tmp_path"]], exp_metadata[["analysisName"]], "3_reconstruct"))
 
   ### Save workspace
   ###########################

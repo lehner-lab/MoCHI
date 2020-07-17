@@ -5,14 +5,10 @@
 \alias{mochi__calculate_background_averaged_epistasis_terms}
 \title{mochi__calculate_background_averaged_epistasis_terms}
 \usage{
-mochi__calculate_background_averaged_epistasis_terms(
-  input_dt,
-  degreesFreedom = 5,
-  testType = "ztest",
-  significanceThreshold = 0.1,
-  adjustmentMethod = "fdr",
-  numCores = 1
-)
+mochi__calculate_background_averaged_epistasis_terms(input_dt,
+  degreesFreedom = 5, testType = "ztest",
+  significanceThreshold = 0.1, adjustmentMethod = "fdr",
+  numCores = 1)
 }
 \arguments{
 \item{input_dt}{data.table as provided by calculate_individual_epistatis_terms (required)}

@@ -4,7 +4,8 @@
 \alias{mochi__add_fitness_to_landscapes}
 \title{mochi__add_fitness_to_landscapes}
 \usage{
-mochi__add_fitness_to_landscapes(landscape_list, fitness_dt, numCores = 1)
+mochi__add_fitness_to_landscapes(landscape_list, fitness_dt,
+  numCores = 1)
 }
 \arguments{
 \item{landscape_list}{list of landscape data (required)}
