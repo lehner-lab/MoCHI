@@ -56,4 +56,11 @@ setup(
     # Manual control if final package is compressible or not, set False to prevent the .egg from being made
     # zip_safe=False,
 
+    scripts=[
+        'pymochi/bin/run_mochi.py', 
+        'pymochi/bin/demo_mochi.py'],
+    package_data={'pymochi': [
+        'data/model_design.txt',
+        'data/fitness_abundance.RData',
+        'data/fitness_binding.RData']},
 )
