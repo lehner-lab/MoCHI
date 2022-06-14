@@ -1,0 +1,3 @@
+phenotype	transformation	trait	file
+Abundance	TwoStateFractionFolded	Folding	
+Binding	ThreeStateFractionBound	Folding,Binding	
