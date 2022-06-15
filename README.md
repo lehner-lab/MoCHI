@@ -64,7 +64,7 @@ MoCHI requires a table describing the measured phenotypes and how they relate to
    $ run_mochi.py model_design.txt
    ```
 
-Get help with optional command line parameters:
+Get help with additional command line parameters:
    ```
    $ run_mochi.py -h
    ```
