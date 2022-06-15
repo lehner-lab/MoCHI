@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MoCHI API Documentation &mdash; MoCHI  documentation</title>
+      <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+        <script src="_static/jquery.js"></script>
+        <script src="_static/underscore.js"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="_static/doctools.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="Getting Started" href="getting_started.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="index.html" class="icon icon-home"> MoCHI
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="getting_started.html">Getting Started</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">MoCHI API Documentation</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#module-pymochi.data">The “data” module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#module-pymochi.models">The “models” module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#module-pymochi.misc">The “misc” module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#module-pymochi.report">The “report” module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#module-pymochi.transformation">The “transformation” module</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">MoCHI</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home"></a> &raquo;</li>
+      <li>MoCHI API Documentation</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/api.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <div class="section" id="module-pymochi">
+<span id="mochi-api-documentation"></span><h1>MoCHI API Documentation<a class="headerlink" href="#module-pymochi" title="Permalink to this heading"></a></h1>
+<p>A tool to fit mechanistic models to deep mutational scanning data</p>
+<div class="section" id="module-pymochi.data">
+<span id="the-data-module"></span><h2>The “data” module<a class="headerlink" href="#module-pymochi.data" title="Permalink to this heading"></a></h2>
+<p>MoCHI data module</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="pymochi.data.FastTensorDataLoader">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pymochi.data.</span></span><span class="sig-name descname"><span class="pre">FastTensorDataLoader</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">tensors</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">32</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shuffle</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/data.html#FastTensorDataLoader"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.data.FastTensorDataLoader" title="Permalink to this definition"></a></dt>
+<dd><p>A DataLoader-like object for a set of tensors that can be much faster than
+TensorDataset + DataLoader because dataloader grabs individual indices of
+the dataset and calls cat (slow).
+Source: <a class="reference external" href="https://discuss.pytorch.org/t/dataloader-much-slower-than-manual-batching/27014/6">https://discuss.pytorch.org/t/dataloader-much-slower-than-manual-batching/27014/6</a></p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pymochi.data.FitnessData">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pymochi.data.</span></span><span class="sig-name descname"><span class="pre">FitnessData</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">file_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'RData'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">order_subset</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">downsample_proportion</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/data.html#FitnessData"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.data.FitnessData" title="Permalink to this definition"></a></dt>
+<dd><p>A class for the storage of fitness data from a single DMS experiment.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.data.FitnessData.read_fitness_r">
+<span class="sig-name descname"><span class="pre">read_fitness_r</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">order_subset</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">downsample_proportion</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/data.html#FitnessData.read_fitness_r"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.data.FitnessData.read_fitness_r" title="Permalink to this definition"></a></dt>
+<dd><p>Read fitness from DiMSum RData file.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>file_path</strong> – path to RData file (required).</p></li>
+<li><p><strong>name</strong> – name of fitness dataset (optional).</p></li>
+<li><p><strong>order_subset</strong> – list of mutation orders corresponding to retained variants (optional).</p></li>
+<li><p><strong>downsample_proportion</strong> – proportion of random variants to retain including WT (optional).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Nothing.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pymochi.data.MochiData">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pymochi.data.</span></span><span class="sig-name descname"><span class="pre">MochiData</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model_design</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">order_subset</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">downsample_proportion</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_interaction_order</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_observed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">k_folds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">validation_factor</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">holdout_minobs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">holdout_orders</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">holdout_WT</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">features</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[]</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/data.html#MochiData"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.data.MochiData" title="Permalink to this definition"></a></dt>
+<dd><p>A class for the storage of genotype-phenotype data from a collection of DMS experiments.
+An object of this class is required for model inference with MoCHI.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.data.MochiData.check_model_design">
+<span class="sig-name descname"><span class="pre">check_model_design</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model_design</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/data.html#MochiData.check_model_design"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.data.MochiData.check_model_design" title="Permalink to this definition"></a></dt>
+<dd><p>Check model design valid and reformat.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>model_design</strong> – Model design data frame with phenotype, transformation, trait and file columns (required).</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>A reformatted model design data frame.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.data.MochiData.define_cross_validation_groups">
+<span class="sig-name descname"><span class="pre">define_cross_validation_groups</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">k_folds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">validation_factor</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">holdout_minobs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">holdout_orders</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">holdout_WT</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/data.html#MochiData.define_cross_validation_groups"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.data.MochiData.define_cross_validation_groups" title="Permalink to this definition"></a></dt>
+<dd><p>Define cross-validation groups.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>k_folds</strong> – Number of cross-validation folds (default:10).</p></li>
+<li><p><strong>seed</strong> – Random seed for defining cross-validation groups (default:1).</p></li>
+<li><p><strong>validation_factor</strong> – Relative size of validation set with respect to test set (default:2).</p></li>
+<li><p><strong>holdout_minobs</strong> – Minimum number of observations of additive trait weights to be held out (default:0).</p></li>
+<li><p><strong>holdout_orders</strong> – list of mutation orders corresponding to retained variants (default:[] i.e. variants of all mutation orders can be held out).</p></li>
+<li><p><strong>holdout_WT</strong> – list of mutation orders corresponding to retained variants (default:False).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Nothing.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.data.MochiData.filter_features">
+<span class="sig-name descname"><span class="pre">filter_features</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">features</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/data.html#MochiData.filter_features"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.data.MochiData.filter_features" title="Permalink to this definition"></a></dt>
+<dd><p>Filter features by name.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>features</strong> – list of feature names to filter (default:[] i.e. all features retained).</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Nothing.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.data.MochiData.get_data">
+<span class="sig-name descname"><span class="pre">get_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">training_resample</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/data.html#MochiData.get_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.data.MochiData.get_data" title="Permalink to this definition"></a></dt>
+<dd><p>Get data for a specified cross-validation fold.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fold</strong> – Cross-validation fold (default:1).</p></li>
+<li><p><strong>seed</strong> – Random seed for training target data resampling (default:1).</p></li>
+<li><p><strong>training_resample</strong> – Whether or not to add random noise to training target data proportional to target error (default:True).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Dictionary of dictionaries of tensors.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.data.MochiData.get_data_index">
+<span class="sig-name descname"><span class="pre">get_data_index</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">indices</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[]</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/data.html#MochiData.get_data_index"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.data.MochiData.get_data_index" title="Permalink to this definition"></a></dt>
+<dd><p>Get data corresponding to specific variants (by index).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>indices</strong> – Variant/observation indices (default:None i.e. all indices).</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Dictionary of dictionary of tensors (select, feature and target tensors only).</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.data.MochiData.merge_datasets">
+<span class="sig-name descname"><span class="pre">merge_datasets</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data_list</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/data.html#MochiData.merge_datasets"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.data.MochiData.merge_datasets" title="Permalink to this definition"></a></dt>
+<dd><p>Merge variant tables from a list of FitnessData objects with same WT and sequence type.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>data_list</strong> – list of FitnessData objects to merge (required).</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>A merged FitnessData object.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.data.MochiData.one_hot_encode_features">
+<span class="sig-name descname"><span class="pre">one_hot_encode_features</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">include_WT</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/data.html#MochiData.one_hot_encode_features"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.data.MochiData.one_hot_encode_features" title="Permalink to this definition"></a></dt>
+<dd><p>1-hot encode sequences.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>include_WT</strong> – Whether or not to include WT feature (default:True).</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>A data frame with 1-hot sequences.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.data.MochiData.one_hot_encode_interactions">
+<span class="sig-name descname"><span class="pre">one_hot_encode_interactions</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">max_order</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exclude</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[0]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_cells</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1000000000.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_observed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">features</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[]</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/data.html#MochiData.one_hot_encode_interactions"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.data.MochiData.one_hot_encode_interactions" title="Permalink to this definition"></a></dt>
+<dd><p>Add interaction terms to 1-hot encoding data frame.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>max_order</strong> – Maximum interaction order (default:2).</p></li>
+<li><p><strong>exclude</strong> – Column indices to exclude from interactions (default:0 i.e. WT).</p></li>
+<li><p><strong>max_cells</strong> – Maximum matrix cells permitted (default:1billion).</p></li>
+<li><p><strong>min_observed</strong> – Minimum number of observations required to include interaction term (default:2).</p></li>
+<li><p><strong>features</strong> – list of feature names to filter (default:[] i.e. all  features retained).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Nothing.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.data.MochiData.one_hot_encode_phenotypes">
+<span class="sig-name descname"><span class="pre">one_hot_encode_phenotypes</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/data.html#MochiData.one_hot_encode_phenotypes"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.data.MochiData.one_hot_encode_phenotypes" title="Permalink to this definition"></a></dt>
+<dd><p>1-hot encode phenotypes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>A data frame with 1-hot phenotypes.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-pymochi.models">
+<span id="the-models-module"></span><h2>The “models” module<a class="headerlink" href="#module-pymochi.models" title="Permalink to this heading"></a></h2>
+<p>MoCHI model module</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="pymochi.models.ConstrainedLinear">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pymochi.models.</span></span><span class="sig-name descname"><span class="pre">ConstrainedLinear</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">in_features</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">out_features</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bias</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dtype</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/models.html#ConstrainedLinear"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.models.ConstrainedLinear" title="Permalink to this definition"></a></dt>
+<dd><p>A linear layer constrained to positive weights only.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.models.ConstrainedLinear.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/models.html#ConstrainedLinear.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.models.ConstrainedLinear.forward" title="Permalink to this definition"></a></dt>
+<dd><p>Defines the computation performed at every call.</p>
+<p>Should be overridden by all subclasses.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Although the recipe for forward pass needs to be defined within
+this function, one should call the <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code> instance afterwards
+instead of this since the former takes care of running the
+registered hooks while the latter silently ignores them.</p>
+</div>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pymochi.models.MochiModel">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pymochi.models.</span></span><span class="sig-name descname"><span class="pre">MochiModel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_shape</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mask</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_design</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/models.html#MochiModel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.models.MochiModel" title="Permalink to this definition"></a></dt>
+<dd><p>A custom model/module.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.models.MochiModel.calculate_l1l2_norm">
+<span class="sig-name descname"><span class="pre">calculate_l1l2_norm</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/models.html#MochiModel.calculate_l1l2_norm"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.models.MochiModel.calculate_l1l2_norm" title="Permalink to this definition"></a></dt>
+<dd><p>Calculate L1 and L2 norm of additive trait parameters (excluding WT).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>Tuple of L2 an L2 norms.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.models.MochiModel.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">select</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">X</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mask</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/models.html#MochiModel.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.models.MochiModel.forward" title="Permalink to this definition"></a></dt>
+<dd><p>Forward pass through the model.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>select</strong> – Select tensor which indicates the corresponding phenotype (required).</p></li>
+<li><p><strong>X</strong> – Feature tensor describing input sequences and interactions (required).</p></li>
+<li><p><strong>mask</strong> – Mask tensor which sets corresponding features to zero (required).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Output tensor.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.models.MochiModel.get_status">
+<span class="sig-name descname"><span class="pre">get_status</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/models.html#MochiModel.get_status"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.models.MochiModel.get_status" title="Permalink to this definition"></a></dt>
+<dd><p>Get training status.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>A string describing the current status.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.models.MochiModel.load_data">
+<span class="sig-name descname"><span class="pre">load_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/models.html#MochiModel.load_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.models.MochiModel.load_data" title="Permalink to this definition"></a></dt>
+<dd><p>Get list of dataloaders.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> – Dictionary of dictionaries of tensors as output by MochiData.get_data (required).</p></li>
+<li><p><strong>batch_size</strong> – Minibatch size (required).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Tuple of dataloaders.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.models.MochiModel.train_model">
+<span class="sig-name descname"><span class="pre">train_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dataloader</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">loss_fn</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">optimizer</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">l1_lambda</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">l2_lambda</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/models.html#MochiModel.train_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.models.MochiModel.train_model" title="Permalink to this definition"></a></dt>
+<dd><p>Train model.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>dataloader</strong> – Dataloader (required).</p></li>
+<li><p><strong>loss_fn</strong> – Loss function (required).</p></li>
+<li><p><strong>optimizer</strong> – Optimizer (required).</p></li>
+<li><p><strong>device</strong> – cpu or cuda (required).</p></li>
+<li><p><strong>l1_lambda</strong> – Lambda factor applied to L1 norm (default:0).</p></li>
+<li><p><strong>l2_lambda</strong> – Lambda factor applied to L2 norm (default:0).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Nothing.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.models.MochiModel.validate_model">
+<span class="sig-name descname"><span class="pre">validate_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dataloader</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">loss_fn</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">l1_lambda</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">l2_lambda</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_WT</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/models.html#MochiModel.validate_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.models.MochiModel.validate_model" title="Permalink to this definition"></a></dt>
+<dd><p>Validate model.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>dataloader</strong> – Dataloader (required).</p></li>
+<li><p><strong>loss_fn</strong> – Loss function (required).</p></li>
+<li><p><strong>optimizer</strong> – Optimizer (required).</p></li>
+<li><p><strong>device</strong> – cpu or cuda (required).</p></li>
+<li><p><strong>l1_lambda</strong> – Lambda factor applied to L1 norm (default:0).</p></li>
+<li><p><strong>l2_lambda</strong> – Lambda factor applied to L2 norm (default:0).</p></li>
+<li><p><strong>data_WT</strong> – Dictionary of tensors corresponding to WT sequences only (default:0).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Nothing.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.models.MochiModel.weights_init_fill">
+<span class="sig-name descname"><span class="pre">weights_init_fill</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">linear_weight</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">linear_bias</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/models.html#MochiModel.weights_init_fill"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.models.MochiModel.weights_init_fill" title="Permalink to this definition"></a></dt>
+<dd><p>Initialize layer weights.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>Nothing.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pymochi.models.MochiModelMetadata">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pymochi.models.</span></span><span class="sig-name descname"><span class="pre">MochiModelMetadata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fold</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grid_search</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">learn_rate</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_epochs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_epochs_grid</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">l1_regularization_factor</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">l2_regularization_factor</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">training_resample</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">early_stopping</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scheduler_gamma</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scheduler_epochs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/models.html#MochiModelMetadata"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.models.MochiModelMetadata" title="Permalink to this definition"></a></dt>
+<dd><p>A simple class to store model metadata.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="pymochi.models.MochiProject">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pymochi.models.</span></span><span class="sig-name descname"><span class="pre">MochiProject</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">directory</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">512</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">learn_rate</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_epochs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">300</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_epochs_grid</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">l1_regularization_factor</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">l2_regularization_factor</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scheduler_gamma</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.98</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/models.html#MochiProject"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.models.MochiProject" title="Permalink to this definition"></a></dt>
+<dd><p>A class for the storage and management of models and data related to a specific inference task.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.models.MochiProject.adjust_WT_phenotype">
+<span class="sig-name descname"><span class="pre">adjust_WT_phenotype</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">epoch_proportion</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.1</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/models.html#MochiProject.adjust_WT_phenotype"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.models.MochiProject.adjust_WT_phenotype" title="Permalink to this definition"></a></dt>
+<dd><p>Adjust WT phenotype such that residual phenotype from specified model is zero.
+Warning: Use with caution as this method permanently changes the MochiData object.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>model_id</strong> – Index of model to use for adjustment (required).</p></li>
+<li><p><strong>epoch_proportion</strong> – Proportion of final epochs over which to average predicted WT phenotype (default:0.1).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Nothing.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.models.MochiProject.fit">
+<span class="sig-name descname"><span class="pre">fit</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grid_search</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">512</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">learn_rate</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_epochs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">300</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_epochs_grid</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">l1_regularization_factor</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">l2_regularization_factor</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">input_model</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">epoch_status</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">training_resample</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">early_stopping</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scheduler_gamma</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.98</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scheduler_epochs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/models.html#MochiProject.fit"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.models.MochiProject.fit" title="Permalink to this definition"></a></dt>
+<dd><p>Fit model.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fold</strong> – Cross-validation fold (default:1).</p></li>
+<li><p><strong>seed</strong> – Random seed for training target data resampling (default:1).</p></li>
+<li><p><strong>grid_search</strong> – Whether or not this model is part of a grid search (default:False).</p></li>
+<li><p><strong>batch_size</strong> – Minibatch size (default:512).</p></li>
+<li><p><strong>learn_rate</strong> – Learning rate (default:0.05).</p></li>
+<li><p><strong>num_epochs</strong> – Number of training epochs (default:300).</p></li>
+<li><p><strong>num_epochs_grid</strong> – Number of grid search epochs (default:100).</p></li>
+<li><p><strong>l1_regularization_factor</strong> – Lambda factor applied to L1 norm (default:0).</p></li>
+<li><p><strong>l2_regularization_factor</strong> – Lambda factor applied to L2 norm (default:0).</p></li>
+<li><p><strong>input_model</strong> – Model with which to continue training (optional).</p></li>
+<li><p><strong>cold</strong> – Whether or not to reinitialise model weights (default:True).</p></li>
+<li><p><strong>epoch_status</strong> – Number of training epochs after which to print status messages (default:10).</p></li>
+<li><p><strong>training_resample</strong> – Whether or not to add random noise to training target data proportional to target error (default:True).</p></li>
+<li><p><strong>early_stopping</strong> – Whether or not to stop training early if validation loss not decreasing (default:True).</p></li>
+<li><p><strong>scheduler_gamma</strong> – Multiplicative factor of learning rate decay (default:0.98).</p></li>
+<li><p><strong>scheduler_epochs</strong> – Number of epochs over which to evaluate scheduler criteria (default:10).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Nothing.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.models.MochiProject.fit_best">
+<span class="sig-name descname"><span class="pre">fit_best</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grid_search_fold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">epoch_proportion</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">input_model</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">epoch_status</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/models.html#MochiProject.fit_best"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.models.MochiProject.fit_best" title="Permalink to this definition"></a></dt>
+<dd><p>Fit model using best grid search hyperparameters.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fold</strong> – Cross-validation fold (default:1).</p></li>
+<li><p><strong>grid_search_fold</strong> – Cross-validation fold of grid search models (default:1).</p></li>
+<li><p><strong>seed</strong> – Random seed for training target data resampling (default:1).</p></li>
+<li><p><strong>epoch_proportion</strong> – Proportion of final epochs over which to average grid search validation loss (default:0.1).</p></li>
+<li><p><strong>input_model</strong> – Model with which to continue training (optional).</p></li>
+<li><p><strong>cold</strong> – Whether or not to reinitialise model weights (default:True).</p></li>
+<li><p><strong>epoch_status</strong> – Number of training epochs after which to print status messages (default:10).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Nothing.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.models.MochiProject.get_additive_trait_weights">
+<span class="sig-name descname"><span class="pre">get_additive_trait_weights</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">folds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grid_search</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">RT</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seq_position_offset</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">aggregate</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">aggregate_absolute_value</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/models.html#MochiProject.get_additive_trait_weights"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.models.MochiProject.get_additive_trait_weights" title="Permalink to this definition"></a></dt>
+<dd><p>Get additive trait weights.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>folds</strong> – list of cross-validation folds (default:None i.e. all).</p></li>
+<li><p><strong>grid_search</strong> – Whether or not to include grid_search models (default:False).</p></li>
+<li><p><strong>RT</strong> – R=gas constant (in kcal/K/mol) * T=Temperature (in K) (optional).</p></li>
+<li><p><strong>seq_position_offset</strong> – Sequence position offset (default:0).</p></li>
+<li><p><strong>aggregate</strong> – Whether or not to aggregate trait weights per reference position by error weighted averaging (default:False).</p></li>
+<li><p><strong>aggregate_absolute_value</strong> – Whether or not to aggregate trait weights per reference position by error weighted average of the absolute value (default:False).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>A list of data frames (one per additive trait).</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.models.MochiProject.grid_search">
+<span class="sig-name descname"><span class="pre">grid_search</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">overwrite</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/models.html#MochiProject.grid_search"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.models.MochiProject.grid_search" title="Permalink to this definition"></a></dt>
+<dd><p>Perform grid search over supplied hyperparameters.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fold</strong> – Cross-validation fold (default:1).</p></li>
+<li><p><strong>seed</strong> – Random seed for training target data resampling (default:1).</p></li>
+<li><p><strong>overwrite</strong> – Whether or not to overwrite previous grid search models (default:False).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Nothing.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.models.MochiProject.load">
+<span class="sig-name descname"><span class="pre">load</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/models.html#MochiProject.load"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.models.MochiProject.load" title="Permalink to this definition"></a></dt>
+<dd><p>Load MochiProject from disk.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>Nothing.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.models.MochiProject.new_model">
+<span class="sig-name descname"><span class="pre">new_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/models.html#MochiProject.new_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.models.MochiProject.new_model" title="Permalink to this definition"></a></dt>
+<dd><p>Create a new MochiModel object.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>data</strong> – Dictionary of dictionaries of tensors as output by MochiData.get_data (required).</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>A new MochiModel object.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.models.MochiProject.predict_all">
+<span class="sig-name descname"><span class="pre">predict_all</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">folds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grid_search</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/models.html#MochiProject.predict_all"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.models.MochiProject.predict_all" title="Permalink to this definition"></a></dt>
+<dd><p>Model predictions on all data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>output_path</strong> – Output file path (required).</p></li>
+<li><p><strong>folds</strong> – list of cross-validation folds (default:None i.e. all).</p></li>
+<li><p><strong>grid_search</strong> – Whether or not to include grid_search models (default:False).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>data.table of variants with phenotypes predictions.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.models.MochiProject.save">
+<span class="sig-name descname"><span class="pre">save</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">overwrite</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/models.html#MochiProject.save"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.models.MochiProject.save" title="Permalink to this definition"></a></dt>
+<dd><p>Save MochiProject object to disk.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>overwrite</strong> – Whether or not to overwrite previous saved object (default:False).</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Nothing.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.models.MochiProject.wavg">
+<span class="sig-name descname"><span class="pre">wavg</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">group</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">absolute_value</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">error_only</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">col</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'mean'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">col_weight</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'std'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">suffix</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/models.html#MochiProject.wavg"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.models.MochiProject.wavg" title="Permalink to this definition"></a></dt>
+<dd><p>Calculate weighted average.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>group</strong> – DataFrame with col+suffix and col_weight+suffix columns (required).</p></li>
+<li><p><strong>absolute_value</strong> – Whether or not to take absolute value (default:False).</p></li>
+<li><p><strong>error_only</strong> – Whether or not return error only (default:False).</p></li>
+<li><p><strong>col</strong> – Column name of variable to be averaged (default:’mean’).</p></li>
+<li><p><strong>col_weight</strong> – Column name of weight variable (default:’std’).</p></li>
+<li><p><strong>suffix</strong> – Column name suffices (default:’’).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Weighted mean (or weighted mean error) numpy array.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-pymochi.misc">
+<span id="the-misc-module"></span><h2>The “misc” module<a class="headerlink" href="#module-pymochi.misc" title="Permalink to this heading"></a></h2>
+<p>MoCHI misc module</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="pymochi.misc.getsize">
+<span class="sig-prename descclassname"><span class="pre">pymochi.misc.</span></span><span class="sig-name descname"><span class="pre">getsize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">obj_0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/misc.html#getsize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.misc.getsize" title="Permalink to this definition"></a></dt>
+<dd><p>Recursively iterate to sum size of object &amp; members.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>obj_0</strong> – input object (required).</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>size of object &amp; members in bytes.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pymochi.misc.scatterplot_matrix">
+<span class="sig-prename descclassname"><span class="pre">pymochi.misc.</span></span><span class="sig-name descname"><span class="pre">scatterplot_matrix</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">names</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/misc.html#scatterplot_matrix"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.misc.scatterplot_matrix" title="Permalink to this definition"></a></dt>
+<dd><p>Plots a scatterplot matrix of subplots.  Each row of “data” is plotted
+against other rows, resulting in a nrows by nrows grid of subplots with the
+diagonal subplots labeled with “names”.  Additional keyword arguments are
+passed on to matplotlib’s “plot” command. Returns the matplotlib figure
+object containg the subplot grid.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> – input data (required).</p></li>
+<li><p><strong>names</strong> – data annotation (required).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>a matplotlib figure.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+<div class="section" id="module-pymochi.report">
+<span id="the-report-module"></span><h2>The “report” module<a class="headerlink" href="#module-pymochi.report" title="Permalink to this heading"></a></h2>
+<p>MoCHI report module</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="pymochi.report.MochiReport">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pymochi.report.</span></span><span class="sig-name descname"><span class="pre">MochiReport</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">RT</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/report.html#MochiReport"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.report.MochiReport" title="Permalink to this definition"></a></dt>
+<dd><p>A class for generating reports about MochiProject objects.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.report.MochiReport.plot_WT_coefficient_vs_epoch">
+<span class="sig-name descname"><span class="pre">plot_WT_coefficient_vs_epoch</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">output_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">folds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grid_search</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">RT</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/report.html#MochiReport.plot_WT_coefficient_vs_epoch"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.report.MochiReport.plot_WT_coefficient_vs_epoch" title="Permalink to this definition"></a></dt>
+<dd><p>Plot WT coefficient for all training epochs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>output_path</strong> – Output file path (required).</p></li>
+<li><p><strong>folds</strong> – list of cross-validation folds (default:None i.e. all).</p></li>
+<li><p><strong>grid_search</strong> – Whether or not to include grid_search models (default:False).</p></li>
+<li><p><strong>RT</strong> – R=gas constant (in kcal/K/mol) * T=Temperature (in K) (optional).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Nothing.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.report.MochiReport.plot_WT_residual_vs_epoch">
+<span class="sig-name descname"><span class="pre">plot_WT_residual_vs_epoch</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">output_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">folds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grid_search</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/report.html#MochiReport.plot_WT_residual_vs_epoch"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.report.MochiReport.plot_WT_residual_vs_epoch" title="Permalink to this definition"></a></dt>
+<dd><p>Plot WT residual phenotype for all training epochs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>output_path</strong> – Output file path (required).</p></li>
+<li><p><strong>folds</strong> – list of cross-validation folds (default:None i.e. all).</p></li>
+<li><p><strong>grid_search</strong> – Whether or not to include grid_search models (default:False).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Nothing.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.report.MochiReport.plot_loss_vs_epoch">
+<span class="sig-name descname"><span class="pre">plot_loss_vs_epoch</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">output_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">folds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grid_search</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/report.html#MochiReport.plot_loss_vs_epoch"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.report.MochiReport.plot_loss_vs_epoch" title="Permalink to this definition"></a></dt>
+<dd><p>Plot validation loss for all training epochs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>output_path</strong> – Output file path (required).</p></li>
+<li><p><strong>folds</strong> – list of cross-validation folds (default:None i.e. all).</p></li>
+<li><p><strong>grid_search</strong> – Whether or not to include grid_search models (default:False).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Nothing.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.report.MochiReport.plot_observed_phenotype_vs_additivetrait">
+<span class="sig-name descname"><span class="pre">plot_observed_phenotype_vs_additivetrait</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_df</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">output_path_prefix</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">folds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">RT</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/report.html#MochiReport.plot_observed_phenotype_vs_additivetrait"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.report.MochiReport.plot_observed_phenotype_vs_additivetrait" title="Permalink to this definition"></a></dt>
+<dd><p>Plot observed phenoypte versus additive trait (1-dimensional additive traits only).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>input_df</strong> – Input DataFrame with all predictions (required).</p></li>
+<li><p><strong>output_path_prefix</strong> – Output file path (required).</p></li>
+<li><p><strong>folds</strong> – list of cross-validation folds (default:None i.e. all).</p></li>
+<li><p><strong>RT</strong> – R=gas constant (in kcal/K/mol) * T=Temperature (in K) (optional).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Nothing.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.report.MochiReport.plot_test_performance">
+<span class="sig-name descname"><span class="pre">plot_test_performance</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_df</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">output_path_prefix</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/report.html#MochiReport.plot_test_performance"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.report.MochiReport.plot_test_performance" title="Permalink to this definition"></a></dt>
+<dd><p>Plot model performance on test data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>input_df</strong> – Input DataFrame with all predictions (required).</p></li>
+<li><p><strong>output_path_prefix</strong> – Output file path (required).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Nothing.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="pymochi.report.MochiReport.report">
+<span class="sig-name descname"><span class="pre">report</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/report.html#MochiReport.report"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.report.MochiReport.report" title="Permalink to this definition"></a></dt>
+<dd><p>Produce project report.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>Nothing.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="module-pymochi.transformation">
+<span id="the-transformation-module"></span><h2>The “transformation” module<a class="headerlink" href="#module-pymochi.transformation" title="Permalink to this heading"></a></h2>
+<p>MoCHI report module</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="pymochi.transformation.Linear">
+<span class="sig-prename descclassname"><span class="pre">pymochi.transformation.</span></span><span class="sig-name descname"><span class="pre">Linear</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">X</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/transformation.html#Linear"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.transformation.Linear" title="Permalink to this definition"></a></dt>
+<dd><p>1-dimensional linear transformation function.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>X</strong> – list of tensors (required).</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>first tensor in the input tensor list.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pymochi.transformation.ThreeStateFractionBound">
+<span class="sig-prename descclassname"><span class="pre">pymochi.transformation.</span></span><span class="sig-name descname"><span class="pre">ThreeStateFractionBound</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">X</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/transformation.html#ThreeStateFractionBound"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.transformation.ThreeStateFractionBound" title="Permalink to this definition"></a></dt>
+<dd><p>2-dimensional nonlinear transformation relating Gibbs free energy of folding and binding to fraction of molecules folded and bound.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>X</strong> – list of tensors (required).</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>fraction of molecules folded and bound tensor.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pymochi.transformation.TwoStateFractionFolded">
+<span class="sig-prename descclassname"><span class="pre">pymochi.transformation.</span></span><span class="sig-name descname"><span class="pre">TwoStateFractionFolded</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">X</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/transformation.html#TwoStateFractionFolded"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.transformation.TwoStateFractionFolded" title="Permalink to this definition"></a></dt>
+<dd><p>1-dimensional nonlinear transformation relating Gibbs free energy of folding to fraction of molecules folded.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>X</strong> – list of tensors (required).</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>fraction of molecules folded tensor.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pymochi.transformation.get_transformation">
+<span class="sig-prename descclassname"><span class="pre">pymochi.transformation.</span></span><span class="sig-name descname"><span class="pre">get_transformation</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/pymochi/transformation.html#get_transformation"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pymochi.transformation.get_transformation" title="Permalink to this definition"></a></dt>
+<dd><p>Get a transformation function by name.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>name</strong> – transformation function name (required).</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>transformation function.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="getting_started.html" class="btn btn-neutral float-left" title="Getting Started" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, Andre J Faure. Project structure based on the Computational Molecular Science Python Cookiecutter version 1.6.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

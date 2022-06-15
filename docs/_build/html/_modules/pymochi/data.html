@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pymochi.data &mdash; MoCHI  documentation</title>
+      <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+        <script src="../../_static/jquery.js"></script>
+        <script src="../../_static/underscore.js"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../_static/doctools.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../index.html" class="icon icon-home"> MoCHI
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api.html">MoCHI API Documentation</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">MoCHI</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="../index.html">Module code</a> &raquo;</li>
+      <li>pymochi.data</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for pymochi.data</h1><div class="highlight"><pre>
+<span></span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">MoCHI data module</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">copy</span>
+<span class="kn">import</span> <span class="nn">random</span>
+<span class="kn">import</span> <span class="nn">math</span>
+<span class="kn">from</span> <span class="nn">os.path</span> <span class="kn">import</span> <span class="n">exists</span>
+<span class="kn">import</span> <span class="nn">pyreadr</span>
+<span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">from</span> <span class="nn">torch.utils.data</span> <span class="kn">import</span> <span class="n">DataLoader</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">from</span> <span class="nn">sklearn.preprocessing</span> <span class="kn">import</span> <span class="n">OneHotEncoder</span>
+<span class="kn">from</span> <span class="nn">sklearn.preprocessing</span> <span class="kn">import</span> <span class="n">PolynomialFeatures</span>
+<span class="kn">from</span> <span class="nn">itertools</span> <span class="kn">import</span> <span class="n">combinations</span>
+
+<div class="viewcode-block" id="FitnessData"><a class="viewcode-back" href="../../api.html#pymochi.data.FitnessData">[docs]</a><span class="k">class</span> <span class="nc">FitnessData</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A class for the storage of fitness data from a single DMS experiment.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> 
+        <span class="n">file_path</span><span class="p">,</span> 
+        <span class="n">file_type</span> <span class="o">=</span> <span class="s1">&#39;RData&#39;</span><span class="p">,</span> 
+        <span class="n">name</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> 
+        <span class="n">order_subset</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">downsample_proportion</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialize a FitnessData object.</span>
+
+<span class="sd">        :param file_path: path to input file (required).</span>
+<span class="sd">        :param file_type: file type, either &#39;RData&#39; or &#39;text&#39; (not implemented) (default:RData).</span>
+<span class="sd">        :param name: name of fitness dataset (optional).</span>
+<span class="sd">        :param order_subset: list of mutation orders corresponding to retained variants (optional).</span>
+<span class="sd">        :param downsample_proportion: proportion of random variants to retain including WT (optional).</span>
+<span class="sd">        :returns: FitnessData object.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1">#Initialize attributes</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sequenceType</span> <span class="o">=</span> <span class="kc">None</span> <span class="c1">#&quot;nucleotide&quot; or &quot;aminoacid&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">variantCol</span> <span class="o">=</span> <span class="kc">None</span> <span class="c1">#&quot;nt_seq&quot; or &quot;aa_seq&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mutationOrderCol</span> <span class="o">=</span> <span class="kc">None</span> <span class="c1">#&quot;Nham_nt&quot; or &quot;Nham_aa&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wildtype</span> <span class="o">=</span> <span class="kc">None</span> <span class="c1">#string</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wildtype_split</span> <span class="o">=</span> <span class="kc">None</span> <span class="c1">#list of characters</span>
+
+        <span class="c1">#Read the indicated file</span>
+        <span class="k">if</span> <span class="n">file_type</span><span class="o">==</span><span class="s1">&#39;RData&#39;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">read_fitness_r</span><span class="p">(</span>
+                <span class="n">file_path</span> <span class="o">=</span> <span class="n">file_path</span><span class="p">,</span> 
+                <span class="n">name</span> <span class="o">=</span> <span class="n">name</span><span class="p">,</span> 
+                <span class="n">order_subset</span> <span class="o">=</span> <span class="n">order_subset</span><span class="p">,</span>
+                <span class="n">downsample_proportion</span> <span class="o">=</span> <span class="n">downsample_proportion</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">file_type</span><span class="o">==</span><span class="s1">&#39;text&#39;</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Error: Invalid file_type option. &#39;text&#39; not yet supported&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Error: Invalid file_type option.&quot;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="FitnessData.read_fitness_r"><a class="viewcode-back" href="../../api.html#pymochi.data.FitnessData.read_fitness_r">[docs]</a>    <span class="k">def</span> <span class="nf">read_fitness_r</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> 
+        <span class="n">file_path</span><span class="p">,</span> 
+        <span class="n">name</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> 
+        <span class="n">order_subset</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">downsample_proportion</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Read fitness from DiMSum RData file.</span>
+
+<span class="sd">        :param file_path: path to RData file (required).</span>
+<span class="sd">        :param name: name of fitness dataset (optional).</span>
+<span class="sd">        :param order_subset: list of mutation orders corresponding to retained variants (optional).</span>
+<span class="sd">        :param downsample_proportion: proportion of random variants to retain including WT (optional).</span>
+<span class="sd">        :returns: Nothing.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1">#Check file exists</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">exists</span><span class="p">(</span><span class="n">file_path</span><span class="p">):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Error: RData file not found.&quot;</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="c1">#Read file</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span> <span class="o">=</span> <span class="n">pyreadr</span><span class="o">.</span><span class="n">read_r</span><span class="p">(</span><span class="n">file_path</span><span class="p">)</span>
+        <span class="k">except</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Error: Invalid RData file: cannot read file.&quot;</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="c1">#Check variant fitness object exists</span>
+        <span class="k">if</span> <span class="s1">&#39;all_variants&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Error: Invalid RData file: variant data not found.&quot;</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="p">[</span><span class="s1">&#39;all_variants&#39;</span><span class="p">]</span>
+
+        <span class="c1">#Nucleotide or peptide sequence?</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sequenceType</span> <span class="o">=</span> <span class="s2">&quot;nucleotide&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">variantCol</span> <span class="o">=</span> <span class="s2">&quot;nt_seq&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mutationOrderCol</span> <span class="o">=</span> <span class="s2">&quot;Nham_nt&quot;</span>
+        <span class="k">if</span> <span class="s1">&#39;aa_seq&#39;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">sequenceType</span> <span class="o">=</span> <span class="s2">&quot;aminoacid&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">variantCol</span> <span class="o">=</span> <span class="s2">&quot;aa_seq&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">mutationOrderCol</span> <span class="o">=</span> <span class="s2">&quot;Nham_aa&quot;</span>
+
+        <span class="c1">#Check required columns exist</span>
+        <span class="k">if</span> <span class="nb">sum</span><span class="p">([</span><span class="n">i</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="o">.</span><span class="n">columns</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="p">[</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">variantCol</span><span class="p">,</span> 
+            <span class="bp">self</span><span class="o">.</span><span class="n">mutationOrderCol</span><span class="p">,</span> 
+            <span class="s1">&#39;WT&#39;</span><span class="p">,</span> 
+            <span class="s1">&#39;fitness&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;sigma&#39;</span><span class="p">]])</span><span class="o">!=</span><span class="mi">0</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Error: Invalid RData object: required columns not found.&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
+            <span class="k">return</span>
+
+        <span class="c1">#Remove variants with STOP or STOP_readthrough (if columns present)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">sequenceType</span> <span class="o">==</span> <span class="s2">&quot;aminoacid&quot;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s1">&#39;STOP&#39;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="p">[</span><span class="s1">&#39;STOP&#39;</span><span class="p">]</span><span class="o">==</span><span class="kc">False</span><span class="p">]</span>
+            <span class="k">if</span> <span class="s1">&#39;STOP_readthrough&#39;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="p">[</span><span class="s1">&#39;STOP_readthrough&#39;</span><span class="p">]</span><span class="o">==</span><span class="kc">False</span><span class="p">]</span>
+
+        <span class="c1">#Remove variants of undesired mutation order</span>
+        <span class="k">if</span> <span class="n">order_subset</span><span class="o">!=</span><span class="kc">None</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">order_subset</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="o">.</span><span class="n">iloc</span><span class="p">[[</span><span class="n">i</span> <span class="ow">in</span> <span class="n">order_subset</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">mutationOrderCol</span><span class="p">]],:]</span>
+
+        <span class="c1">#Check single WT variant present</span>
+        <span class="k">if</span> <span class="nb">sum</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="p">[</span><span class="s1">&#39;WT&#39;</span><span class="p">]</span><span class="o">==</span><span class="kc">True</span><span class="p">)</span><span class="o">!=</span><span class="mi">1</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Error: Invalid RData object: WT variant missing or ambiguous.&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
+            <span class="k">return</span>
+
+        <span class="c1">#Remove synonymous variants (if present)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="p">[(</span><span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="p">[</span><span class="s1">&#39;WT&#39;</span><span class="p">]</span><span class="o">==</span><span class="kc">True</span><span class="p">)</span> <span class="o">|</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">mutationOrderCol</span><span class="p">]</span><span class="o">&gt;</span><span class="mi">0</span><span class="p">)]</span>
+
+        <span class="c1">#Wild-type sequence</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wildtype</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="p">[</span><span class="s1">&#39;WT&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="kc">True</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">variantCol</span><span class="p">])[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wildtype_split</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">wildtype</span><span class="p">]</span>
+
+        <span class="c1">#Name</span>
+        <span class="k">if</span> <span class="n">name</span><span class="o">!=</span><span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="p">[</span><span class="s1">&#39;phenotype&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">name</span>
+
+        <span class="c1">#Randomly downsample variants</span>
+        <span class="k">if</span> <span class="n">downsample_proportion</span><span class="o">!=</span><span class="kc">None</span><span class="p">:</span>
+            <span class="n">vtable_wt</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="p">[</span><span class="s1">&#39;WT&#39;</span><span class="p">]</span><span class="o">==</span><span class="kc">True</span><span class="p">,:])</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span>
+                <span class="n">vtable_wt</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="p">[</span><span class="s1">&#39;WT&#39;</span><span class="p">]</span><span class="o">!=</span><span class="kc">True</span><span class="p">,:]</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="p">[</span><span class="s1">&#39;WT&#39;</span><span class="p">]</span><span class="o">!=</span><span class="kc">True</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">*</span><span class="n">downsample_proportion</span><span class="p">))])</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span> <span class="n">inplace</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Length of object.</span>
+
+<span class="sd">        :returns: Number of variants (length of vtable).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">vtable</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="MochiData"><a class="viewcode-back" href="../../api.html#pymochi.data.MochiData">[docs]</a><span class="k">class</span> <span class="nc">MochiData</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A class for the storage of genotype-phenotype data from a collection of DMS experiments.</span>
+<span class="sd">    An object of this class is required for model inference with MoCHI.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> 
+        <span class="n">model_design</span><span class="p">,</span>
+        <span class="n">order_subset</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">downsample_proportion</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">max_interaction_order</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="n">min_observed</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span>
+        <span class="n">k_folds</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
+        <span class="n">seed</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="n">validation_factor</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span> 
+        <span class="n">holdout_minobs</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> 
+        <span class="n">holdout_orders</span> <span class="o">=</span> <span class="p">[],</span> 
+        <span class="n">holdout_WT</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">features</span> <span class="o">=</span> <span class="p">[]):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialize a MochiData object.</span>
+
+<span class="sd">        :param model_design: Model design data frame with phenotype, transformation, trait and file columns (required).</span>
+<span class="sd">        :param order_subset: list of mutation orders corresponding to retained variants (optional).</span>
+<span class="sd">        :param downsample_proportion: proportion of random variants to retain including WT (optional).</span>
+<span class="sd">        :param max_interaction_order: Maximum interaction order (default:1).</span>
+<span class="sd">        :param min_observed: Minimum number of observations required to include interaction term (default:2).</span>
+<span class="sd">        :param k_folds: Numbef of cross-validation folds (default:10).</span>
+<span class="sd">        :param seed: Random seed for defining cross-validation groups (default:1).</span>
+<span class="sd">        :param validation_factor: Relative size of validation set with respect to test set (default:2).</span>
+<span class="sd">        :param holdout_minobs: Minimum number of observations of additive trait weights to be held out (default:0).</span>
+<span class="sd">        :param holdout_orders: list of mutation orders corresponding to retained variants (default:[] i.e. variants of all mutation orders can be held out).</span>
+<span class="sd">        :param holdout_WT: Whether or not to WT variant can be held out (default:False).</span>
+<span class="sd">        :param features: list of feature names to filter (default:[] i.e. all features retained).</span>
+<span class="sd">        :returns: MochiData object.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1">#Initialize attributes</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">model_design</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fdata</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">additive_trait_names</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">phenotype_names</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fitness</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">phenotypes</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">X</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">Xoh</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">Xohi</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">k_folds</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cvgroups</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">coefficients</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Loading fitness data&quot;</span><span class="p">)</span>
+        <span class="c1">#Check and save model design</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">model_design</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">check_model_design</span><span class="p">(</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">model_design</span><span class="p">))</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model_design</span><span class="p">)</span><span class="o">==</span><span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="c1">#Load all datasets</span>
+        <span class="n">filepath_list</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model_design</span><span class="p">[</span><span class="s1">&#39;file&#39;</span><span class="p">])</span>
+        <span class="n">fdatalist</span> <span class="o">=</span> <span class="p">[</span><span class="n">FitnessData</span><span class="p">(</span>
+            <span class="n">file_path</span> <span class="o">=</span> <span class="n">filepath_list</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> 
+            <span class="n">file_type</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="s2">&quot;RData&quot;</span><span class="p">][</span><span class="nb">int</span><span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;.RData$&quot;</span><span class="p">,</span> <span class="n">filepath_list</span><span class="p">[</span><span class="n">i</span><span class="p">])</span><span class="o">!=</span><span class="kc">None</span><span class="p">)],</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">),</span>
+            <span class="n">order_subset</span> <span class="o">=</span> <span class="n">order_subset</span><span class="p">,</span>
+            <span class="n">downsample_proportion</span> <span class="o">=</span> <span class="n">downsample_proportion</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">filepath_list</span><span class="p">))]</span>        
+        <span class="c1">#Merge all datasets</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fdata</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">merge_datasets</span><span class="p">(</span><span class="n">fdatalist</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">fdata</span><span class="o">==</span><span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="c1">#Fitness</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fitness</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fdata</span><span class="o">.</span><span class="n">vtable</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,[</span><span class="s1">&#39;fitness&#39;</span><span class="p">,</span> <span class="s1">&#39;sigma&#39;</span><span class="p">]]</span>
+        <span class="c1">#Phenotypes</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">phenotypes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">one_hot_encode_phenotypes</span><span class="p">()</span>
+        <span class="c1">#Fitness weights</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model_design</span><span class="p">)):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fitness</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">phenotypes</span><span class="p">[</span><span class="s1">&#39;phenotype_&#39;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model_design</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="s1">&#39;phenotype&#39;</span><span class="p">])]</span><span class="o">==</span><span class="mi">1</span><span class="p">,</span><span class="s1">&#39;weight&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">model_design</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="s1">&#39;weight&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fitness</span><span class="p">[</span><span class="s1">&#39;weight&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span><span class="o">/</span><span class="n">np</span><span class="o">.</span><span class="n">power</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fitness</span><span class="p">[</span><span class="s1">&#39;sigma&#39;</span><span class="p">]),</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">fitness</span><span class="p">[</span><span class="s1">&#39;weight&#39;</span><span class="p">]</span>
+        <span class="c1">#Sequence features</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">X</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fdata</span><span class="o">.</span><span class="n">vtable</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">fdata</span><span class="o">.</span><span class="n">variantCol</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">expand</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">iloc</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="c1">#One hot encode sequence features</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;One-hot encoding sequence features&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">Xoh</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">one_hot_encode_features</span><span class="p">()</span>
+        <span class="c1">#One-hot encode interaction features</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;One-hot encoding interaction features&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">one_hot_encode_interactions</span><span class="p">(</span>
+            <span class="n">max_order</span> <span class="o">=</span> <span class="n">max_interaction_order</span><span class="p">,</span>
+            <span class="n">min_observed</span> <span class="o">=</span> <span class="n">min_observed</span><span class="p">,</span>
+            <span class="n">features</span> <span class="o">=</span> <span class="n">features</span><span class="p">)</span>
+        <span class="c1">#Split into training, validation and test sets</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Defining cross-validation groups&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">k_folds</span> <span class="o">=</span> <span class="n">k_folds</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">define_cross_validation_groups</span><span class="p">(</span>
+            <span class="n">k_folds</span> <span class="o">=</span> <span class="n">k_folds</span><span class="p">,</span>
+            <span class="n">seed</span> <span class="o">=</span> <span class="n">seed</span><span class="p">,</span>
+            <span class="n">validation_factor</span> <span class="o">=</span> <span class="n">validation_factor</span><span class="p">,</span> 
+            <span class="n">holdout_minobs</span> <span class="o">=</span> <span class="n">holdout_minobs</span><span class="p">,</span> 
+            <span class="n">holdout_orders</span> <span class="o">=</span> <span class="n">holdout_orders</span><span class="p">,</span> 
+            <span class="n">holdout_WT</span> <span class="o">=</span> <span class="n">holdout_WT</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Done!&quot;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="MochiData.check_model_design"><a class="viewcode-back" href="../../api.html#pymochi.data.MochiData.check_model_design">[docs]</a>    <span class="k">def</span> <span class="nf">check_model_design</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> 
+        <span class="n">model_design</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check model design valid and reformat.</span>
+
+<span class="sd">        :param model_design: Model design data frame with phenotype, transformation, trait and file columns (required).</span>
+<span class="sd">        :returns: A reformatted model design data frame.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1">#Model design keys</span>
+        <span class="n">model_design_keys</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="s1">&#39;phenotype&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;transformation&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;trait&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;file&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;weight&#39;</span><span class="p">]</span>
+        <span class="c1">#Check if model_design is a pandas data frame</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">model_design</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Error: Model design is not a pandas data frame.&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
+        <span class="c1">#Add unity weights if not supplied</span>
+        <span class="k">if</span> <span class="s1">&#39;weight&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">model_design</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="n">model_design</span><span class="p">[</span><span class="s1">&#39;weight&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="c1">#Check if all keys present</span>
+        <span class="k">if</span> <span class="nb">sum</span><span class="p">([</span><span class="n">i</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">model_design</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">model_design_keys</span><span class="p">])</span><span class="o">!=</span><span class="mi">0</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Error: Model design missing required keys.&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
+        <span class="c1">#Unique traits</span>
+        <span class="n">all_traits</span> <span class="o">=</span> <span class="p">[</span><span class="n">item</span> <span class="k">for</span> <span class="n">sublist</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">model_design</span><span class="p">[</span><span class="s1">&#39;trait&#39;</span><span class="p">])</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">sublist</span><span class="p">]</span>
+        <span class="n">all_traits_unique</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="p">[</span><span class="n">all_traits_unique</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">all_traits</span> <span class="k">if</span> <span class="n">i</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">all_traits_unique</span><span class="p">]</span>
+        <span class="n">all_traits_unique_dict</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">all_traits_unique</span><span class="p">,</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">all_traits_unique</span><span class="p">)</span><span class="o">+</span><span class="mi">1</span><span class="p">)))</span>
+        <span class="c1">#Translate traits to integers</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">additive_trait_names</span> <span class="o">=</span> <span class="n">all_traits_unique</span>
+        <span class="n">model_design</span><span class="p">[</span><span class="s1">&#39;trait&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[[</span><span class="n">all_traits_unique_dict</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">model_design</span><span class="p">[</span><span class="s1">&#39;trait&#39;</span><span class="p">]]</span>
+        <span class="c1">#Unique phenotypes</span>
+        <span class="n">all_phenotypes</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">model_design</span><span class="p">[</span><span class="s1">&#39;phenotype&#39;</span><span class="p">])</span>
+        <span class="n">all_phenotypes_unique</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="p">[</span><span class="n">all_phenotypes_unique</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">all_phenotypes</span> <span class="k">if</span> <span class="n">i</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">all_phenotypes_unique</span><span class="p">]</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">all_phenotypes_unique</span><span class="p">)</span><span class="o">!=</span><span class="nb">len</span><span class="p">(</span><span class="n">all_phenotypes</span><span class="p">):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Error: Duplicated phenotype names.&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
+        <span class="c1">#Translate phenotypes to integers</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">phenotype_names</span> <span class="o">=</span> <span class="n">all_phenotypes_unique</span>
+        <span class="n">model_design</span><span class="p">[</span><span class="s1">&#39;phenotype&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">model_design</span><span class="p">)</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span>
+        <span class="c1">#Check files not duplicated</span>
+        <span class="n">all_files</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">model_design</span><span class="p">[</span><span class="s1">&#39;file&#39;</span><span class="p">])</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">all_files</span><span class="p">)</span><span class="o">!=</span><span class="nb">len</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">all_files</span><span class="p">))):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Error: Duplicated input files.&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">model_design</span></div>
+
+<div class="viewcode-block" id="MochiData.merge_datasets"><a class="viewcode-back" href="../../api.html#pymochi.data.MochiData.merge_datasets">[docs]</a>    <span class="k">def</span> <span class="nf">merge_datasets</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">data_list</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Merge variant tables from a list of FitnessData objects with same WT and sequence type.</span>
+
+<span class="sd">        :param data_list: list of FitnessData objects to merge (required).</span>
+<span class="sd">        :returns: A merged FitnessData object.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1">#Check if data to merge</span>
+        <span class="k">if</span> <span class="nb">sum</span><span class="p">([</span><span class="nb">len</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">data_list</span><span class="p">])</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Error: No Fitness datasets to merge.&quot;</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="c1">#Check if same WT and sequence type</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="nb">set</span><span class="p">([</span><span class="n">i</span><span class="o">.</span><span class="n">wildtype</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">data_list</span><span class="p">]))</span><span class="o">==</span><span class="mi">1</span> <span class="o">&amp;</span> <span class="nb">len</span><span class="p">(</span><span class="nb">set</span><span class="p">([</span><span class="n">i</span><span class="o">.</span><span class="n">sequenceType</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">data_list</span><span class="p">]))</span><span class="o">==</span><span class="mi">1</span><span class="p">:</span>
+            <span class="n">fdata</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">data_list</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="n">fdata</span><span class="o">.</span><span class="n">vtable</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">i</span><span class="o">.</span><span class="n">vtable</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">data_list</span><span class="p">])</span>
+            <span class="n">fdata</span><span class="o">.</span><span class="n">vtable</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span> <span class="n">inplace</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">fdata</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Error: Fitness datasets cannot be merged: WT variants do not match.&quot;</span><span class="p">)</span>
+            <span class="k">return</span></div>
+
+<div class="viewcode-block" id="MochiData.one_hot_encode_phenotypes"><a class="viewcode-back" href="../../api.html#pymochi.data.MochiData.one_hot_encode_phenotypes">[docs]</a>    <span class="k">def</span> <span class="nf">one_hot_encode_phenotypes</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        1-hot encode phenotypes.</span>
+
+<span class="sd">        :returns: A data frame with 1-hot phenotypes.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">all_phenotypes</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model_design</span><span class="p">[</span><span class="s1">&#39;phenotype&#39;</span><span class="p">])]</span>
+        <span class="n">phenotypes_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">all_phenotypes</span><span class="p">:</span>
+            <span class="n">phenotypes_df</span><span class="p">[</span><span class="s1">&#39;phenotype_&#39;</span><span class="o">+</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fdata</span><span class="o">.</span><span class="n">vtable</span><span class="p">[</span><span class="s1">&#39;phenotype&#39;</span><span class="p">]</span><span class="o">==</span><span class="n">i</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">phenotypes_df</span></div>
+
+<div class="viewcode-block" id="MochiData.one_hot_encode_features"><a class="viewcode-back" href="../../api.html#pymochi.data.MochiData.one_hot_encode_features">[docs]</a>    <span class="k">def</span> <span class="nf">one_hot_encode_features</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">include_WT</span> <span class="o">=</span> <span class="kc">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        1-hot encode sequences.</span>
+
+<span class="sd">        :param include_WT: Whether or not to include WT feature (default:True).</span>
+<span class="sd">        :returns: A data frame with 1-hot sequences.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">enc</span> <span class="o">=</span> <span class="n">OneHotEncoder</span><span class="p">(</span>
+            <span class="n">handle_unknown</span><span class="o">=</span><span class="s1">&#39;ignore&#39;</span><span class="p">,</span> 
+            <span class="n">drop</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fdata</span><span class="o">.</span><span class="n">wildtype_split</span><span class="p">),</span> 
+            <span class="n">dtype</span> <span class="o">=</span> <span class="nb">int</span><span class="p">)</span>
+        <span class="n">enc</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">X</span><span class="p">)</span>
+        <span class="n">one_hot_names</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">fdata</span><span class="o">.</span><span class="n">wildtype_split</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">i</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">2</span><span class="p">])]</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">i</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">2</span><span class="p">])</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">+</span><span class="n">i</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">enc</span><span class="o">.</span><span class="n">get_feature_names_out</span><span class="p">()]</span>
+        <span class="n">one_hot_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">enc</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">X</span><span class="p">)</span><span class="o">.</span><span class="n">toarray</span><span class="p">(),</span> <span class="n">columns</span> <span class="o">=</span> <span class="n">one_hot_names</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">include_WT</span><span class="p">:</span>
+            <span class="n">one_hot_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s1">&#39;WT&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">*</span><span class="nb">len</span><span class="p">(</span><span class="n">one_hot_df</span><span class="p">)}),</span> <span class="n">one_hot_df</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">one_hot_df</span></div>
+
+<div class="viewcode-block" id="MochiData.one_hot_encode_interactions"><a class="viewcode-back" href="../../api.html#pymochi.data.MochiData.one_hot_encode_interactions">[docs]</a>    <span class="k">def</span> <span class="nf">one_hot_encode_interactions</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> 
+        <span class="n">max_order</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span>
+        <span class="n">exclude</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="n">max_cells</span> <span class="o">=</span> <span class="mf">1e9</span><span class="p">,</span>
+        <span class="n">min_observed</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span>
+        <span class="n">features</span> <span class="o">=</span> <span class="p">[]):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Add interaction terms to 1-hot encoding data frame.</span>
+
+<span class="sd">        :param max_order: Maximum interaction order (default:2).</span>
+<span class="sd">        :param exclude: Column indices to exclude from interactions (default:0 i.e. WT).</span>
+<span class="sd">        :param max_cells: Maximum matrix cells permitted (default:1billion).</span>
+<span class="sd">        :param min_observed: Minimum number of observations required to include interaction term (default:2).</span>
+<span class="sd">        :param features: list of feature names to filter (default:[] i.e. all  features retained).</span>
+<span class="sd">        :returns: Nothing.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1">#Check if no interactions to add</span>
+        <span class="k">if</span> <span class="n">max_order</span><span class="o">&lt;</span><span class="mi">2</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">Xohi</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">Xoh</span><span class="p">)</span>
+            <span class="c1">#Filter features</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">features</span><span class="p">)</span><span class="o">!=</span><span class="mi">0</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Filtering features&quot;</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">filter_features</span><span class="p">(</span><span class="n">features</span> <span class="o">=</span> <span class="n">features</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="c1">#Columns to consider</span>
+        <span class="n">int_columns</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">Xoh</span><span class="o">.</span><span class="n">columns</span><span class="p">)</span>
+        <span class="n">int_columns</span> <span class="o">=</span> <span class="p">[</span><span class="n">int_columns</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">int_columns</span><span class="p">))</span> <span class="k">if</span> <span class="n">i</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">exclude</span><span class="p">]</span>
+
+        <span class="c1">#All possible combinations of columns</span>
+        <span class="n">all_features</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_order</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="c1">#Order at least 2</span>
+            <span class="k">if</span> <span class="n">n</span><span class="o">&gt;</span><span class="mi">1</span><span class="p">:</span>
+                <span class="n">all_features</span> <span class="o">+=</span> <span class="p">[</span><span class="s2">&quot;_&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">combinations</span><span class="p">(</span><span class="n">int_columns</span><span class="p">,</span> <span class="n">n</span><span class="p">))]</span>
+
+        <span class="c1">#Check if all interaction features exist (i.e. with mutation order&gt;1)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">([</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">features</span> <span class="k">if</span> <span class="p">(</span><span class="n">i</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">all_features</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">i</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;_&#39;</span><span class="p">))</span><span class="o">&gt;</span><span class="mi">1</span><span class="p">)])</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error: Invalid feature names.&quot;</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="c1"># #Check potential memory footprint</span>
+        <span class="c1"># int_list_names = []</span>
+        <span class="c1"># int_total = 0</span>
+        <span class="c1"># for n in range(max_order + 1):</span>
+        <span class="c1">#     #Order at least 2</span>
+        <span class="c1">#     if n&gt;1:</span>
+        <span class="c1">#         int_total += len(self.fdata.vtable.loc[self.fdata.vtable[self.fdata.mutationOrderCol]==n,:])</span>
+        <span class="c1"># if int_total*len(self.Xoh) &gt; max_cells:</span>
+        <span class="c1">#     print(f&quot;Error: Too many interaction terms: number of feature matrix cells &gt;{max_cells:&gt;.0e}&quot;)</span>
+        <span class="c1">#     return</span>
+
+        <span class="c1">#All possible combinations of columns</span>
+        <span class="n">int_list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">int_list_names</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_order</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="c1">#Order at least 2</span>
+            <span class="k">if</span> <span class="n">n</span><span class="o">&gt;</span><span class="mi">1</span><span class="p">:</span>
+                <span class="n">comb_list</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">combinations</span><span class="p">(</span><span class="n">int_columns</span><span class="p">,</span> <span class="n">n</span><span class="p">))</span>
+                <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">comb_list</span><span class="p">:</span>
+                    <span class="c1">#Check if feature desired</span>
+                    <span class="k">if</span> <span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="ow">in</span> <span class="n">features</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">features</span><span class="p">)</span><span class="o">==</span><span class="mi">0</span><span class="p">):</span>
+                        <span class="n">int_col</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">Xoh</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span><span class="n">c</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span> <span class="o">=</span> <span class="mi">1</span><span class="p">)</span><span class="o">==</span><span class="n">n</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+                        <span class="c1">#Check if minimum number of observations satisfied</span>
+                        <span class="k">if</span> <span class="nb">sum</span><span class="p">(</span><span class="n">int_col</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">min_observed</span><span class="p">:</span>
+                            <span class="n">int_list</span> <span class="o">+=</span> <span class="p">[</span><span class="n">int_col</span><span class="p">]</span>
+                            <span class="n">int_list_names</span> <span class="o">+=</span> <span class="p">[</span><span class="s2">&quot;_&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">c</span><span class="p">)]</span>
+                        <span class="c1">#Check memory footprint</span>
+                        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">int_list</span><span class="p">)</span><span class="o">*</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">Xoh</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">max_cells</span><span class="p">:</span>
+                            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error: Too many interaction terms: number of feature matrix cells &gt;</span><span class="si">{</span><span class="n">max_cells</span><span class="si">:</span><span class="s2">&gt;.0e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                            <span class="k">return</span>
+        <span class="c1">#Concatenate into dataframe</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">int_list</span><span class="p">)</span><span class="o">&gt;</span><span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">Xohi</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">int_list</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">Xohi</span><span class="o">.</span><span class="n">columns</span> <span class="o">=</span> <span class="n">int_list_names</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">Xohi</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">Xoh</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">Xohi</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">Xohi</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">Xoh</span><span class="p">)</span>
+
+        <span class="c1">#Filter features</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">features</span><span class="p">)</span><span class="o">!=</span><span class="mi">0</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Filtering features&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">filter_features</span><span class="p">(</span><span class="n">features</span> <span class="o">=</span> <span class="n">features</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="MochiData.filter_features"><a class="viewcode-back" href="../../api.html#pymochi.data.MochiData.filter_features">[docs]</a>    <span class="k">def</span> <span class="nf">filter_features</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> 
+        <span class="n">features</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Filter features by name.</span>
+
+<span class="sd">        :param features: list of feature names to filter (default:[] i.e. all features retained).</span>
+<span class="sd">        :returns: Nothing.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1">#Check if all features exist </span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">([</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">features</span> <span class="k">if</span> <span class="n">i</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">Xohi</span><span class="o">.</span><span class="n">columns</span><span class="p">])</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error: Invalid feature names.&quot;</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="c1">#Filter features</span>
+        <span class="n">features_order</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">Xohi</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">features</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">Xohi</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">Xohi</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span><span class="n">features_order</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="MochiData.define_cross_validation_groups"><a class="viewcode-back" href="../../api.html#pymochi.data.MochiData.define_cross_validation_groups">[docs]</a>    <span class="k">def</span> <span class="nf">define_cross_validation_groups</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> 
+        <span class="n">k_folds</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
+        <span class="n">seed</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="n">validation_factor</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span>
+        <span class="n">holdout_minobs</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="n">holdout_orders</span> <span class="o">=</span> <span class="p">[],</span>
+        <span class="n">holdout_WT</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Define cross-validation groups.</span>
+
+<span class="sd">        :param k_folds: Number of cross-validation folds (default:10).</span>
+<span class="sd">        :param seed: Random seed for defining cross-validation groups (default:1).</span>
+<span class="sd">        :param validation_factor: Relative size of validation set with respect to test set (default:2).</span>
+<span class="sd">        :param holdout_minobs: Minimum number of observations of additive trait weights to be held out (default:0).</span>
+<span class="sd">        :param holdout_orders: list of mutation orders corresponding to retained variants (default:[] i.e. variants of all mutation orders can be held out).</span>
+<span class="sd">        :param holdout_WT: list of mutation orders corresponding to retained variants (default:False).</span>
+<span class="sd">        :returns: Nothing.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1">#Default: hold out all orders</span>
+        <span class="k">if</span> <span class="n">holdout_orders</span> <span class="o">==</span> <span class="p">[]:</span>
+            <span class="n">holdout_orders</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fdata</span><span class="o">.</span><span class="n">vtable</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">fdata</span><span class="o">.</span><span class="n">mutationOrderCol</span><span class="p">]))</span>
+
+        <span class="c1">#Variants that can be held out (determined separately for each additive trait)</span>
+        <span class="n">all_traits_unique</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">([</span><span class="n">item</span> <span class="k">for</span> <span class="n">sublist</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model_design</span><span class="p">[</span><span class="s1">&#39;trait&#39;</span><span class="p">])</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">sublist</span><span class="p">]))</span>
+        <span class="c1">#Initialize holdout status (all variants can be held out)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cvgroups</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span>
+            <span class="s2">&quot;holdout&quot;</span> <span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">1</span><span class="p">]</span><span class="o">*</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">Xohi</span><span class="p">))</span>
+            <span class="p">})</span>
+        <span class="c1">#Consider each additive trait separately</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">all_traits_unique</span><span class="p">:</span>
+            <span class="c1">#Phenotypes reporting on this trait</span>
+            <span class="n">relevant_phenotype_columns</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;phenotype_&quot;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model_design</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="s1">&#39;phenotype&#39;</span><span class="p">])</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model_design</span><span class="p">))</span> <span class="k">if</span> <span class="n">t</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">model_design</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="s1">&#39;trait&#39;</span><span class="p">]]</span>
+            <span class="c1">#Number of observations per coefficient</span>
+            <span class="n">Xohp_colsum</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">Xohi</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">phenotypes</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span><span class="n">relevant_phenotype_columns</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">==</span><span class="mi">1</span><span class="p">,:]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span>
+            <span class="c1">#Indices of coefficients that do not meet required threshold</span>
+            <span class="n">Xohp_noholdout</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">Xohp_colsum</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">Xohp_colsum</span><span class="o">.</span><span class="n">iloc</span><span class="p">[:,</span><span class="mi">0</span><span class="p">]</span><span class="o">&lt;</span><span class="n">holdout_minobs</span><span class="p">,:]</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+            <span class="c1">#Observations of coefficients that do not meet the required threshold</span>
+            <span class="n">Xohp_noholdout_rowsum</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">Xohi</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">phenotypes</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span><span class="n">relevant_phenotype_columns</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">==</span><span class="mi">1</span><span class="p">,</span><span class="n">Xohp_noholdout</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span>
+            <span class="c1">#WT variants for these phenotypes</span>
+            <span class="n">Xohp_WT</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fdata</span><span class="o">.</span><span class="n">vtable</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">phenotypes</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span><span class="n">relevant_phenotype_columns</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">==</span><span class="mi">1</span><span class="p">,</span><span class="s1">&#39;WT&#39;</span><span class="p">])</span>
+            <span class="c1">#Mutation orders for these phenotypes</span>
+            <span class="n">Xohp_mutationOrder</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fdata</span><span class="o">.</span><span class="n">vtable</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">phenotypes</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span><span class="n">relevant_phenotype_columns</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">==</span><span class="mi">1</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">fdata</span><span class="o">.</span><span class="n">mutationOrderCol</span><span class="p">])</span>
+            <span class="c1">#Current holdout status</span>
+            <span class="n">current_status</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cvgroups</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">phenotypes</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span><span class="n">relevant_phenotype_columns</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">==</span><span class="mi">1</span><span class="p">,</span><span class="s1">&#39;holdout&#39;</span><span class="p">])</span>
+            <span class="c1">#Holdout status for this additive trait</span>
+            <span class="n">noholdout_minobs</span> <span class="o">=</span> <span class="p">[</span><span class="n">Xohp_noholdout_rowsum</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">!=</span><span class="mi">0</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">Xohp_noholdout_rowsum</span><span class="p">))]</span>
+            <span class="n">noholdout_orders</span> <span class="o">=</span> <span class="p">[</span><span class="n">Xohp_mutationOrder</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">holdout_orders</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">Xohp_noholdout_rowsum</span><span class="p">))]</span>
+            <span class="n">noholdout_WT</span> <span class="o">=</span> <span class="p">[((</span><span class="n">Xohp_WT</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">==</span><span class="kc">True</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">holdout_WT</span><span class="o">==</span><span class="kc">False</span><span class="p">))</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">Xohp_noholdout_rowsum</span><span class="p">))]</span>
+            <span class="n">noholdout</span> <span class="o">=</span> <span class="p">[(</span><span class="n">noholdout_minobs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">|</span> <span class="n">noholdout_orders</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">|</span> <span class="n">noholdout_WT</span><span class="p">[</span><span class="n">i</span><span class="p">])</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">Xohp_noholdout_rowsum</span><span class="p">))]</span>
+            <span class="c1">#New holdout status</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cvgroups</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">phenotypes</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span><span class="n">relevant_phenotype_columns</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">==</span><span class="mi">1</span><span class="p">,</span><span class="s1">&#39;holdout&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">([</span><span class="nb">int</span><span class="p">((</span><span class="n">current_status</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">==</span><span class="mi">1</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">noholdout</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">==</span><span class="kc">False</span><span class="p">))</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">Xohp_noholdout_rowsum</span><span class="p">))])</span>
+        
+        <span class="c1">#Total number of variants that can be held out</span>
+        <span class="n">n_holdout</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cvgroups</span><span class="o">.</span><span class="n">holdout</span><span class="p">)</span>
+
+        <span class="c1">#Hold out folds</span>
+        <span class="n">holdout_fold</span> <span class="o">=</span> <span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">k_folds</span><span class="o">+</span><span class="mi">1</span><span class="p">))</span><span class="o">*</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">n_holdout</span><span class="o">/</span><span class="n">k_folds</span><span class="p">)</span><span class="o">+</span><span class="mi">1</span><span class="p">))[:</span><span class="n">n_holdout</span><span class="p">]</span>
+        <span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+        <span class="n">random</span><span class="o">.</span><span class="n">shuffle</span><span class="p">(</span><span class="n">holdout_fold</span><span class="p">)</span>
+
+        <span class="c1">#Add to cvgroups data frame</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cvgroups</span><span class="p">[</span><span class="s1">&#39;fold&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cvgroups</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">cvgroups</span><span class="o">.</span><span class="n">holdout</span><span class="o">==</span><span class="mi">1</span><span class="p">,</span><span class="s1">&#39;fold&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">holdout_fold</span>
+
+        <span class="c1">#Add cross validation groups</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">k_folds</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cvgroups</span><span class="p">[</span><span class="s1">&#39;fold_&#39;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">)]</span> <span class="o">=</span> <span class="s2">&quot;training&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cvgroups</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">cvgroups</span><span class="p">[</span><span class="s1">&#39;fold&#39;</span><span class="p">]</span><span class="o">==</span><span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">),</span><span class="s1">&#39;fold_&#39;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">)]</span> <span class="o">=</span> <span class="s2">&quot;test&quot;</span>
+            <span class="n">val_groups</span> <span class="o">=</span> <span class="p">[(</span><span class="n">j</span><span class="o">%</span><span class="n">k_folds</span><span class="p">)</span><span class="o">+</span><span class="mi">1</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="o">+</span><span class="n">validation_factor</span><span class="p">))]</span>
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">val_groups</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">cvgroups</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">cvgroups</span><span class="p">[</span><span class="s1">&#39;fold&#39;</span><span class="p">]</span><span class="o">==</span><span class="n">j</span><span class="p">,</span><span class="s1">&#39;fold_&#39;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">)]</span> <span class="o">=</span> <span class="s2">&quot;validation&quot;</span>
+
+        <span class="c1">#Cefficients that can be fit</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">coefficients</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">phenotypes</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="c1"># self.coefficients[p] = pd.DataFrame({&#39;id&#39;: list(self.Xohi.columns)})</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">coefficients</span><span class="p">[</span><span class="n">p</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">k_folds</span><span class="p">):</span>
+                <span class="n">Xohp_colsum</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">Xohi</span><span class="o">.</span><span class="n">loc</span><span class="p">[(</span><span class="bp">self</span><span class="o">.</span><span class="n">phenotypes</span><span class="p">[</span><span class="n">p</span><span class="p">]</span><span class="o">==</span><span class="mi">1</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cvgroups</span><span class="p">[</span><span class="s1">&#39;fold_&#39;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">)]</span><span class="o">==</span><span class="s2">&quot;training&quot;</span><span class="p">),:]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">coefficients</span><span class="p">[</span><span class="n">p</span><span class="p">][</span><span class="s1">&#39;fold_&#39;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">)]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">([</span><span class="nb">int</span><span class="p">(</span><span class="n">j</span><span class="o">!=</span><span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">Xohp_colsum</span><span class="o">.</span><span class="n">iloc</span><span class="p">[:,</span><span class="mi">0</span><span class="p">])])</span></div>
+
+<div class="viewcode-block" id="MochiData.get_data"><a class="viewcode-back" href="../../api.html#pymochi.data.MochiData.get_data">[docs]</a>    <span class="k">def</span> <span class="nf">get_data</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> 
+        <span class="n">fold</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="n">seed</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="n">training_resample</span> <span class="o">=</span> <span class="kc">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get data for a specified cross-validation fold.</span>
+
+<span class="sd">        :param fold: Cross-validation fold (default:1).</span>
+<span class="sd">        :param seed: Random seed for training target data resampling (default:1).</span>
+<span class="sd">        :param training_resample: Whether or not to add random noise to training target data proportional to target error (default:True).</span>
+<span class="sd">        :returns: Dictionary of dictionaries of tensors.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1">#Check for fitness data</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">fdata</span> <span class="o">==</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="c1">#Loop over training, validation and test sets</span>
+        <span class="n">fold_name</span> <span class="o">=</span> <span class="s2">&quot;fold_&quot;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">fold</span><span class="p">)</span>
+        <span class="n">data_dict</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cvgroups</span><span class="p">[</span><span class="n">fold_name</span><span class="p">])):</span>
+            <span class="c1">#Shuffle indices for training data</span>
+            <span class="n">sind</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">sum</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cvgroups</span><span class="p">[</span><span class="n">fold_name</span><span class="p">]</span><span class="o">==</span><span class="n">g</span><span class="p">)))</span>
+            <span class="k">if</span> <span class="n">g</span><span class="o">==</span><span class="s2">&quot;training&quot;</span><span class="p">:</span>
+                <span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+                <span class="n">random</span><span class="o">.</span><span class="n">shuffle</span><span class="p">(</span><span class="n">sind</span><span class="p">)</span>
+            <span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="c1">#Select tensor</span>
+            <span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s1">&#39;select&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">phenotypes</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">cvgroups</span><span class="p">[</span><span class="n">fold_name</span><span class="p">]</span><span class="o">==</span><span class="n">g</span><span class="p">,:])</span>
+            <span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s1">&#39;select&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span> <span class="n">inplace</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+            <span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s1">&#39;select&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s1">&#39;select&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">sind</span><span class="p">,:]),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+            <span class="c1">#Mask tensor</span>
+            <span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s1">&#39;mask&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">coefficients</span><span class="p">[</span><span class="s2">&quot;phenotype_&quot;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">)]</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span><span class="n">fold_name</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">coefficients</span><span class="p">))],</span> <span class="n">axis</span> <span class="o">=</span> <span class="mi">1</span><span class="p">)),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+            <span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s1">&#39;mask&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s1">&#39;mask&#39;</span><span class="p">],</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="c1">#Feature tensor</span>
+            <span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s1">&#39;X&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">Xohi</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">cvgroups</span><span class="p">[</span><span class="n">fold_name</span><span class="p">]</span><span class="o">==</span><span class="n">g</span><span class="p">,:])</span>
+            <span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s1">&#39;X&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span> <span class="n">inplace</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+            <span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s1">&#39;X&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s1">&#39;X&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">sind</span><span class="p">,:]),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+            <span class="c1">#Target tensor</span>
+            <span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s1">&#39;y&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fitness</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">cvgroups</span><span class="p">[</span><span class="n">fold_name</span><span class="p">]</span><span class="o">==</span><span class="n">g</span><span class="p">,</span><span class="s1">&#39;fitness&#39;</span><span class="p">])</span>
+            <span class="c1">#Add random noise to training target data proportional to target error (if specified)</span>
+            <span class="k">if</span> <span class="n">g</span><span class="o">==</span><span class="s2">&quot;training&quot;</span> <span class="ow">and</span> <span class="n">training_resample</span><span class="p">:</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+                <span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s1">&#39;y&#39;</span><span class="p">][</span><span class="s1">&#39;noise&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">scale</span> <span class="o">=</span> <span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fitness</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">cvgroups</span><span class="p">[</span><span class="n">fold_name</span><span class="p">]</span><span class="o">==</span><span class="n">g</span><span class="p">,</span><span class="s1">&#39;sigma&#39;</span><span class="p">])]</span>
+                <span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s1">&#39;y&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s1">&#39;y&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span> <span class="o">=</span> <span class="mi">1</span><span class="p">))</span>
+            <span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s1">&#39;y&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span> <span class="n">inplace</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+            <span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s1">&#39;y&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s1">&#39;y&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">sind</span><span class="p">,:]),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span> <span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+            <span class="c1">#Target weight tensor</span>
+            <span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s1">&#39;y_wt&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fitness</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">cvgroups</span><span class="p">[</span><span class="n">fold_name</span><span class="p">]</span><span class="o">==</span><span class="n">g</span><span class="p">,</span><span class="s1">&#39;weight&#39;</span><span class="p">])</span>
+            <span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s1">&#39;y_wt&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span> <span class="n">inplace</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+            <span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s1">&#39;y_wt&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">data_dict</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="s1">&#39;y_wt&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">sind</span><span class="p">,:]),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span> <span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">data_dict</span></div>
+
+<div class="viewcode-block" id="MochiData.get_data_index"><a class="viewcode-back" href="../../api.html#pymochi.data.MochiData.get_data_index">[docs]</a>    <span class="k">def</span> <span class="nf">get_data_index</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> 
+        <span class="n">indices</span> <span class="o">=</span> <span class="p">[]):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get data corresponding to specific variants (by index).</span>
+
+<span class="sd">        :param indices: Variant/observation indices (default:None i.e. all indices).</span>
+<span class="sd">        :returns: Dictionary of dictionary of tensors (select, feature and target tensors only).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1">#Set to all indices if empty list</span>
+        <span class="k">if</span> <span class="n">indices</span> <span class="o">==</span> <span class="p">[]:</span>
+            <span class="n">indices</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">phenotypes</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+
+        <span class="n">data_dict</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="c1">#Select tensor</span>
+        <span class="n">data_dict</span><span class="p">[</span><span class="s1">&#39;select&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">phenotypes</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">indices</span><span class="p">,:])</span>
+        <span class="n">data_dict</span><span class="p">[</span><span class="s1">&#39;select&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span> <span class="n">inplace</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+        <span class="n">data_dict</span><span class="p">[</span><span class="s1">&#39;select&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">data_dict</span><span class="p">[</span><span class="s1">&#39;select&#39;</span><span class="p">]),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="c1">#Feature tensor</span>
+        <span class="n">data_dict</span><span class="p">[</span><span class="s1">&#39;X&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">Xohi</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">indices</span><span class="p">,:])</span>
+        <span class="n">data_dict</span><span class="p">[</span><span class="s1">&#39;X&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span> <span class="n">inplace</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+        <span class="n">data_dict</span><span class="p">[</span><span class="s1">&#39;X&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">data_dict</span><span class="p">[</span><span class="s1">&#39;X&#39;</span><span class="p">]),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+        <span class="c1">#Target tensor</span>
+        <span class="n">data_dict</span><span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fitness</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">indices</span><span class="p">,:][</span><span class="s1">&#39;fitness&#39;</span><span class="p">])</span>
+        <span class="n">data_dict</span><span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span> <span class="n">inplace</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+        <span class="n">data_dict</span><span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">data_dict</span><span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">]),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">),</span> <span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">data_dict</span></div>
+
+    <span class="k">def</span> <span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Length of object.</span>
+<span class="sd">        :returns: Number of variants (length of fdata).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fdata</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FastTensorDataLoader"><a class="viewcode-back" href="../../api.html#pymochi.data.FastTensorDataLoader">[docs]</a><span class="k">class</span> <span class="nc">FastTensorDataLoader</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A DataLoader-like object for a set of tensors that can be much faster than</span>
+<span class="sd">    TensorDataset + DataLoader because dataloader grabs individual indices of</span>
+<span class="sd">    the dataset and calls cat (slow).</span>
+<span class="sd">    Source: https://discuss.pytorch.org/t/dataloader-much-slower-than-manual-batching/27014/6</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> 
+        <span class="o">*</span><span class="n">tensors</span><span class="p">,</span> 
+        <span class="n">batch_size</span> <span class="o">=</span> <span class="mi">32</span><span class="p">,</span> 
+        <span class="n">shuffle</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialize a FastTensorDataLoader.</span>
+
+<span class="sd">        :param *tensors: tensors to store. Must have the same length @ dim 0.</span>
+<span class="sd">        :param batch_size: batch size to load.</span>
+<span class="sd">        :param shuffle: if True, shuffle the data *in-place* whenever an</span>
+<span class="sd">            iterator is created out of this object.</span>
+<span class="sd">        :returns: FastTensorDataLoader object.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="nb">all</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">tensors</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">tensors</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tensors</span> <span class="o">=</span> <span class="n">tensors</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">dataset_len</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tensors</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span> <span class="o">=</span> <span class="n">batch_size</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">shuffle</span> <span class="o">=</span> <span class="n">shuffle</span>
+
+        <span class="c1"># Calculate # batches</span>
+        <span class="n">n_batches</span><span class="p">,</span> <span class="n">remainder</span> <span class="o">=</span> <span class="nb">divmod</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">dataset_len</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">remainder</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">n_batches</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_batches</span> <span class="o">=</span> <span class="n">n_batches</span>
+    <span class="k">def</span> <span class="fm">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">shuffle</span><span class="p">:</span>
+            <span class="n">r</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randperm</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">dataset_len</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tensors</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span><span class="p">[</span><span class="n">r</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">tensors</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="fm">__next__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">i</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dataset_len</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">StopIteration</span>
+        <span class="n">batch</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">t</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">i</span><span class="p">:</span><span class="bp">self</span><span class="o">.</span><span class="n">i</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">tensors</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">i</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span>
+        <span class="k">return</span> <span class="n">batch</span>
+
+    <span class="k">def</span> <span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_batches</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, Andre J Faure. Project structure based on the Computational Molecular Science Python Cookiecutter version 1.6.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
