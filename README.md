@@ -122,7 +122,7 @@ Report plots, predictions and additive trait summaries will be saved to the "my_
 
 # Manual
 
-Comprehensive documentation is coming soon, but in the meantime get more information about specific classes/methods in python:
+Comprehensive documentation is coming soon, but in the meantime get more information about specific classes/methods in python e.g.
    ```
    help(MochiData)
    ```
