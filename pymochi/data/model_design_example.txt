@@ -1,0 +1,3 @@
+phenotype	transformation	trait	file
+Abundance	TwoStateFractionFolded	Folding	dimsum_abundance_fitness.RData
+Binding	ThreeStateFractionBound	Folding,Binding	dimsum_binding_fitness.RData
