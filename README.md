@@ -56,7 +56,7 @@ MoCHI requires a table describing the measured phenotypes and how they relate to
  - *trait*: One or more additive trait names 
  - *transformation*: The shape of the global epistatic trend (Linear/TwoStateFractionFolded/ThreeStateFractionBound/SumOfSigmoids)
  - *phenotype*: A unique phenotype name e.g. Abundance, Binding or Kinase Activity
- - *file*: DiMSum (.RData) file path with variant fitness and error estimates for the corresponding phenotype (support for other input formats coming soon)
+ - *file*: Path to DiMSum output (.RData) with variant fitness and error estimates for the corresponding phenotype (support for other input formats coming soon)
 
 ## Option A: MoCHI command line tool
    ```
