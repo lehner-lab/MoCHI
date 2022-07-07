@@ -48,8 +48,89 @@ MoCHI is currently only available through GitHub, but we recommend using [this y
    $ demo_mochi.py
    ```
 
+# Usage
+
+You can run a standard MoCHI workflow using the command line tool or a custom analysis by taking advantage of the "pymochi" package in your own python script.
+
+MoCHI requires a table describing the measured phenotypes and how they relate to the underlying additive (biophysical) traits. The table should have the following 4 columns (see example file [here](pymochi/data/model_design_example.txt)):
+ - *trait*: One or more additive trait names 
+ - *transformation*: The shape of the global epistatic trend (Linear/TwoStateFractionFolded/ThreeStateFractionBound/SumOfSigmoids)
+ - *phenotype*: A unique phenotype name e.g. Abundance, Binding or Kinase Activity
+ - *file*: Path to DiMSum output (.RData) with variant fitness and error estimates for the corresponding phenotype (support for other input formats coming soon)
+
+## Option A: MoCHI command line tool
+   ```
+   $ conda activate pymochi
+   $ run_mochi.py model_design.txt
+   ```
+
+Get help with additional command line parameters:
+   ```
+   $ run_mochi.py -h
+   ```
+
+## Option B: Custom python script
+
+Below is an example of a custom MoCHI workflow to infer the underlying free energies of folding and binding from [doubledeepPCA](https://www.nature.com/articles/s41586-022-04586-4) data.
+
+1. Create a *MochiProject* object with one-hot encoded variant sequences, interaction terms and 10 cross-validation groups:
+   ```
+   import pymochi
+   from pymochi.data import MochiData
+   from pymochi.models import MochiProject
+   from pymochi.report import MochiReport
+   import pandas as pd
+
+   k_folds = 10
+
+   my_model_design = pd.DataFrame({
+      'phenotype': ['Abundance', 'Binding'],
+      'transformation': ['TwoStateFractionFolded', 'ThreeStateFractionBound'],
+      'trait': [['Folding'], ['Folding', 'Binding']],
+      'file': ["dimsum_abundance_fitness.RData", "dimsum_binding_fitness.RData"]})
+
+   mochi_project = MochiProject(
+      directory = 'my_project',
+      data = MochiData(
+         model_design = my_model_design,
+         max_interaction_order = 1,
+         k_folds = k_folds))
+   ```
+
+2. Hyperparameter tuning and model fitting:
+   ```
+   mochi_project.grid_search() 
+
+   for i in range(k_folds):
+      mochi_project.fit_best(fold = i+1)
+   ``` 
+
+3. Generate *MochiReport*, phenotype predictions, inferred additive trait summaries and save project:
+   ```
+   temperature = 30
+
+   mochi_report = MochiReport(
+      project = mochi_project,
+      RT = (273+temperature)*0.001987)
+
+   energies = mochi_project.get_additive_trait_weights(
+      RT = (273+temperature)*0.001987)
+    
+   mochi_project.save()
+   ```
+Report plots, predictions and additive trait summaries will be saved to the "my_project/report", "my_project/predictions" and "my_project/weights" subfolders.
+
+# Manual
+
+Comprehensive documentation is coming soon, but in the meantime get more information about specific classes/methods in python e.g.
+   ```
+   help(MochiData)
+   ```
 
 
+# Bugs and feedback
+
+You may submit a bug report here on GitHub as an issue or you could send an email to ajfaure@gmail.com.
 
 
 ### Copyright
@@ -61,3 +142,6 @@ Copyright (c) 2022, Andre J Faure
  
 Project based on the 
 [Computational Molecular Science Python Cookiecutter](https://github.com/molssi/cookiecutter-cms) version 1.6.
+
+(Vector illustration credit: <a href="https://www.vecteezy.com">Vecteezy!</a>)
+
