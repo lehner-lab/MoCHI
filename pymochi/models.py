@@ -95,9 +95,9 @@ class MochiModel(torch.nn.Module):
             if self.model_design.loc[i,'transformation']!="SumOfSigmoids":
                 transformed_trait = get_transformation(self.model_design.loc[i,'transformation'])(additive_traits)
             else:
-                transformed_trait1 = F.silu(self.sumofsigmoids1[int(self.model_design.loc[i,'s_index'])](torch.cat(additive_traits, 1)))
-                transformed_trait2 = F.silu(self.sumofsigmoids2[int(self.model_design.loc[i,'s_index'])](transformed_trait1))
-                transformed_trait3 = F.silu(self.sumofsigmoids3[int(self.model_design.loc[i,'s_index'])](transformed_trait2))
+                transformed_trait1 = F.Sigmoid(self.sumofsigmoids1[int(self.model_design.loc[i,'s_index'])](torch.cat(additive_traits, 1)))
+                transformed_trait2 = F.Sigmoid(self.sumofsigmoids2[int(self.model_design.loc[i,'s_index'])](transformed_trait1))
+                transformed_trait3 = F.Sigmoid(self.sumofsigmoids3[int(self.model_design.loc[i,'s_index'])](transformed_trait2))
                 transformed_trait = self.sumofsigmoids4[int(self.model_design.loc[i,'s_index'])](transformed_trait3)
             #Observed phenotypes
             observed_phenotypes += [torch.mul(self.linears[i](transformed_trait), select_list[i])]
