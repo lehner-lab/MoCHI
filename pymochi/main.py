@@ -82,11 +82,11 @@ def main(
     if args.order_subset==None:
         order_subset = args.order_subset
     else:
-        order_subset = [int(i) for i in args.order_subset.split('')]
+        order_subset = [int(i) for i in args.order_subset.split(',')]
     if args.holdout_orders==None:
         holdout_orders = []
     else:
-        holdout_orders = [int(i) for i in args.holdout_orders.split('')]
+        holdout_orders = [int(i) for i in args.holdout_orders.split(',')]
 
     #######################################################################
     ## PREPARE DATA ##

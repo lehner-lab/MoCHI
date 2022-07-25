@@ -48,6 +48,11 @@ class MochiModel(torch.nn.Module):
         #Additive traits
         n_additivetraits = len(list(set([item for sublist in list(self.model_design['trait']) for item in sublist])))
         self.additivetraits = torch.nn.ModuleList([torch.nn.Linear(input_shape, 1, bias = False, dtype=torch.float32) for i in range(n_additivetraits)])
+
+        #Global trainable parameters
+        self.globalparams = torch.nn.ModuleList(
+            [torch.nn.ParameterDict({j:torch.nn.Parameter(torch.tensor(1.0), requires_grad=True) for j in get_transformation(i)().keys()}) for i in self.model_design.transformation])
+
         #Arbitrary non-linear transformations (depth=3)
         n_sumofsigmoids = len([i for i in self.model_design.transformation if i=="SumOfSigmoids"])
         self.model_design.loc[self.model_design.transformation=="SumOfSigmoids",'s_index'] = list(range(n_sumofsigmoids))
@@ -93,11 +98,12 @@ class MochiModel(torch.nn.Module):
             additive_traits = [self.additivetraits[j-1](torch.mul(X, mask_list[i])) for j in self.model_design.loc[i,'trait']]
             #Molecular phenotypes
             if self.model_design.loc[i,'transformation']!="SumOfSigmoids":
-                transformed_trait = get_transformation(self.model_design.loc[i,'transformation'])(additive_traits)
+                globalparams = self.globalparams[i]
+                transformed_trait = get_transformation(self.model_design.loc[i,'transformation'])(additive_traits, globalparams)           
             else:
-                transformed_trait1 = F.Sigmoid(self.sumofsigmoids1[int(self.model_design.loc[i,'s_index'])](torch.cat(additive_traits, 1)))
-                transformed_trait2 = F.Sigmoid(self.sumofsigmoids2[int(self.model_design.loc[i,'s_index'])](transformed_trait1))
-                transformed_trait3 = F.Sigmoid(self.sumofsigmoids3[int(self.model_design.loc[i,'s_index'])](transformed_trait2))
+                transformed_trait1 = torch.sigmoid(self.sumofsigmoids1[int(self.model_design.loc[i,'s_index'])](torch.cat(additive_traits, 1)))
+                transformed_trait2 = torch.sigmoid(self.sumofsigmoids2[int(self.model_design.loc[i,'s_index'])](transformed_trait1))
+                transformed_trait3 = torch.sigmoid(self.sumofsigmoids3[int(self.model_design.loc[i,'s_index'])](transformed_trait2))
                 transformed_trait = self.sumofsigmoids4[int(self.model_design.loc[i,'s_index'])](transformed_trait3)
             #Observed phenotypes
             observed_phenotypes += [torch.mul(self.linears[i](transformed_trait), select_list[i])]
@@ -452,7 +458,11 @@ class MochiProject():
                 if model_index >= len(self.models) or model_index < 0:
                     print("Error: Saved models index format incorrect.")
                     return
-                self.models[int(i[6:(len(i)-4)])] = torch.load(os.path.join(directory, i), map_location=self.device)
+                self.models[model_index] = torch.load(os.path.join(directory, i), map_location=self.device)
+                #Add globalparams if legacy model
+                if 'globalparams' not in dir(self.models[model_index]):
+                    self.models[model_index].globalparams = torch.nn.ModuleList([torch.nn.ParameterDict({}) for i in self.models[model_index].model_design.transformation])
+
 
         #Load remaining (non-built-in) attributes
         load_dict = None
@@ -512,6 +522,59 @@ class MochiProject():
         else:
             return sum(d/np.power(w, 2))/sum(1/np.power(w, 2))
 
+    def get_linear_weights(
+        self,
+        folds = None,
+        grid_search = False):
+        """
+        Get linear weights.
+
+        :param folds: list of cross-validation folds (default:None i.e. all).
+        :param grid_search: Whether or not to include grid_search models (default:False).
+        :returns: Nothing.
+        """ 
+
+        #Check if valid MochiProject
+        if 'models' not in dir(self):
+            print("Error: Cannot get linear weights. Not a valid MochiProject.")
+            return
+
+        #Output weights directory
+        directory = os.path.join(self.directory, 'weights')
+
+        #Create output weights directory
+        try:
+            os.mkdir(directory)
+        except FileExistsError:
+            pass
+
+        #Set folds if not supplied
+        if folds==None:
+            folds = [i+1 for i in range(self.data.k_folds)]
+
+        #Model subset
+        models_subset = [i for i in self.models if ((i.metadata.grid_search==grid_search) & (i.metadata.fold in folds))]
+        #Check if at least one model remaining
+        if len(models_subset)==0:
+            print("No models satisfying criteria.")
+            return
+
+        #Construct weight list
+        at_list = []
+        for j in range(self.data.model_design.shape[0]): 
+            param_list = []
+            for i in range(len(models_subset)):
+                #Get weights for all linear transformations
+                linear_parameters = [item for item in models_subset[i].linears[j].parameters()]
+                param_list += [
+                    [models_subset[i].metadata.fold]+
+                    [linear_parameters[0][0][0].detach().numpy(), linear_parameters[1][0].detach().numpy()]]
+            at_list += [pd.DataFrame(param_list, columns = ['fold', 'kernel', 'bias'])]
+
+        #Save model weights
+        for i in range(len(at_list)):
+            at_list[i].to_csv(os.path.join(directory, "linears_weights_"+self.data.phenotype_names[i]+".txt"), sep = "\t")
+
     def get_additive_trait_weights(
         self,
         folds = None,
@@ -545,6 +608,9 @@ class MochiProject():
             os.mkdir(directory)
         except FileExistsError:
             pass
+
+        #Save linear weights
+        self.get_linear_weights(folds = folds, grid_search = grid_search)
 
         #Set folds if not supplied
         if folds==None:
@@ -727,8 +793,13 @@ class MochiProject():
             return
 
         #Grid search model with best performance
-        perf_list = [sum(i.training_history['val_loss'][-int(i.metadata.num_epochs_grid*epoch_proportion):])/int(i.metadata.num_epochs_grid*epoch_proportion) for i in grid_search_models]
-        best_model_index = [i for i in range(len(perf_list)) if perf_list[i]==min(perf_list)][0]
+        perf_list = np.asarray([sum(i.training_history['val_loss'][-int(i.metadata.num_epochs_grid*epoch_proportion):])/int(i.metadata.num_epochs_grid*epoch_proportion) for i in grid_search_models])
+        #Check that at least one grid search model validation loss isn't NA
+        if len(perf_list[~np.isnan(perf_list)])!=0:
+            best_model_index = [i for i in range(len(perf_list)) if perf_list[i]==np.nanmin(perf_list)][0]
+        else:
+            print(f"Error: No valid grid search models available.")
+            return
 
         #Print best grid search model
         print("Best model:")
