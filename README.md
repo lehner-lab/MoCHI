@@ -118,6 +118,10 @@ Below is an example of a custom MoCHI workflow to infer the underlying free ener
     
    mochi_project.save()
    ```
+   Load previously saved project:
+   ```
+   mochi_project = MochiProject(directory = 'my_project')
+   ```
 Report plots, predictions and additive trait summaries will be saved to the "my_project/report", "my_project/predictions" and "my_project/weights" subfolders.
 
 # Manual
