@@ -14,13 +14,15 @@ dependencies:
   - pytest-cov
   - codecov
 
-  # - matplotlib=3.5.1
-  # - numpy=1.21.2
-  # - pyreadr=0.4.4
-  # - pytorch=1.10.1
-  # - scikit-learn=1.0.2
-  # - scipy=1.8.0
-  # - seaborn=0.11.2
+    # Package dependencies
+  - pandas=1.4.2
+  - matplotlib=3.5.1
+  - numpy=1.21.2
+  - pyreadr=0.4.4
+  - pytorch=1.10.1
+  - scikit-learn=1.0.2
+  - scipy=1.8.0
+  - seaborn=0.11.2
   # - setuptools=60.5.0
 
     # Pip-only installs
