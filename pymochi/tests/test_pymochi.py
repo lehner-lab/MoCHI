@@ -23,7 +23,7 @@ def test_pymochi_imported():
 
 def create_dummy_project():
     #Delete entire directory contents
-    shutil.rmtree(str(Path(__file__).parent / "temp"))
+    shutil.rmtree(str(Path(__file__).parent / "temp"), ignore_errors=True)
     #Create a MochiProject
     model_design = pd.read_csv(Path(__file__).parent.parent / "data/model_design.txt", sep = "\t", index_col = False)
     model_design['file'] = [
