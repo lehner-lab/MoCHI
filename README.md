@@ -1,3 +1,5 @@
+![example workflow](https://github.com/lehner-lab/MoCHI/actions/workflows/CI.yaml/badge.svg)
+
 <p align="left">
   <img src="./Mochi.png" width="100">
 </p>
