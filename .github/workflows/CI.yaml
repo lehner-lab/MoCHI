@@ -24,8 +24,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macOS-latest, ubuntu-latest, windows-latest]
-        python-version: [3.7, 3.8, 3.9]
+        # os: [macOS-latest, ubuntu-latest, windows-latest]
+        os: [ubuntu-latest]
+        # python-version: [3.7, 3.8, 3.9]
+        python-version: [3.9]
 
     steps:
     - uses: actions/checkout@v1
@@ -44,7 +46,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
         environment-file: devtools/conda-envs/test_env.yaml
 
-        channels: conda-forge,defaults
+        channels: pytorch,conda-forge,bioconda,defaults
 
         activate-environment: test
         auto-update-conda: false
