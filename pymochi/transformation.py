@@ -91,5 +91,5 @@ def ThreeStateFractionBoundLig(
     if X == None:
         return {'c': None}
     else:
-        return torch.pow(1+torch.mul(torch.exp(X[1] + torch.log(torch.pow(trainable_parameters['c'], -1))), 1+torch.exp(X[0])), -1)
+        return torch.pow(1+torch.mul(torch.exp(X[1] - torch.log(trainable_parameters['c'])), 1+torch.exp(X[0])), -1)
 

@@ -24,7 +24,6 @@ class FitnessData:
     def __init__(
         self, 
         file_path, 
-        file_type = 'RData', 
         name = None, 
         order_subset = None,
         downsample_proportion = None):
@@ -32,7 +31,6 @@ class FitnessData:
         Initialize a FitnessData object.
 
         :param file_path: path to input file (required).
-        :param file_type: file type, either 'RData' or 'text' (not implemented) (default:RData).
         :param name: name of fitness dataset (optional).
         :param order_subset: list of mutation orders corresponding to retained variants (optional).
         :param downsample_proportion: proportion of random variants to retain including WT (optional).
@@ -47,18 +45,61 @@ class FitnessData:
         self.wildtype_split = None #list of characters
 
         #Read the indicated file
-        if file_type=='RData':
-            self.read_fitness_r(
-                file_path = file_path, 
-                name = name, 
-                order_subset = order_subset,
-                downsample_proportion = downsample_proportion)
-        elif file_type=='text':
-            print("Error: Invalid file_type option. 'text' not yet supported")
-        else:
-            print("Error: Invalid file_type option.")
+        self.read_fitness(
+            file_path = file_path, 
+            name = name, 
+            order_subset = order_subset,
+            downsample_proportion = downsample_proportion)
 
     def read_fitness_r(
+        self, 
+        file_path):
+        """
+        Read fitness from DiMSum RData file.
+
+        :param file_path: path to RData file (required).
+        :returns: pandas DataFrame.
+        """
+        vtable = pd.DataFrame()
+        #Check file exists
+        if not exists(file_path):
+            print("Error: RData file not found.")
+            return vtable
+        #Read file
+        try:
+            vtable = pyreadr.read_r(file_path)
+        except:
+            print("Error: Invalid RData file: cannot read file.")
+            return vtable
+        #Check variant fitness object exists
+        if 'all_variants' not in vtable.keys():
+            print("Error: Invalid RData file: variant data not found.")
+            return vtable
+        return vtable['all_variants']
+
+    def read_fitness_txt(
+        self, 
+        file_path):
+        """
+        Read fitness from plain text file.
+
+        :param file_path: path to plain text file (required).
+        :returns: pandas DataFrame.
+        """
+        vtable = pd.DataFrame()
+        #Check file exists
+        if not exists(file_path):
+            print("Error: Plain text file not found.")
+            return vtable
+        #Read file
+        try:
+            vtable = pd.read_csv(file_path, sep = None, engine='python')
+        except:
+            print("Error: Invalid plain text file: cannot read file.")
+            return vtable
+        return vtable
+
+    def read_fitness(
         self, 
         file_path, 
         name = None, 
@@ -73,22 +114,23 @@ class FitnessData:
         :param downsample_proportion: proportion of random variants to retain including WT (optional).
         :returns: Nothing.
         """
-        #Check file exists
-        if not exists(file_path):
-            print("Error: RData file not found.")
-            return
-        #Read file
-        try:
-            self.vtable = pyreadr.read_r(file_path)
-        except:
-            print("Error: Invalid RData file: cannot read file.")
-            return
 
-        #Check variant fitness object exists
-        if 'all_variants' not in self.vtable.keys():
-            print("Error: Invalid RData file: variant data not found.")
+        #Automatically detect file type
+        file_type = "text"
+        try:
+            pd.read_csv(file_path, nrows = 1, sep = None, engine='python')
+        except:
+            file_type = "RData"
+
+        #Read file
+        if file_type == "RData":
+            self.vtable = self.read_fitness_r(file_path)
+        if file_type == "text":
+            self.vtable = self.read_fitness_txt(file_path)
+
+        #Check if data exists
+        if self.vtable.size == 0:
             return
-        self.vtable = self.vtable['all_variants']
 
         #Nucleotide or peptide sequence?
         self.sequenceType = "nucleotide"
@@ -176,7 +218,7 @@ class MochiData:
         """
         Initialize a MochiData object.
 
-        :param model_design: Model design data frame with phenotype, transformation, trait and file columns (required).
+        :param model_design: Model design DataFrame with phenotype, transformation, trait and file columns (required).
         :param order_subset: list of mutation orders corresponding to retained variants (optional).
         :param downsample_proportion: proportion of random variants to retain including WT (optional).
         :param max_interaction_order: Maximum interaction order (default:1).
@@ -200,20 +242,20 @@ class MochiData:
         self.X = None
         self.Xoh = None
         self.Xohi = None
+        self.Xohie = None
         self.k_folds = None
         self.cvgroups = None
         self.coefficients = None
 
-        print("Loading fitness data")
         #Check and save model design
         self.model_design = self.check_model_design(copy.deepcopy(model_design))
         if len(self.model_design)==0:
             return
         #Load all datasets
+        print("Loading fitness data")
         filepath_list = list(self.model_design['file'])
         fdatalist = [FitnessData(
             file_path = filepath_list[i], 
-            file_type = ["text", "RData"][int(re.search(".RData$", filepath_list[i])!=None)],
             name = str(i+1),
             order_subset = order_subset,
             downsample_proportion = downsample_proportion) for i in range(len(filepath_list))]        
@@ -240,6 +282,9 @@ class MochiData:
             max_order = max_interaction_order,
             min_observed = min_observed,
             features = features)
+        # #Ensemble encode features
+        # print("Ensemble encoding features")
+        # self.Xohie = self.ensemble_encode_features()
         #Split into training, validation and test sets
         print("Defining cross-validation groups")
         self.k_folds = k_folds
@@ -258,8 +303,8 @@ class MochiData:
         """
         Check model design valid and reformat.
 
-        :param model_design: Model design data frame with phenotype, transformation, trait and file columns (required).
-        :returns: A reformatted model design data frame.
+        :param model_design: Model design DataFrame with phenotype, transformation, trait and file columns (required).
+        :returns: A reformatted model design DataFrame.
         """
         #Model design keys
         model_design_keys = [
@@ -268,9 +313,9 @@ class MochiData:
             'trait',
             'file',
             'weight']
-        #Check if model_design is a pandas data frame
+        #Check if model_design is a pandas DataFrame
         if not isinstance(model_design, pd.DataFrame):
-            print("Error: Model design is not a pandas data frame.")
+            print("Error: Model design is not a pandas DataFrame.")
             return pd.DataFrame()
         #Add unity weights if not supplied
         if 'weight' not in model_design.keys():
@@ -331,7 +376,7 @@ class MochiData:
         """
         1-hot encode phenotypes.
 
-        :returns: A data frame with 1-hot phenotypes.
+        :returns: A DataFrame with 1-hot phenotypes.
         """
         all_phenotypes = [str(i) for i in list(self.model_design['phenotype'])]
         phenotypes_df = pd.DataFrame()
@@ -346,7 +391,7 @@ class MochiData:
         1-hot encode sequences.
 
         :param include_WT: Whether or not to include WT feature (default:True).
-        :returns: A data frame with 1-hot sequences.
+        :returns: A DataFrame with 1-hot sequences.
         """
         enc = OneHotEncoder(
             handle_unknown='ignore', 
@@ -367,7 +412,7 @@ class MochiData:
         min_observed = 2,
         features = []):
         """
-        Add interaction terms to 1-hot encoding data frame.
+        Add interaction terms to 1-hot encoding DataFrame.
 
         :param max_order: Maximum interaction order (default:2).
         :param exclude: Column indices to exclude from interactions (default:0 i.e. WT).
@@ -460,6 +505,112 @@ class MochiData:
         features_order = [i for i in self.Xohi.columns if i in features]
         self.Xohi = self.Xohi.loc[:,features_order]
 
+    def H_matrix(
+        self,
+        str_geno,
+        str_coef,
+        num_states = 2,
+        invert = False):
+        #Genotype string length
+        string_length = len(str_geno[0])
+        #Number of states per position in genotype string
+        if type(num_states) == int:
+            num_states = [num_states for i in range(string_length)]
+        #Convert reference characters to "."
+        str_coef = [i.replace("0", ".") for i in str_coef]
+        #Loop over column and row genotypes
+        H_list = []
+        for i in range(len(str_geno)):
+            row_list = []
+            for j in range(len(str_coef)):
+                if invert:
+                    row_factor1 = float(np.prod([c-1 for a,b,c in zip(str_coef[j], str_geno[i], num_states) if ord(a) == ord(b)]))
+                else:
+                    row_factor1 = float(sum([ord(a) == ord(b) or ord(b) == ord("0") or ord(a) == ord(".") for a,b in zip(str_coef[j], str_geno[i])]) == string_length)
+                row_factor2 = sum([int(ord(a) == ord(b)) for a,b in zip(str_coef[j], str_geno[i])])
+                row_list += [row_factor1 * np.power(-1, row_factor2)]
+            H_list += [row_list]
+        if invert:
+            return(np.asarray(H_list)/np.prod(num_states))
+        else:
+            return(np.asarray(H_list))
+
+    def V_matrix(
+        self,
+        str_coef,
+        num_states = 2,
+        invert = False):
+        #Genotype subset
+        str_geno = str_coef
+        #Genotype string length
+        string_length = len(str_geno[0])
+        #Number of states per position in genotype string
+        if type(num_states) == int:
+            num_states = [num_states for i in range(string_length)]
+        #Convert reference characters to "."
+        str_coef_ = [i.replace("0", ".") for i in str_coef]
+        #Initialise V matrix
+        V = np.array([[0.0]*len(str_coef)]*len(str_geno))
+        #Fill matrix
+        for i in range(len(str_geno)):
+            factor1 = int(np.prod([c for a,b,c in zip(str_coef_[i], str_geno[i], num_states) if ord(a) != ord(b)]))
+            factor2 = sum([1 for a,b in zip(str_coef_[i], str_geno[i]) if ord(a) == ord(b)])
+            if invert:
+                V[i,i] = factor1 * np.power(-1, factor2)
+            else:
+                V[i,i] = 1/(factor1 * np.power(-1, factor2))
+        return(V)
+
+    def coefficient_to_sequence(
+        self,
+        coefficient,
+        length):
+        """
+        Get sequence representation of a coefficient string.
+
+        :param coefficient: coefficient string.
+        :param length: integer sequence length.
+        :returns: sequence string.
+        """
+        #Initialise sequence string
+        coefficient_seq = ['0']*length
+        #Wild-type sequence string
+        if coefficient == "WT":
+            return ''.join(coefficient_seq)
+        #Variant sequence string
+        for i in coefficient.split("_"):
+            coefficient_seq[int(i[1:-1])-1] = i[-1]
+        return ''.join(coefficient_seq)
+
+    def ensemble_encode_features(
+        self):
+        """
+        Ensemble encode features.
+
+        :returns: Nothing.
+        """
+        print("step1")
+        #Wild-type mask variant sequences
+        geno_list = list(self.fdata.vtable.apply(lambda row : "".join(x if x!=y else '0' for x,y in zip(str(row[self.fdata.variantCol]),self.fdata.wildtype)),
+            axis = 1))
+        print("step2")
+        #Sequence representation of 1-hot encoded coefficients/features
+        ceof_list = [self.coefficient_to_sequence(coef, len(self.fdata.wildtype)) for coef in self.Xohi.columns]
+        print("step3")
+        #Ensemble encode features
+        hmat_inv = self.H_matrix(
+            str_geno = geno_list, 
+            str_coef = ceof_list, 
+            num_states = 5, 
+            invert = True)
+        print("step4")
+        vmat_inv = self.V_matrix(
+            str_coef = ceof_list, 
+            num_states = 5, 
+            invert = True)
+        print("step5")
+        return np.matmul(hmat_inv, vmat_inv)
+
     def define_cross_validation_groups(
         self, 
         k_folds = 10,
@@ -521,7 +672,7 @@ class MochiData:
         random.seed(seed)
         random.shuffle(holdout_fold)
 
-        #Add to cvgroups data frame
+        #Add to cvgroups DataFrame
         self.cvgroups['fold'] = None
         self.cvgroups.loc[self.cvgroups.holdout==1,'fold'] = holdout_fold
 

@@ -9,6 +9,7 @@ dependencies:
   - jupyter_core=4.9.1
   - jupyter_server=1.13.3
   - jupyterlab=3.2.8
+  - pandas=1.4.2
   - matplotlib=3.5.1
   - numpy=1.21.2
   - pyreadr=0.4.4

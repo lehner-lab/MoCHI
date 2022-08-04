@@ -445,8 +445,8 @@ class MochiProject():
         #All files in directory
         files = os.listdir(directory)
 
-        #Check data and at least one model exists
-        if not (('data.pyc' in files or 'data.pbz2' in files) and 'model_0.pth' in files):
+        #Check data exists (no models required)
+        if not ('data.pyc' in files or 'data.pbz2' in files):
             print("Error: Saved models directory structure incorrect.")
             return
 
@@ -522,6 +522,57 @@ class MochiProject():
         else:
             return sum(d/np.power(w, 2))/sum(1/np.power(w, 2))
 
+    def get_global_weights(
+        self,
+        folds = None,
+        grid_search = False):
+        """
+        Get global weights.
+
+        :param folds: list of cross-validation folds (default:None i.e. all).
+        :param grid_search: Whether or not to include grid_search models (default:False).
+        :returns: Nothing.
+        """ 
+
+        #Check if valid MochiProject
+        if 'models' not in dir(self):
+            print("Error: Cannot get global weights. Not a valid MochiProject.")
+            return
+
+        #Output weights directory
+        directory = os.path.join(self.directory, 'weights')
+
+        #Create output weights directory
+        try:
+            os.mkdir(directory)
+        except FileExistsError:
+            pass
+
+        #Set folds if not supplied
+        if folds==None:
+            folds = [i+1 for i in range(self.data.k_folds)]
+
+        #Model subset
+        models_subset = [i for i in self.models if ((i.metadata.grid_search==grid_search) & (i.metadata.fold in folds))]
+        #Check if at least one model remaining
+        if len(models_subset)==0:
+            print("No models satisfying criteria.")
+            return
+
+        #Construct weight list
+        at_list = []
+        for j in range(self.data.model_design.shape[0]): 
+            param_list = []
+            for i in range(len(models_subset)):
+                #Get all global weights
+                param_list += [{g:models_subset[i].globalparams[j][g].detach().numpy() for g in models_subset[i].globalparams[j].keys()}]
+                param_list[-1] = {'fold': models_subset[i].metadata.fold} | param_list[-1]
+            at_list += [pd.DataFrame(param_list)]
+
+        #Save model weights
+        for i in range(len(at_list)):
+            at_list[i].to_csv(os.path.join(directory, "global_weights_"+self.data.phenotype_names[i]+".txt"), sep = "\t", index = False)
+
     def get_linear_weights(
         self,
         folds = None,
@@ -573,7 +624,7 @@ class MochiProject():
 
         #Save model weights
         for i in range(len(at_list)):
-            at_list[i].to_csv(os.path.join(directory, "linears_weights_"+self.data.phenotype_names[i]+".txt"), sep = "\t")
+            at_list[i].to_csv(os.path.join(directory, "linears_weights_"+self.data.phenotype_names[i]+".txt"), sep = "\t", index = False)
 
     def get_additive_trait_weights(
         self,
@@ -611,6 +662,9 @@ class MochiProject():
 
         #Save linear weights
         self.get_linear_weights(folds = folds, grid_search = grid_search)
+
+        #Save linear weights
+        self.get_global_weights(folds = folds, grid_search = grid_search)
 
         #Set folds if not supplied
         if folds==None:
@@ -678,10 +732,10 @@ class MochiProject():
             #Save aggregated model weights
             file_prefix = ["weights_agg_", "weights_agg_abs_"][int(aggregate_absolute_value)]
             for i in range(len(agg_list)):
-                agg_list[i].to_csv(os.path.join(directory, file_prefix+self.data.additive_trait_names[i]+".txt"), sep = "\t")
+                agg_list[i].to_csv(os.path.join(directory, file_prefix+self.data.additive_trait_names[i]+".txt"), sep = "\t", index = False)
         #Save model weights
         for i in range(len(at_list)):
-            at_list[i].to_csv(os.path.join(directory, "weights_"+self.data.additive_trait_names[i]+".txt"), sep = "\t")
+            at_list[i].to_csv(os.path.join(directory, "weights_"+self.data.additive_trait_names[i]+".txt"), sep = "\t", index = False)
         #Return
         if aggregate:
             return agg_list
@@ -1079,6 +1133,6 @@ class MochiProject():
         result_df = pd.concat([v_df, select_df, pred_df, fold_df, at_df], axis=1)
 
         #Save
-        result_df.to_csv(os.path.join(directory, "predicted_phenotypes_all.txt"), sep = "\t")
+        result_df.to_csv(os.path.join(directory, "predicted_phenotypes_all.txt"), sep = "\t", index = False)
         return result_df
 
