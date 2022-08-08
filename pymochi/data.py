@@ -17,6 +17,8 @@ from sklearn.preprocessing import OneHotEncoder
 from sklearn.preprocessing import PolynomialFeatures
 from itertools import combinations
 
+import time
+
 class FitnessData:
     """
     A class for the storage of fitness data from a single DMS experiment.
@@ -214,7 +216,8 @@ class MochiData:
         holdout_minobs = 0, 
         holdout_orders = [], 
         holdout_WT = False,
-        features = []):
+        features = [],
+        ensemble = False):
         """
         Initialize a MochiData object.
 
@@ -242,7 +245,6 @@ class MochiData:
         self.X = None
         self.Xoh = None
         self.Xohi = None
-        self.Xohie = None
         self.k_folds = None
         self.cvgroups = None
         self.coefficients = None
@@ -282,9 +284,6 @@ class MochiData:
             max_order = max_interaction_order,
             min_observed = min_observed,
             features = features)
-        # #Ensemble encode features
-        # print("Ensemble encoding features")
-        # self.Xohie = self.ensemble_encode_features()
         #Split into training, validation and test sets
         print("Defining cross-validation groups")
         self.k_folds = k_folds
@@ -295,6 +294,10 @@ class MochiData:
             holdout_minobs = holdout_minobs, 
             holdout_orders = holdout_orders, 
             holdout_WT = holdout_WT)
+        #Ensemble encode features
+        if ensemble:
+            print("Ensemble encoding features")
+            self.Xohi = self.ensemble_encode_features()
         print("Done!")
 
     def check_model_design(
@@ -516,24 +519,22 @@ class MochiData:
         #Number of states per position in genotype string
         if type(num_states) == int:
             num_states = [num_states for i in range(string_length)]
-        #Convert reference characters to "."
-        str_coef = [i.replace("0", ".") for i in str_coef]
-        #Loop over column and row genotypes
-        H_list = []
-        for i in range(len(str_geno)):
-            row_list = []
-            for j in range(len(str_coef)):
-                if invert:
-                    row_factor1 = float(np.prod([c-1 for a,b,c in zip(str_coef[j], str_geno[i], num_states) if ord(a) == ord(b)]))
-                else:
-                    row_factor1 = float(sum([ord(a) == ord(b) or ord(b) == ord("0") or ord(a) == ord(".") for a,b in zip(str_coef[j], str_geno[i])]) == string_length)
-                row_factor2 = sum([int(ord(a) == ord(b)) for a,b in zip(str_coef[j], str_geno[i])])
-                row_list += [row_factor1 * np.power(-1, row_factor2)]
-            H_list += [row_list]
+        #Convert reference characters to "." and binary encode
+        str_coef = [[ord(j) for j in i.replace("0", ".")] for i in str_coef]
+        str_geno = [[ord(j) for j in i] for i in str_geno]
+        #Matrix representations
+        num_statesi = np.repeat([num_states], len(str_geno)*len(str_coef), axis = 0)
+        str_genobi = np.repeat(str_geno, len(str_coef), axis = 0)
+        str_coefbi = np.transpose(np.tile(np.transpose(np.asarray(str_coef)), len(str_geno)))
+        str_genobi_eq_str_coefbi = (str_genobi == str_coefbi)
+        #Factors
+        row_factor2 = str_genobi_eq_str_coefbi.sum(axis = 1)
         if invert:
-            return(np.asarray(H_list)/np.prod(num_states))
+            row_factor1 = np.prod(str_genobi_eq_str_coefbi * (num_statesi-2) + 1, axis = 1)       
+            return ((row_factor1 * np.power(-1, row_factor2))/np.prod(num_states)).reshape((len(str_geno),-1))
         else:
-            return(np.asarray(H_list))
+            row_factor1 = (np.logical_or(np.logical_or(str_genobi_eq_str_coefbi, str_genobi==ord('0')), str_coefbi==ord('.')).sum(axis = 1) == string_length).astype(float)            
+            return ((row_factor1 * np.power(-1, row_factor2))).reshape((len(str_geno),-1))
 
     def V_matrix(
         self,
@@ -589,27 +590,28 @@ class MochiData:
 
         :returns: Nothing.
         """
-        print("step1")
         #Wild-type mask variant sequences
         geno_list = list(self.fdata.vtable.apply(lambda row : "".join(x if x!=y else '0' for x,y in zip(str(row[self.fdata.variantCol]),self.fdata.wildtype)),
             axis = 1))
-        print("step2")
         #Sequence representation of 1-hot encoded coefficients/features
         ceof_list = [self.coefficient_to_sequence(coef, len(self.fdata.wildtype)) for coef in self.Xohi.columns]
-        print("step3")
+        #Number of states per position
+        state_list = (self.X.apply(lambda column: column.value_counts(), axis = 0)>0).apply(lambda column: column.value_counts(), axis = 0)
+        state_list = list(np.asarray(state_list)[0])
         #Ensemble encode features
+        start = time.time()
         hmat_inv = self.H_matrix(
             str_geno = geno_list, 
             str_coef = ceof_list, 
-            num_states = 5, 
+            num_states = state_list, 
             invert = True)
-        print("step4")
+        end = time.time()
+        print("Execution time for H_matrix :", end-start)
         vmat_inv = self.V_matrix(
             str_coef = ceof_list, 
-            num_states = 5, 
+            num_states = state_list, 
             invert = True)
-        print("step5")
-        return np.matmul(hmat_inv, vmat_inv)
+        return pd.DataFrame(np.matmul(hmat_inv, vmat_inv), columns = self.Xohi.columns)
 
     def define_cross_validation_groups(
         self, 

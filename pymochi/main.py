@@ -39,6 +39,7 @@ def init_argparse(
     parser.add_argument('--holdout_minobs', type = int, default = 0, help = "minimum number of observations of additive trait weights to be held out (default: 0)")
     parser.add_argument('--holdout_orders', type = str, help = "comma-separated list of integer mutation orders corresponding to retained variants (default: variants of all mutation orders can be held out)")
     parser.add_argument('--holdout_WT', action='store_true', default = False, help = "WT variant can be held out (default: False)")
+    parser.add_argument('--ensemble', action='store_true', default = False, help = "use ensemble feature encoding (default: False)")
     parser.add_argument('--num_epochs_grid', type = int, default = 100, help = "number of grid search epochs (default: 100)")
     parser.add_argument('--num_epochs', type = int, default = 1000, help = "maximum number of training epochs (default: 1000)")
     parser.add_argument('--batch_size', type = str, default = "512,1024,2048", help = "comma-separated list of minibatch sizes to consider during grid search (default: '512,1024,2048')")
@@ -68,8 +69,8 @@ def main(
     if demo_mode:
         model_design = pd.read_csv(Path(__file__).parent / "data/model_design.txt", sep = "\t", index_col = False)
         model_design['file'] = [
-            str(Path(__file__).parent / "data/fitness_abundance.RData"),
-            str(Path(__file__).parent / "data/fitness_binding.RData")]
+            str(Path(__file__).parent / "data/fitness_abundance.txt"),
+            str(Path(__file__).parent / "data/fitness_binding.txt")]
         args.downsample_proportion = 0.1
         args.project_name = "mochi_model_demo"
         args.k_folds = 5
@@ -103,7 +104,8 @@ def main(
         validation_factor = args.validation_factor, 
         holdout_minobs = args.holdout_minobs, 
         holdout_orders = holdout_orders, 
-        holdout_WT = args.holdout_WT)
+        holdout_WT = args.holdout_WT,
+        ensemble = args.ensemble)
 
     #######################################################################
     ## CREATE PROJECT ##

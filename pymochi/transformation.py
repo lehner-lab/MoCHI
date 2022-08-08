@@ -47,6 +47,22 @@ def TwoStateFractionFolded(
     else:
         return torch.pow(1+torch.exp(X[0]), -1)
 
+def TwoStateFractionFoldedGlobal(
+    X = None,
+    trainable_parameters = {}):
+    """
+    1-dimensional nonlinear transformation relating Gibbs free energy of folding to fraction of molecules folded.
+    Global effects on folding (e.g. chaperone) concentration is a trained parameter (c).
+
+    :param X: list of tensors (required).
+    :param trainable_parameters: dictionary of global parameter names (optional).
+    :returns: fraction of molecules folded tensor.
+    """  
+    if X == None:
+        return {'c': None}
+    else:
+        return torch.pow(1+torch.exp(X[0]+trainable_parameters['c']), -1)
+
 def ThreeStateFractionBound(
     X = None,
     trainable_parameters = {}):
