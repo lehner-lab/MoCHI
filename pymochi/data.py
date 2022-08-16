@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.preprocessing import PolynomialFeatures
-from itertools import combinations
+import itertools
 
 import time
 
@@ -28,14 +28,16 @@ class FitnessData:
         file_path, 
         name = None, 
         order_subset = None,
-        downsample_proportion = None):
+        downsample_observations = None,
+        seed = 1):
         """
         Initialize a FitnessData object.
 
         :param file_path: path to input file (required).
         :param name: name of fitness dataset (optional).
         :param order_subset: list of mutation orders corresponding to retained variants (optional).
-        :param downsample_proportion: proportion of random variants to retain including WT (optional).
+        :param downsample_observations: number (if integer) or proportion (if float) of observations to retain including WT (optional).
+        :param seed: Random seed for downsampling observations (default:1).
         :returns: FitnessData object.
         """
         #Initialize attributes
@@ -51,7 +53,8 @@ class FitnessData:
             file_path = file_path, 
             name = name, 
             order_subset = order_subset,
-            downsample_proportion = downsample_proportion)
+            downsample_observations = downsample_observations,
+            seed = seed)
 
     def read_fitness_r(
         self, 
@@ -106,14 +109,16 @@ class FitnessData:
         file_path, 
         name = None, 
         order_subset = None,
-        downsample_proportion = None):
+        downsample_observations = None,
+        seed = 1):
         """
         Read fitness from DiMSum RData file.
 
         :param file_path: path to RData file (required).
         :param name: name of fitness dataset (optional).
         :param order_subset: list of mutation orders corresponding to retained variants (optional).
-        :param downsample_proportion: proportion of random variants to retain including WT (optional).
+        :param downsample_observations: number (if integer) or proportion (if float) of observations to retain including WT (optional).
+        :param seed: Random seed for downsampling observations (default:1).
         :returns: Nothing.
         """
 
@@ -182,13 +187,28 @@ class FitnessData:
         if name!=None:
             self.vtable['phenotype'] = name
 
-        #Randomly downsample variants
-        if downsample_proportion!=None:
-            vtable_wt = copy.deepcopy(self.vtable.loc[self.vtable['WT']==True,:])
-            self.vtable = pd.concat([
-                vtable_wt,
-                self.vtable.loc[self.vtable['WT']!=True,:].sample(int(self.vtable.loc[self.vtable['WT']!=True].shape[0]*downsample_proportion))])
-            self.vtable.reset_index(drop = True, inplace = True)
+        #Randomly downsample observations
+        if downsample_observations!=None:
+            if type(downsample_observations) == float:
+                #Downsample observations by proportion
+                if downsample_observations < 1 and downsample_observations > 0:
+                    vtable_wt = copy.deepcopy(self.vtable.loc[self.vtable['WT']==True,:])
+                    self.vtable = pd.concat([
+                        vtable_wt,
+                        self.vtable.loc[self.vtable['WT']!=True,:].sample(frac = downsample_observations, random_state = seed)])
+                    self.vtable.reset_index(drop = True, inplace = True)
+                else:
+                    print("Error: downsample_observations argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
+            elif type(downsample_observations) == int:
+                #Downsample observations by number
+                if downsample_observations >= 1:
+                    vtable_wt = copy.deepcopy(self.vtable.loc[self.vtable['WT']==True,:])
+                    self.vtable = pd.concat([
+                        vtable_wt,
+                        self.vtable.loc[self.vtable['WT']!=True,:].sample(n = downsample_observations, random_state = seed)])
+                    self.vtable.reset_index(drop = True, inplace = True)
+                else:
+                    print("Error: downsample_observations argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
 
     def __len__(self):
         """
@@ -207,7 +227,8 @@ class MochiData:
         self, 
         model_design,
         order_subset = None,
-        downsample_proportion = None,
+        downsample_observations = None,
+        downsample_interactions = None,
         max_interaction_order = 1,
         min_observed = 2,
         k_folds = 10,
@@ -223,16 +244,18 @@ class MochiData:
 
         :param model_design: Model design DataFrame with phenotype, transformation, trait and file columns (required).
         :param order_subset: list of mutation orders corresponding to retained variants (optional).
-        :param downsample_proportion: proportion of random variants to retain including WT (optional).
+        :param downsample_observations: number (if integer) or proportion (if float) of observations to retain including WT (optional).
+        :param downsample_interactions: number (if integer) or proportion (if float) of interaction terms to retain (optional).
         :param max_interaction_order: Maximum interaction order (default:1).
         :param min_observed: Minimum number of observations required to include interaction term (default:2).
         :param k_folds: Numbef of cross-validation folds (default:10).
-        :param seed: Random seed for defining cross-validation groups (default:1).
+        :param seed: Random seed for downsampling (observations and interactions) and defining cross-validation groups (default:1).
         :param validation_factor: Relative size of validation set with respect to test set (default:2).
         :param holdout_minobs: Minimum number of observations of additive trait weights to be held out (default:0).
         :param holdout_orders: list of mutation orders corresponding to retained variants (default:[] i.e. variants of all mutation orders can be held out).
         :param holdout_WT: Whether or not to WT variant can be held out (default:False).
         :param features: list of feature names to filter (default:[] i.e. all features retained).
+        :param ensemble: Ensemble encode features. (default:False).
         :returns: MochiData object.
         """
         #Initialize attributes
@@ -248,6 +271,7 @@ class MochiData:
         self.k_folds = None
         self.cvgroups = None
         self.coefficients = None
+        self.seed = seed
 
         #Check and save model design
         self.model_design = self.check_model_design(copy.deepcopy(model_design))
@@ -260,7 +284,8 @@ class MochiData:
             file_path = filepath_list[i], 
             name = str(i+1),
             order_subset = order_subset,
-            downsample_proportion = downsample_proportion) for i in range(len(filepath_list))]        
+            downsample_observations = downsample_observations,
+            seed = seed) for i in range(len(filepath_list))]        
         #Merge all datasets
         self.fdata = self.merge_datasets(fdatalist)
         if self.fdata==None:
@@ -283,7 +308,8 @@ class MochiData:
         self.one_hot_encode_interactions(
             max_order = max_interaction_order,
             min_observed = min_observed,
-            features = features)
+            features = features,
+            downsample_interactions = downsample_interactions)
         #Split into training, validation and test sets
         print("Defining cross-validation groups")
         self.k_folds = k_folds
@@ -413,7 +439,9 @@ class MochiData:
         exclude = [0],
         max_cells = 1e9,
         min_observed = 2,
-        features = []):
+        features = [],
+        downsample_interactions = None,
+        seed = 1):
         """
         Add interaction terms to 1-hot encoding DataFrame.
 
@@ -422,13 +450,34 @@ class MochiData:
         :param max_cells: Maximum matrix cells permitted (default:1billion).
         :param min_observed: Minimum number of observations required to include interaction term (default:2).
         :param features: list of feature names to filter (default:[] i.e. all  features retained).
+        :param downsample_interactions: number (if integer) or proportion (if float) or list of integer numbers (if string) of interaction terms to retain (optional).
+        :param seed: Random seed for downsampling interactions (default:1).
         :returns: Nothing.
         """
+
+        #Check downsample_interactions argument valid
+        if downsample_interactions!=None:
+            if type(downsample_interactions) == float:
+                #Downsample observations by proportion
+                if downsample_interactions >= 1 or downsample_interactions <= 0:
+                    print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
+            elif type(downsample_interactions) == int:
+                #Downsample observations by number
+                if downsample_interactions < 1:
+                    print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
+            elif type(downsample_interactions) == str:
+                try:
+                    downsample_interactions = {(i+2):int(d) for i,d in enumerate(str(downsample_interactions).split(","))}
+                except:
+                    print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
+            else:
+                print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
+
         #Check if no interactions to add
         if max_order<2:
             self.Xohi = copy.deepcopy(self.Xoh)
             #Filter features
-            if len(features)!=0:
+            if features!=[]:
                 print("Filtering features")
                 self.filter_features(features = features)
             return
@@ -436,60 +485,92 @@ class MochiData:
         int_columns = list(self.Xoh.columns)
         int_columns = [int_columns[i] for i in range(len(int_columns)) if i not in exclude]
 
-        #All possible combinations of columns
+        #All possible combinations of mutations
+        all_pos = list(set([i[1:-1] for i in self.Xoh.columns if i!="WT"]))
+        all_pos_mut = {int(i):[j for j in self.Xoh.columns if j[1:-1]==i] for i in all_pos}
         all_features = []
+        int_order_dict = {}
         for n in range(max_order + 1):
             #Order at least 2
             if n>1:
-                all_features += ["_".join(c) for c in list(combinations(int_columns, n))]
+                #All position combinations
+                pos_comb = list(itertools.combinations(sorted(all_pos_mut.keys()), n))
+                for p in pos_comb:
+                    #All mutation combinations for these positions
+                    all_features += ["_".join(c) for c in itertools.product(*[all_pos_mut[j] for j in p])]
+                int_order_dict[n] = len(all_features) - sum(int_order_dict.values())
+
+        print("... Total theoretical features (order:count): "+", ".join([str(i)+":"+str(int_order_dict[i]) for i in sorted(int_order_dict.keys())]))
 
         #Check if all interaction features exist (i.e. with mutation order>1)
         if len([i for i in features if (i not in all_features) and (len(i.split('_'))>1)]) != 0:
             print(f"Error: Invalid feature names.")
             return
 
-        # #Check potential memory footprint
-        # int_list_names = []
-        # int_total = 0
-        # for n in range(max_order + 1):
-        #     #Order at least 2
-        #     if n>1:
-        #         int_total += len(self.fdata.vtable.loc[self.fdata.vtable[self.fdata.mutationOrderCol]==n,:])
-        # if int_total*len(self.Xoh) > max_cells:
-        #     print(f"Error: Too many interaction terms: number of feature matrix cells >{max_cells:>.0e}")
-        #     return
-
-        #All possible combinations of columns
+        #Select interactions
         int_list = []
+        int_order_dict_retained = {}
         int_list_names = []
-        for n in range(max_order + 1):
-            #Order at least 2
-            if n>1:
-                comb_list = list(combinations(int_columns, n))
-                for c in comb_list:
-                    #Check if feature desired
-                    if ("_".join(c) in features) or (len(features)==0):
-                        int_col = (self.Xoh.loc[:,c].sum(axis = 1)==n).astype(int)
-                        #Check if minimum number of observations satisfied
-                        if sum(int_col) >= min_observed:
-                            int_list += [int_col]
-                            int_list_names += ["_".join(c)]
-                        #Check memory footprint
-                        if len(int_list)*len(self.Xoh) > max_cells:
-                            print(f"Error: Too many interaction terms: number of feature matrix cells >{max_cells:>.0e}")
-                            return
+        #Shuffle if downsampling
+        if downsample_interactions == None:
+            all_features_loop = all_features
+        else:
+            random.seed(seed)
+            all_features_loop = random.sample(all_features, len(all_features))
+        #Loop over all features
+        for c in all_features_loop:
+            c_split = c.split("_")
+            #Check if feature desired
+            if (c in features) or features==[]:
+                int_col = (self.Xoh.loc[:,c_split].sum(axis = 1)==len(c_split)).astype(int)
+                #Check if minimum number of observations satisfied
+                if sum(int_col) >= min_observed:
+                    int_list += [int_col]
+                    int_list_names += [c]
+                    if len(c_split) not in int_order_dict_retained.keys():
+                        int_order_dict_retained[len(c_split)] = 1
+                    else:
+                        int_order_dict_retained[len(c_split)] += 1
+                else:
+                    if len(c_split)==3 and sum(int_col)==1:
+                        print(c)
+                #Check memory footprint
+                if len(int_list)*len(self.Xoh) > max_cells:
+                    print(f"Error: Too many interaction terms: number of feature matrix cells >{max_cells:>.0e}")
+                    return
+                #Check if sufficient features obtained
+                if type(downsample_interactions) == float:
+                    if len(int_list) == int(len(all_features)*downsample_interactions):
+                        break
+                elif type(downsample_interactions) == int:
+                    if len(int_list) == downsample_interactions:
+                        break
+                elif type(downsample_interactions) == dict:
+                    if len(c_split) in int_order_dict_retained.keys():
+                        if int_order_dict_retained[len(c_split)] > downsample_interactions[len(c_split)] and downsample_interactions[len(c_split)]!=(-1):
+                            int_list.pop()
+                            int_list_names.pop()
+                            int_order_dict_retained[len(c_split)] -= 1
+                        elif int_order_dict_retained == downsample_interactions:
+                            break
+
+        print("... Total retained features (order:count): "+", ".join([str(i)+":"+str(int_order_dict_retained[i])+" ("+str(round(int_order_dict_retained[i]/int_order_dict[i]*100, 1))+"%)" for i in sorted(int_order_dict_retained.keys())]))
+
         #Concatenate into dataframe
         if len(int_list)>0:
             self.Xohi = pd.concat(int_list, axis=1)
             self.Xohi.columns = int_list_names
+            #Reorder
+            self.Xohi = self.Xohi.loc[:,[i for i in all_features if i in self.Xohi.columns]]
             self.Xohi = pd.concat([self.Xoh, self.Xohi], axis=1)
         else:
             self.Xohi = copy.deepcopy(self.Xoh)
 
         #Filter features
-        if len(features)!=0:
+        if features!=[]:
             print("Filtering features")
-            self.filter_features(features = features)
+            self.filter_features(
+                features = features)
 
     def filter_features(
         self, 
@@ -514,6 +595,15 @@ class MochiData:
         str_coef,
         num_states = 2,
         invert = False):
+        """
+        Construct Walsh-Hadamard matrix.
+
+        :param str_geno: list of genotype strings where '0' indicates WT state.
+        :param str_coef: list of coefficient strings where '0' indicates WT state.
+        :param num_states: integer number of states (identical per position) or list of integers with length matching that of sequences.
+        :param invert: invert the matrix.
+        :returns: Walsh-Hadamard matrix as a numpy matrix.
+        """
         #Genotype string length
         string_length = len(str_geno[0])
         #Number of states per position in genotype string
@@ -541,6 +631,14 @@ class MochiData:
         str_coef,
         num_states = 2,
         invert = False):
+        """
+        Construct diagonal weighting matrix.
+
+        :param str_coef: list of coefficient strings where '0' indicates WT state.
+        :param num_states: integer number of states (identical per position) or list of integers with length matching that of sequences.
+        :param invert: invert the matrix.
+        :returns: diagonal weighting matrix as a numpy matrix.
+        """
         #Genotype subset
         str_geno = str_coef
         #Genotype string length
@@ -606,7 +704,7 @@ class MochiData:
             num_states = state_list, 
             invert = True)
         end = time.time()
-        print("Execution time for H_matrix :", end-start)
+        print("Construction time for H_matrix :", end-start)
         vmat_inv = self.V_matrix(
             str_coef = ceof_list, 
             num_states = state_list, 
@@ -704,7 +802,7 @@ class MochiData:
         Get data for a specified cross-validation fold.
 
         :param fold: Cross-validation fold (default:1).
-        :param seed: Random seed for training target data resampling (default:1).
+        :param seed: Random seed for both training target data resampling and shuffling training data (default:1).
         :param training_resample: Whether or not to add random noise to training target data proportional to target error (default:True).
         :returns: Dictionary of dictionaries of tensors.
         """

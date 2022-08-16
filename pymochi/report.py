@@ -14,21 +14,21 @@ from matplotlib.colors import LinearSegmentedColormap
 
 class MochiReport:
     """
-    A class for generating reports about MochiProject objects.
+    A class for generating reports about MochiTask objects.
     """
     def __init__(
         self, 
-        project,
+        task,
         RT = None):
         """
         Initialize a MochiReport object.
 
-        :param project: a MochiProject object (required).
+        :param task: a MochiTask object (required).
         :param RT: R=gas constant (in kcal/K/mol) * T=Temperature (in K) (optional).
         :returns: MochiReport object.
         """     
         #Initialize attributes
-        self.project = project
+        self.task = task
         self.RT = RT
         #Generate report
         self.report()
@@ -48,10 +48,10 @@ class MochiReport:
         """ 
         #Set folds if not supplied
         if folds==None:
-            folds = [i+1 for i in range(self.project.data.k_folds)]
+            folds = [i+1 for i in range(self.task.data.k_folds)]
 
         #Model subset
-        models_subset = [i for i in self.project.models if ((i.metadata.grid_search==grid_search) & (i.metadata.fold in folds))]
+        models_subset = [i for i in self.task.models if ((i.metadata.grid_search==grid_search) & (i.metadata.fold in folds))]
         #Check if at least one model remaining
         if len(models_subset)==0:
             print("No models satisfying criteria.")
@@ -90,14 +90,14 @@ class MochiReport:
         """ 
         #Set folds if not supplied
         if folds==None:
-            folds = [i+1 for i in range(self.project.data.k_folds)]
+            folds = [i+1 for i in range(self.task.data.k_folds)]
 
         #Set RT if not supplied
         if RT==None:
             RT = 1
 
         #Model subset
-        models_subset = [i for i in self.project.models if ((i.metadata.grid_search==grid_search) & (i.metadata.fold in folds))]
+        models_subset = [i for i in self.task.models if ((i.metadata.grid_search==grid_search) & (i.metadata.fold in folds))]
         #Check if at least one model remaining
         if len(models_subset)==0:
             print("No models satisfying criteria.")
@@ -109,7 +109,7 @@ class MochiReport:
                 ax.plot(
                     range(len(models_subset[j].training_history['additivetrait'+str(i+1)+'_WT'])), 
                     np.array(models_subset[j].training_history['additivetrait'+str(i+1)+'_WT'])*RT, 
-                    label=self.project.data.additive_trait_names[i]+" cvfold_"+str(j+1)); 
+                    label=self.task.data.additive_trait_names[i]+" cvfold_"+str(j+1)); 
         #Decorations
         plt.axhline(y = 0, color = 'black', linestyle = '--')
         ax.set_xlabel('Epoch', size = 14)
@@ -136,22 +136,22 @@ class MochiReport:
         """ 
         #Set folds if not supplied
         if folds==None:
-            folds = [i+1 for i in range(self.project.data.k_folds)]
+            folds = [i+1 for i in range(self.task.data.k_folds)]
 
         #Model subset
-        models_subset = [i for i in self.project.models if ((i.metadata.grid_search==grid_search) & (i.metadata.fold in folds))]
+        models_subset = [i for i in self.task.models if ((i.metadata.grid_search==grid_search) & (i.metadata.fold in folds))]
         #Check if at least one model remaining
         if len(models_subset)==0:
             print("No models satisfying criteria.")
             return
 
         fig, ax = plt.subplots()  # Create a figure containing a single axes.
-        for i in range(self.project.data.model_design.shape[0]):
+        for i in range(self.task.data.model_design.shape[0]):
             for j in range(len(models_subset)):
                 ax.plot(
                 range(len(models_subset[j].training_history['residual'+str(i+1)+'_WT'])), 
                 models_subset[j].training_history['residual'+str(i+1)+'_WT'], 
-                label=self.project.data.phenotype_names[i]+" cvfold_"+str(j+1));  # Plot some data on the axes.
+                label=self.task.data.phenotype_names[i]+" cvfold_"+str(j+1));  # Plot some data on the axes.
         plt.axhline(y = 0, color = 'black', linestyle = '--')
         #Decorations
         ax.set_xlabel('Epoch', size = 14)
@@ -206,7 +206,7 @@ class MochiReport:
             plt.axhline(y = 0, color = 'black', linestyle = '--')
             plt.axvline(x = 0, color = 'black', linestyle = '--')
             #Labels
-            ax.set_title(self.project.data.phenotype_names[int(i)-1])
+            ax.set_title(self.task.data.phenotype_names[int(i)-1])
             ax.set_xlabel('Observed phenotype', size = 14)
             ax.set_ylabel('Predicted phenotype', size = 14)
             ax.set_aspect("equal")
@@ -220,7 +220,7 @@ class MochiReport:
                 prop=dict(size=14), frameon=False, loc='upper left')
             ax.add_artist(at)
             #Save
-            plt.savefig(output_path_prefix+self.project.data.phenotype_names[int(i)-1]+".pdf")
+            plt.savefig(output_path_prefix+self.task.data.phenotype_names[int(i)-1]+".pdf")
 
     def plot_observed_phenotype_vs_additivetrait(
         self,
@@ -239,7 +239,7 @@ class MochiReport:
         """ 
         #Set folds if not supplied
         if folds==None:
-            folds = [i+1 for i in range(self.project.data.k_folds)]
+            folds = [i+1 for i in range(self.task.data.k_folds)]
 
         #Set RT if not supplied
         if RT==None:
@@ -249,9 +249,9 @@ class MochiReport:
         observed_phenotype_col = 'fitness'
 
         #Plot performance for all 1-dimensional phenotypes
-        for i in range(len(self.project.data.model_design)):
+        for i in range(len(self.task.data.model_design)):
             #1-dimensional additive traits
-            if len(self.project.data.model_design.loc[i,'trait'])==1:
+            if len(self.task.data.model_design.loc[i,'trait'])==1:
                 predicted_phenotype_col = 'fold_'+str(fold)
                 additive_trait_col = predicted_phenotype_col+'_additive_trait0'
                 plot_df_sort = input_df.loc[input_df.phenotype==str(i+1),:].sort_values(additive_trait_col)
@@ -275,27 +275,27 @@ class MochiReport:
                 plt.axhline(y = 0, color = 'black', linestyle = '--')
                 plt.axvline(x = 0, color = 'black', linestyle = '--')
                 #Labels
-                ax.set_title(self.project.data.phenotype_names[int(i)])
+                ax.set_title(self.task.data.phenotype_names[int(i)])
                 ax.set_xlabel('Additive trait', size = 14)
                 ax.set_ylabel('Observed phenotype', size = 14)
                 #Save
-                plt.savefig(output_path_prefix+self.project.data.phenotype_names[int(i)]+".pdf")
+                plt.savefig(output_path_prefix+self.task.data.phenotype_names[int(i)]+".pdf")
 
     def report(
         self):
         """
-        Produce project report.
+        Produce task report.
 
         :returns: Nothing.
         """ 
 
-        #Check if valid MochiProject
-        if 'models' not in dir(self.project):
-            print("Error: Cannot produce report. Not a valid MochiProject.")
+        #Check if valid MochiTask
+        if 'models' not in dir(self.task):
+            print("Error: Cannot produce report. Not a valid MochiTask.")
             return
 
         #Output report directory
-        directory = os.path.join(self.project.directory, 'report')
+        directory = os.path.join(self.task.directory, 'report')
 
         #Create output report directory
         try:
@@ -318,7 +318,7 @@ class MochiReport:
             folds = [1])
 
         #Predictions on all data for all models
-        prediction_df = self.project.predict_all()
+        prediction_df = self.task.predict_all()
 
         self.plot_test_performance(
             input_df = prediction_df,

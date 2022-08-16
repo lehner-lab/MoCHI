@@ -291,7 +291,7 @@ class MochiModelMetadata():
         Initialize a MochiModelMetadata object.
 
         :param fold: Cross-validation fold (required).
-        :param seed: Random seed for training target data resampling (required).
+        :param seed: Random seed for both training target data resampling and shuffling training data (required).
         :param grid_search: Whether or not this model was fit during a grid search (required).
         :param batch_size: Minibatch size (required).
         :param learn_rate: Learning rate (required).
@@ -306,6 +306,7 @@ class MochiModelMetadata():
         :returns: MochiModelMetadata object.
         """ 
         self.fold = fold
+        self.seed = seed
         self.grid_search = grid_search
         self.batch_size = batch_size
         self.learn_rate = learn_rate
@@ -326,7 +327,7 @@ class MochiModelMetadata():
         """
         return str(self.__dict__)
 
-class MochiProject():
+class MochiTask():
     """
     A class for the storage and management of models and data related to a specific inference task.
     """
@@ -342,10 +343,10 @@ class MochiProject():
         l2_regularization_factor = 0,
         scheduler_gamma = 0.98):
         """
-        Initialize a MochiProject object.
+        Initialize a MochiTask object.
 
         :param directory: Path to directory where models and results should be saved/loaded (required).
-        :param data: An instance of the MochiData class (required unless 'directory' contains a saved project).
+        :param data: An instance of the MochiData class (required unless 'directory' contains a saved task).
         :param batch_size: Minibatch size (default:512).
         :param learn_rate: Learning rate (default:0.05).
         :param num_epochs: Number of training epochs (default:300).
@@ -353,19 +354,19 @@ class MochiProject():
         :param l1_regularization_factor: Lambda factor applied to L1 norm (default:0).
         :param l2_regularization_factor: Lambda factor applied to L2 norm (default:0).
         :param scheduler_gamma: Multiplicative factor of learning rate decay (default:0.98).
-        :returns: MochiProject object.
+        :returns: MochiTask object.
         """ 
         #Get CPU or GPU device
         self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        print(f"Using {self.device} device")
+        # print(f"Using {self.device} device")
         #Initialise remaining attributes
         self.directory = directory
         if data != None:
-            #Create project directory
+            #Create task directory
             try:
                 os.mkdir(self.directory)
             except FileExistsError:
-                print("Error: Project directory already exists.")
+                print("Error: Task directory already exists.")
                 return
             self.models = []
             self.data = data
@@ -378,22 +379,22 @@ class MochiProject():
             self.scheduler_gamma = scheduler_gamma
         else:
             #Load saved models
-            print("Loading project.")
+            # print("Loading task.")
             self.load()
 
     def save(
         self,
         overwrite = False):
         """
-        Save MochiProject object to disk.
+        Save MochiTask object to disk.
 
         :param overwrite: Whether or not to overwrite previous saved object (default:False).
         :returns: Nothing.
         """ 
 
-        #Check if valid MochiProject
+        #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Project cannot be saved. Not a valid MochiProject.")
+            print("Error: Task cannot be saved. Not a valid MochiTask.")
             return
 
         #Output models directory
@@ -423,14 +424,14 @@ class MochiProject():
         save_dict = {}
         for i in self.__dict__.keys():
             #Exclude built-in objects and torch models
-            if i[0:2] != "__" and i != "models":
+            if not i.startswith("__") and i != "models":
                 save_dict[i] = self.__dict__[i]
         with bz2.BZ2File(os.path.join(directory, 'data.pbz2'), 'w') as f:
             cPickle.dump(save_dict, f, pickle.HIGHEST_PROTOCOL)
 
     def load(self):
         """
-        Load MochiProject from disk.
+        Load MochiTask from disk.
 
         :returns: Nothing.
         """ 
@@ -451,9 +452,9 @@ class MochiProject():
             return
 
         #Load models using torch.load
-        self.models = [None]*len([i for i in files if i[0:6] == "model_"])
+        self.models = [None]*len([i for i in files if i.startswith("model_")])
         for i in files:
-            if i[0:6] == "model_":
+            if i.startswith("model_"):
                 model_index = int(i[6:(len(i)-4)])
                 if model_index >= len(self.models) or model_index < 0:
                     print("Error: Saved models index format incorrect.")
@@ -534,9 +535,9 @@ class MochiProject():
         :returns: Nothing.
         """ 
 
-        #Check if valid MochiProject
+        #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Cannot get global weights. Not a valid MochiProject.")
+            print("Error: Cannot get global weights. Not a valid MochiTask.")
             return
 
         #Output weights directory
@@ -585,9 +586,9 @@ class MochiProject():
         :returns: Nothing.
         """ 
 
-        #Check if valid MochiProject
+        #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Cannot get linear weights. Not a valid MochiProject.")
+            print("Error: Cannot get linear weights. Not a valid MochiTask.")
             return
 
         #Output weights directory
@@ -646,9 +647,9 @@ class MochiProject():
         :returns: A list of data frames (one per additive trait).
         """ 
 
-        #Check if valid MochiProject
+        #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Cannot get additive trait weights. Not a valid MochiProject.")
+            print("Error: Cannot get additive trait weights. Not a valid MochiTask.")
             return
 
         #Output weights directory
@@ -751,14 +752,14 @@ class MochiProject():
         Perform grid search over supplied hyperparameters.
 
         :param fold: Cross-validation fold (default:1).
-        :param seed: Random seed for training target data resampling (default:1).
+        :param seed: Random seed for both training target data resampling and shuffling training data (default:1).
         :param overwrite: Whether or not to overwrite previous grid search models (default:False).
         :returns: Nothing.
         """ 
 
-        #Check if valid MochiProject
+        #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Grid search cannot be performed. Not a valid MochiProject.")
+            print("Error: Grid search cannot be performed. Not a valid MochiTask.")
             return
 
         #Check if grid search has already been performed
@@ -827,7 +828,7 @@ class MochiProject():
 
         :param fold: Cross-validation fold (default:1).
         :param grid_search_fold: Cross-validation fold of grid search models (default:1).
-        :param seed: Random seed for training target data resampling (default:1).
+        :param seed: Random seed for both training target data resampling and shuffling training data (default:1).
         :param epoch_proportion: Proportion of final epochs over which to average grid search validation loss (default:0.1).
         :param input_model: Model with which to continue training (optional).
         :param cold: Whether or not to reinitialise model weights (default:True).
@@ -835,9 +836,9 @@ class MochiProject():
         :returns: Nothing.
         """ 
 
-        #Check if valid MochiProject
+        #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Model cannot be fit. Not a valid MochiProject.")
+            print("Error: Model cannot be fit. Not a valid MochiTask.")
             return
 
         #Check if grid search models present
@@ -895,7 +896,7 @@ class MochiProject():
         Fit model.
 
         :param fold: Cross-validation fold (default:1).
-        :param seed: Random seed for training target data resampling (default:1).
+        :param seed: Random seed for both training target data resampling and shuffling training data (default:1).
         :param grid_search: Whether or not this model is part of a grid search (default:False).
         :param batch_size: Minibatch size (default:512).
         :param learn_rate: Learning rate (default:0.05).
@@ -913,9 +914,9 @@ class MochiProject():
         :returns: Nothing.
         """ 
 
-        #Check if valid MochiProject
+        #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Model cannot be fit. Not a valid MochiProject.")
+            print("Error: Model cannot be fit. Not a valid MochiTask.")
             return
 
         #Load model data

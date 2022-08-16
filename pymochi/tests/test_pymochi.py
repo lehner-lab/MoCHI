@@ -60,61 +60,63 @@ def test_MochiData_init_duplicate_files(capsys):
     captured = capsys.readouterr()
     assert captured.out == "Error: Duplicated input files.\n"
 
-def test_MochiProject_init_no_MochiData_empty_directory():
-    """Test MochiProject initialization when no MochiData nor saved MochiProject in directory supplied"""
-    assert MochiProject(directory = str(Path(__file__).parent))
+def test_MochiTask_init_no_MochiData_empty_directory():
+    """Test MochiTask initialization when no MochiData nor saved MochiTask in directory supplied"""
+    assert MochiTask(directory = str(Path(__file__).parent))
 
-def create_dummy_project():
+def create_dummy_task():
     #Delete entire directory contents
     shutil.rmtree(str(Path(__file__).parent / "temp"), ignore_errors=True)
-    #Create a MochiProject
+    #Create a MochiTask
     model_design = pd.read_csv(Path(__file__).parent.parent / "data/model_design.txt", sep = "\t", index_col = False)
     model_design['file'] = [
         str(Path(__file__).parent.parent / "data/fitness_abundance.txt"),
         str(Path(__file__).parent.parent / "data/fitness_binding.txt")]
-    mochi_project = MochiProject(
+    mochi_task = MochiTask(
         directory = str(Path(__file__).parent / "temp"),
-        data = MochiData(model_design = model_design))
-    mochi_project.save()
-    # return mochi_project
+        data = MochiData(
+            model_design = model_design,
+            downsample_observations = 0.1))
+    mochi_task.save()
+    # return mochi_task
 
 def test_fit_best_no_grid_search_models(capsys):
     """Test fit_best function when no grid search models available"""
-    #Create dummy project
-    create_dummy_project()
-    mochi_project = MochiProject(directory = str(Path(__file__).parent / "temp"))
+    #Create dummy task
+    create_dummy_task()
+    mochi_task = MochiTask(directory = str(Path(__file__).parent / "temp"))
     #Fit best model
-    mochi_project.fit_best(fold = 1, seed = 1)
+    mochi_task.fit_best(fold = 1, seed = 1)
     captured = capsys.readouterr()
     assert captured.out.split("\n")[-2] == "Error: No grid search models available."
 
 def test_fit_best_exploded_grid_search_models(capsys):
     """Test fit_best function when all grid search models have gradient explosion"""
-    #Create dummy project
-    mochi_project = MochiProject(directory = str(Path(__file__).parent / "temp"))
+    #Create dummy task
+    mochi_task = MochiTask(directory = str(Path(__file__).parent / "temp"))
     #Load model data
-    model_data = mochi_project.data.get_data()
+    model_data = mochi_task.data.get_data()
     #Add 3 grid search models
     for i in range(3):
-        mochi_project.models += [mochi_project.new_model(model_data)]
-        model = mochi_project.models[-1]
+        mochi_task.models += [mochi_task.new_model(model_data)]
+        model = mochi_task.models[-1]
         model.metadata = MochiModelMetadata(
             fold = 1,
             seed = 1,
             grid_search = True,
-            batch_size = mochi_project.batch_size,
-            learn_rate = mochi_project.learn_rate,
-            num_epochs = mochi_project.num_epochs,
-            num_epochs_grid = mochi_project.num_epochs_grid,
-            l1_regularization_factor = mochi_project.l1_regularization_factor,
-            l2_regularization_factor = mochi_project.l2_regularization_factor,
+            batch_size = mochi_task.batch_size,
+            learn_rate = mochi_task.learn_rate,
+            num_epochs = mochi_task.num_epochs,
+            num_epochs_grid = mochi_task.num_epochs_grid,
+            l1_regularization_factor = mochi_task.l1_regularization_factor,
+            l2_regularization_factor = mochi_task.l2_regularization_factor,
             training_resample = True,
             early_stopping = True,
-            scheduler_gamma = mochi_project.scheduler_gamma,
+            scheduler_gamma = mochi_task.scheduler_gamma,
             scheduler_epochs = 10)
         model.training_history['val_loss'] = [1.0, 1.0, np.nan]
     #Fit best model
-    mochi_project.fit_best(fold = 1, seed = 1)
+    mochi_task.fit_best(fold = 1, seed = 1)
     captured = capsys.readouterr()
     assert captured.out.split("\n")[-2] == "Error: No valid grid search models available."
 
