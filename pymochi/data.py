@@ -285,7 +285,7 @@ class MochiData:
             name = str(i+1),
             order_subset = order_subset,
             downsample_observations = downsample_observations,
-            seed = seed) for i in range(len(filepath_list))]        
+            seed = self.seed) for i in range(len(filepath_list))]        
         #Merge all datasets
         self.fdata = self.merge_datasets(fdatalist)
         if self.fdata==None:
@@ -309,13 +309,14 @@ class MochiData:
             max_order = max_interaction_order,
             min_observed = min_observed,
             features = features,
-            downsample_interactions = downsample_interactions)
+            downsample_interactions = downsample_interactions,
+            seed = self.seed)
         #Split into training, validation and test sets
         print("Defining cross-validation groups")
         self.k_folds = k_folds
         self.define_cross_validation_groups(
             k_folds = k_folds,
-            seed = seed,
+            seed = self.seed,
             validation_factor = validation_factor, 
             holdout_minobs = holdout_minobs, 
             holdout_orders = holdout_orders, 
@@ -531,9 +532,9 @@ class MochiData:
                         int_order_dict_retained[len(c_split)] = 1
                     else:
                         int_order_dict_retained[len(c_split)] += 1
-                else:
-                    if len(c_split)==3 and sum(int_col)==1:
-                        print(c)
+                # else:
+                #     if len(c_split)==3 and sum(int_col)==1:
+                #         print(c)
                 #Check memory footprint
                 if len(int_list)*len(self.Xoh) > max_cells:
                     print(f"Error: Too many interaction terms: number of feature matrix cells >{max_cells:>.0e}")
