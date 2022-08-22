@@ -434,6 +434,54 @@ class MochiData:
             one_hot_df = pd.concat([pd.DataFrame({'WT': [1]*len(one_hot_df)}), one_hot_df], axis=1)
         return one_hot_df
 
+    def get_theoretical_interactions_phenotype(
+        self, 
+        phenotype = 1,
+        max_order = 2):
+        """
+        Get theoretical interaction features for variants corresponding to a specific phenotype.
+
+        :param phenotype: Phenotype number (default:1).
+        :param max_order: Maximum interaction order (default:2).
+        :returns: list of interaction features.
+        """
+        #Mutations observed for this phenotype
+        mut_count = list(self.Xoh.loc[self.phenotypes['phenotype_'+str(phenotype)]==1,:].sum(axis = 0))
+        pheno_mut = [self.Xoh.columns[i] for i in range(len(self.Xoh.columns)) if mut_count[i]!=0]
+        #All possible combinations of mutations
+        all_pos = list(set([i[1:-1] for i in pheno_mut if i!="WT"]))
+        all_pos_mut = {int(i):[j for j in pheno_mut if j[1:-1]==i] for i in all_pos}
+        all_features = []
+        for n in range(max_order + 1):
+            #Order at least 2
+            if n>1:
+                #All position combinations
+                pos_comb = list(itertools.combinations(sorted(all_pos_mut.keys()), n))
+                for p in pos_comb:
+                    #All mutation combinations for these positions
+                    all_features += ["_".join(c) for c in itertools.product(*[all_pos_mut[j] for j in p])]
+        return all_features
+
+    def get_theoretical_interactions(
+        self, 
+        max_order = 2):
+        """
+        Get theoretical interaction features.
+
+        :param max_order: Maximum interaction order (default:2).
+        :returns: tuple with list of interaction features and dictionary of order counts.
+        """
+        #All features
+        all_features = []
+        for i in list(self.model_design.phenotype):
+            all_features += self.get_theoretical_interactions_phenotype(phenotype = i, max_order = max_order)
+        all_features = list(set(all_features))
+        #All feature orders
+        int_order = [len(i.split("_")) for i in all_features]
+        int_order_dict = pd.DataFrame(pd.DataFrame({'order' : int_order}).value_counts()).to_dict()[0]
+        int_order_dict = {i[0]:int_order_dict[i] for i in int_order_dict.keys()}
+        return((all_features, int_order_dict))
+
     def one_hot_encode_interactions(
         self, 
         max_order = 2,
@@ -486,20 +534,22 @@ class MochiData:
         int_columns = list(self.Xoh.columns)
         int_columns = [int_columns[i] for i in range(len(int_columns)) if i not in exclude]
 
-        #All possible combinations of mutations
-        all_pos = list(set([i[1:-1] for i in self.Xoh.columns if i!="WT"]))
-        all_pos_mut = {int(i):[j for j in self.Xoh.columns if j[1:-1]==i] for i in all_pos}
-        all_features = []
-        int_order_dict = {}
-        for n in range(max_order + 1):
-            #Order at least 2
-            if n>1:
-                #All position combinations
-                pos_comb = list(itertools.combinations(sorted(all_pos_mut.keys()), n))
-                for p in pos_comb:
-                    #All mutation combinations for these positions
-                    all_features += ["_".join(c) for c in itertools.product(*[all_pos_mut[j] for j in p])]
-                int_order_dict[n] = len(all_features) - sum(int_order_dict.values())
+        all_features,int_order_dict = self.get_theoretical_interactions(max_order = max_order)
+
+        # #All possible combinations of mutations
+        # all_pos = list(set([i[1:-1] for i in self.Xoh.columns if i!="WT"]))
+        # all_pos_mut = {int(i):[j for j in self.Xoh.columns if j[1:-1]==i] for i in all_pos}
+        # all_features = []
+        # int_order_dict = {}
+        # for n in range(max_order + 1):
+        #     #Order at least 2
+        #     if n>1:
+        #         #All position combinations
+        #         pos_comb = list(itertools.combinations(sorted(all_pos_mut.keys()), n))
+        #         for p in pos_comb:
+        #             #All mutation combinations for these positions
+        #             all_features += ["_".join(c) for c in itertools.product(*[all_pos_mut[j] for j in p])]
+        #         int_order_dict[n] = len(all_features) - sum(int_order_dict.values())
 
         print("... Total theoretical features (order:count): "+", ".join([str(i)+":"+str(int_order_dict[i]) for i in sorted(int_order_dict.keys())]))
 
@@ -607,9 +657,11 @@ class MochiData:
         """
         #Genotype string length
         string_length = len(str_geno[0])
-        #Number of states per position in genotype string
+        #Number of states per position in genotype string (float)
         if type(num_states) == int:
-            num_states = [num_states for i in range(string_length)]
+            num_states = [float(num_states) for i in range(string_length)]
+        else:
+            num_states = [float(i) for i in num_states]
         #Convert reference characters to "." and binary encode
         str_coef = [[ord(j) for j in i.replace("0", ".")] for i in str_coef]
         str_geno = [[ord(j) for j in i] for i in str_geno]
@@ -626,6 +678,46 @@ class MochiData:
         else:
             row_factor1 = (np.logical_or(np.logical_or(str_genobi_eq_str_coefbi, str_genobi==ord('0')), str_coefbi==ord('.')).sum(axis = 1) == string_length).astype(float)            
             return ((row_factor1 * np.power(-1, row_factor2))).reshape((len(str_geno),-1))
+
+    def H_matrix_chunker(
+        self,
+        str_geno,
+        str_coef,
+        num_states = 2,
+        invert = False,
+        chunk_size = 1000):
+        """
+        Construct Walsh-Hadamard matrix in chunks.
+
+        :param str_geno: list of genotype strings where '0' indicates WT state.
+        :param str_coef: list of coefficient strings where '0' indicates WT state.
+        :param num_states: integer number of states (identical per position) or list of integers with length matching that of sequences.
+        :param invert: invert the matrix.
+        :param chunk_size: chunk size in number of genotypes/variants (default:1000).
+        :returns: Walsh-Hadamard matrix as a numpy matrix.
+        """
+
+        #Check if chunking not necessary
+        if len(str_geno) < chunk_size:
+            return self.H_matrix(
+                str_geno = str_geno, 
+                str_coef = str_coef, 
+                num_states = num_states, 
+                invert = invert)
+
+        #Chunk
+        hmat_list = []
+        for i in range(math.ceil(len(str_geno)/chunk_size)):
+            from_i = (i*chunk_size)
+            to_i = (i+1)*chunk_size
+            if to_i > len(str_geno):
+                to_i = len(str_geno)
+            hmat_list += [self.H_matrix(
+                str_geno = str_geno[from_i:to_i], 
+                str_coef = str_coef, 
+                num_states = num_states, 
+                invert = invert)]
+        return np.concatenate(hmat_list, axis = 0)
 
     def V_matrix(
         self,
@@ -646,7 +738,9 @@ class MochiData:
         string_length = len(str_geno[0])
         #Number of states per position in genotype string
         if type(num_states) == int:
-            num_states = [num_states for i in range(string_length)]
+            num_states = [float(num_states) for i in range(string_length)]
+        else:
+            num_states = [float(i) for i in num_states]
         #Convert reference characters to "."
         str_coef_ = [i.replace("0", ".") for i in str_coef]
         #Initialise V matrix
@@ -699,7 +793,7 @@ class MochiData:
         state_list = list(np.asarray(state_list)[0])
         #Ensemble encode features
         start = time.time()
-        hmat_inv = self.H_matrix(
+        hmat_inv = self.H_matrix_chunker(
             str_geno = geno_list, 
             str_coef = ceof_list, 
             num_states = state_list, 
