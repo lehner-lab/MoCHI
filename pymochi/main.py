@@ -70,7 +70,6 @@ def main(
         args.model_design['file'] = [
             str(Path(__file__).parent / "data/fitness_abundance.txt"),
             str(Path(__file__).parent / "data/fitness_binding.txt")]
-        args.model_design['trait'] = [i.split(',') for i in args.model_design['trait']]
         args.downsample_observations = 0.1
         args.project_name = "mochi_project_demo"
         args.k_folds = 5

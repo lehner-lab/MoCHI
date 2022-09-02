@@ -354,6 +354,8 @@ class MochiData:
         if sum([i not in model_design.keys() for i in model_design_keys])!=0:
             print("Error: Model design missing required keys.")
             return pd.DataFrame()
+        #Split trait column items into list if necessary
+        model_design['trait'] = [i.split(',') for i in model_design['trait'] if type(i)==str]
         #Unique traits
         all_traits = [item for sublist in list(model_design['trait']) for item in sublist]
         all_traits_unique = []

@@ -59,9 +59,9 @@ class MochiProject():
         :param k_folds: Numbef of cross-validation folds (default:10).
         :param validation_factor: Relative size of validation set with respect to test set (default:2).
         :param holdout_minobs: Minimum number of observations of additive trait weights to be held out (default:0).
-        :param holdout_orders: list (or path to file) of mutation orders corresponding to retained variants (default:[] i.e. variants of all mutation orders can be held out).
+        :param holdout_orders: list of mutation orders corresponding to retained variants (default:[] i.e. variants of all mutation orders can be held out).
         :param holdout_WT: Whether or not to WT variant can be held out (default:False).
-        :param features: list of feature names to filter (default:[] i.e. all features retained).
+        :param features: list (or path to file) of feature names to filter (default:[] i.e. all features retained).
         :param ensemble: Ensemble encode features. (default:False).
         :param batch_size: Minibatch size (default:512).
         :param learn_rate: Learning rate (default:0.05).
