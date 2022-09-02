@@ -15,6 +15,7 @@ import pytest
 import pymochi
 from pymochi.data import *
 from pymochi.models import *
+from pymochi.project import *
 from pymochi.report import *
 
 def test_pymochi_imported():
@@ -120,6 +121,40 @@ def test_fit_best_exploded_grid_search_models(capsys):
     captured = capsys.readouterr()
     assert captured.out.split("\n")[-2] == "Error: No valid grid search models available."
 
+def test_MochiProject_model_design_invalid_string_path(capsys):
+    """Test MochiProject initialization when invalid model design string path supplied"""
+    #Create invalid project
+    mochi_project = MochiProject(
+        directory = str(Path(__file__).parent / "temp"),
+        model_design = "invalid_string_path")
+    captured = capsys.readouterr()
+    assert captured.out.split("\n")[-2] == "Error: Invalid model_design file path: does not exist."
 
+def test_MochiProject_model_design_invalid_type(capsys):
+    """Test MochiProject initialization when invalid model design argument supplied"""
+    #Create invalid project
+    mochi_project = MochiProject(
+        directory = str(Path(__file__).parent / "temp"),
+        model_design = [])
+    captured = capsys.readouterr()
+    assert captured.out.split("\n")[-2] == "Error: Invalid model_design file path: does not exist."
 
+def test_MochiProject_features_invalid_string_path(capsys):
+    """Test MochiProject initialization when invalid features string path supplied"""
+    #Create invalid project
+    mochi_project = MochiProject(
+        directory = str(Path(__file__).parent / "temp"),
+        model_design = str(Path(__file__).parent.parent / "data/model_design.txt"),
+        features = "invalid_string_path")
+    captured = capsys.readouterr()
+    assert captured.out.split("\n")[-2] == "Error: Invalid features file path: does not exist."
 
+def test_MochiProject_features_invalid_type(capsys):
+    """Test MochiProject initialization when invalid features argument supplied"""
+    #Create invalid project
+    mochi_project = MochiProject(
+        directory = str(Path(__file__).parent / "temp"),
+        model_design = str(Path(__file__).parent.parent / "data/model_design.txt"),
+        features = 1)
+    captured = capsys.readouterr()
+    assert captured.out.split("\n")[-2] == "Error: Invalid features file path: does not exist."

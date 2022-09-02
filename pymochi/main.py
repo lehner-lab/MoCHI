@@ -8,11 +8,8 @@ import os
 import argparse
 import pathlib
 from pathlib import Path
-import numpy as np
 import pandas as pd
-from pymochi.data import MochiData
-from pymochi.models import MochiTask
-from pymochi.report import MochiReport
+from pymochi.project import MochiProject
 
 def init_argparse(
     demo_mode = False
@@ -28,9 +25,9 @@ def init_argparse(
         description="MoCHI Command Line tool."
     )
     if not demo_mode:
-        parser.add_argument('model_design', type = pathlib.Path, help = "path to model design file")
+        parser.add_argument('--model_design', type = pathlib.Path, help = "path to model design file")
     parser.add_argument('--output_directory', type = pathlib.Path, default = ".", help = "output directory")
-    parser.add_argument('--task_name', type = str, default = "mochi_model", help = "task name (output will be saved to output_directory/task_name) (default: 'mochi_model')")
+    parser.add_argument('--project_name', type = str, default = "mochi_project", help = "project name (output will be saved to output_directory/project_name) (default: 'mochi_project')")
     parser.add_argument('--order_subset', type = str, help = "comma-separated list of integer mutation orders to consider (default: all variants considered)")
     parser.add_argument('--downsample_observations', type = float, help = "number (if integer) or proportion (if float) of observations to retain including WT (default: no downsampling)")
     parser.add_argument('--downsample_interactions', type = float, help = "number (if integer) or proportion (if float) of interaction terms to retain (default: no downsampling)")
@@ -40,6 +37,7 @@ def init_argparse(
     parser.add_argument('--holdout_minobs', type = int, default = 0, help = "minimum number of observations of additive trait weights to be held out (default: 0)")
     parser.add_argument('--holdout_orders', type = str, help = "comma-separated list of integer mutation orders corresponding to retained variants (default: variants of all mutation orders can be held out)")
     parser.add_argument('--holdout_WT', action='store_true', default = False, help = "WT variant can be held out (default: False)")
+    parser.add_argument('--features', type = pathlib.Path, default = None, help = "path to features file (default: None)")
     parser.add_argument('--ensemble', action='store_true', default = False, help = "use ensemble feature encoding (default: False)")
     parser.add_argument('--num_epochs_grid', type = int, default = 100, help = "number of grid search epochs (default: 100)")
     parser.add_argument('--num_epochs', type = int, default = 1000, help = "maximum number of training epochs (default: 1000)")
@@ -68,103 +66,51 @@ def main(
 
     #Load model design
     if demo_mode:
-        model_design = pd.read_csv(Path(__file__).parent / "data/model_design.txt", sep = "\t", index_col = False)
-        model_design['file'] = [
+        args.model_design = pd.read_csv(Path(__file__).parent / "data/model_design.txt", sep = "\t", index_col = False)
+        args.model_design['file'] = [
             str(Path(__file__).parent / "data/fitness_abundance.txt"),
             str(Path(__file__).parent / "data/fitness_binding.txt")]
+        args.model_design['trait'] = [i.split(',') for i in args.model_design['trait']]
         args.downsample_observations = 0.1
-        args.task_name = "mochi_model_demo"
+        args.project_name = "mochi_project_demo"
         args.k_folds = 5
         args.batch_size = "1024"
-    else:
-        model_design = pd.read_csv(args.model_design, sep = "\t", index_col = False)
-    model_design['trait'] = [i.split(',') for i in model_design['trait']]
 
-    #Reformat comma-separated lists
-    if args.order_subset==None:
-        order_subset = args.order_subset
-    else:
-        order_subset = [int(i) for i in args.order_subset.split(',')]
+    #Reformat lists
+    if args.order_subset!=None:
+        args.order_subset = [int(i) for i in args.order_subset.split(',')]
     if args.holdout_orders==None:
-        holdout_orders = []
+        args.holdout_orders = []
     else:
-        holdout_orders = [int(i) for i in args.holdout_orders.split(',')]
+        args.holdout_orders = [int(i) for i in args.holdout_orders.split(',')]
+    if args.features==None:
+        args.features = []
 
     #######################################################################
-    ## PREPARE DATA ##
+    ## CREATE PROJECT ##
     #######################################################################
 
-    #Load mochi data
-    mochi_data = MochiData(
-        model_design = model_design,
-        order_subset = order_subset,
+    #MoCHI project
+    mochi_project = MochiProject(
+        directory = os.path.join(args.output_directory, args.project_name),
+        seed = args.seed,
+        RT = (273+args.temperature)*0.001987,
+        seq_position_offset = args.seq_position_offset,
+        model_design = args.model_design,
+        order_subset = args.order_subset,
+        max_interaction_order = args.max_interaction_order,
         downsample_observations = args.downsample_observations,
         downsample_interactions = args.downsample_interactions,
-        max_interaction_order = args.max_interaction_order,
         k_folds = args.k_folds,
-        seed = args.seed,
         validation_factor = args.validation_factor, 
         holdout_minobs = args.holdout_minobs, 
-        holdout_orders = holdout_orders, 
+        holdout_orders = args.holdout_orders, 
         holdout_WT = args.holdout_WT,
-        ensemble = args.ensemble)
-
-    #######################################################################
-    ## CREATE TASK ##
-    #######################################################################
-
-    #Create mochi task
-    mochi_task = MochiTask(
-        directory = os.path.join(args.output_directory, args.task_name),
-        data = mochi_data,
+        features = args.features,
+        ensemble = args.ensemble,
         batch_size = args.batch_size,
         learn_rate = args.learn_rate,
         num_epochs = args.num_epochs,
         num_epochs_grid = args.num_epochs_grid,
         l1_regularization_factor = args.l1_regularization_factor,
         l2_regularization_factor = args.l2_regularization_factor)
-
-    #######################################################################
-    ## FIT MODEL ##
-    #######################################################################
-
-    #Grid search
-    mochi_task.grid_search(seed = args.seed)
-
-    #Fit best model
-    for i in range(args.k_folds):
-        mochi_task.fit_best(fold = i+1, seed = args.seed)
-
-    #Save all models
-    mochi_task.save(overwrite = True)
-
-    #######################################################################
-    ## MODEL REPORT ##
-    #######################################################################
-
-    #Get model weights
-    energies = mochi_task.get_additive_trait_weights(
-        seq_position_offset = args.seq_position_offset,
-        RT = (273+args.temperature)*0.001987)
-
-    #Generate task report
-    mochi_report = MochiReport(
-        task = mochi_task,
-        RT = (273+args.temperature)*0.001987)
-
-    #Aggregate energies per residue position
-    energies_agg = mochi_task.get_additive_trait_weights(
-        seq_position_offset = args.seq_position_offset,
-        RT = (273+args.temperature)*0.001987,
-        aggregate = True,
-        aggregate_absolute_value = False)
-
-    #Aggregate absolute value of energies per residue position
-    energies_agg_abs = mochi_task.get_additive_trait_weights(
-        seq_position_offset = args.seq_position_offset,
-        RT = (273+args.temperature)*0.001987,
-        aggregate = True,
-        aggregate_absolute_value = True)
-
-
-

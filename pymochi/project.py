@@ -5,6 +5,8 @@ MoCHI project module
 
 import os
 import torch
+import pathlib
+from pathlib import Path
 from pymochi.data import *
 from pymochi.models import *
 from pymochi.report import *
@@ -20,7 +22,7 @@ class MochiProject():
         RT = None,
         seq_position_offset = 0,        
         #MochiData arguments
-        model_design = pd.DataFrame(),
+        model_design = pd.DataFrame(), #pandas DataFrame, Path or str
         order_subset = None,
         downsample_observations = None,
         downsample_interactions = None,
@@ -31,7 +33,7 @@ class MochiProject():
         holdout_minobs = 0, 
         holdout_orders = [], 
         holdout_WT = False,
-        features = [],
+        features = [], #list, Path or str
         ensemble = False,
         #MochiTask arguments
         batch_size = 512,
@@ -48,7 +50,7 @@ class MochiProject():
         :param seed: Random seed for downsampling (observations and interactions) and defining cross-validation groups (default:1).
         :param RT: R=gas constant (in kcal/K/mol) * T=Temperature (in K) (optional).
         :param seq_position_offset: Sequence position offset (default:0).
-        :param model_design: Model design DataFrame with phenotype, transformation, trait and file columns (required unless 'directory' contains saved tasks).
+        :param model_design: Model design DataFrame (or path to file) with phenotype, transformation, trait and file columns (required unless 'directory' contains saved tasks).
         :param order_subset: list of mutation orders corresponding to retained variants (optional).
         :param downsample_observations: number (if integer) or proportion (if float) of observations to retain including WT (optional).
         :param downsample_interactions: number (if integer) or proportion (if float) of interaction terms to retain (optional).
@@ -57,7 +59,7 @@ class MochiProject():
         :param k_folds: Numbef of cross-validation folds (default:10).
         :param validation_factor: Relative size of validation set with respect to test set (default:2).
         :param holdout_minobs: Minimum number of observations of additive trait weights to be held out (default:0).
-        :param holdout_orders: list of mutation orders corresponding to retained variants (default:[] i.e. variants of all mutation orders can be held out).
+        :param holdout_orders: list (or path to file) of mutation orders corresponding to retained variants (default:[] i.e. variants of all mutation orders can be held out).
         :param holdout_WT: Whether or not to WT variant can be held out (default:False).
         :param features: list of feature names to filter (default:[] i.e. all features retained).
         :param ensemble: Ensemble encode features. (default:False).
@@ -70,6 +72,19 @@ class MochiProject():
         :param scheduler_gamma: Multiplicative factor of learning rate decay (default:0.98).
         :returns: MochiProject object.
         """ 
+
+        #Load model_design from file if necessary
+        model_design = self.load_model_design(model_design)
+        if type(model_design) != pd.DataFrame:
+            print("Error: Invalid model_design file path: does not exist.")
+            return
+
+        #Load features from file if necessary
+        features = self.load_features(features)
+        if type(features) != list:
+            print("Error: Invalid features file path: does not exist.")
+            return
+
         #Initialise remaining attributes
         self.directory = directory
         self.tasks = {}
@@ -151,7 +166,55 @@ class MochiProject():
                     print("Error: Task directory does not exist.")
                 else:                
                     self.tasks[seedi] = MochiTask(directory = task_directory)
-            
+
+    def load_model_design(
+        self,
+        input_obj):
+        """
+        Load model design from file.
+
+        :param file_path:  (required).
+        :returns: A model design DataFrame.
+        """ 
+        #Object already a DataFrame
+        if type(input_obj) == pd.DataFrame:
+            return(input_obj)
+        #Object a string path
+        elif type(input_obj) == str:
+            input_obj = pathlib.Path(input_obj)
+        #Object not a path
+        elif type(input_obj) != pathlib.PosixPath:
+            return(None)
+        #Object does not exist or not a file
+        if not (input_obj.exists() and input_obj.is_file()):
+            return(None)
+        #Return model_design
+        return(pd.read_csv(input_obj, sep = "\t", index_col = False))
+
+    def load_features(
+        self,
+        input_obj):
+        """
+        Load features from file.
+
+        :param file_path:  (required).
+        :returns: A features list.
+        """ 
+        #Object already a DataFrame
+        if type(input_obj) == list:
+            return(input_obj)
+        #Object a string path
+        elif type(input_obj) == str:
+            input_obj = pathlib.Path(input_obj)
+        #Object not a path
+        elif type(input_obj) != pathlib.PosixPath:
+            return(None)
+        #Object does not exist or not a file
+        if not (input_obj.exists() and input_obj.is_file()):
+            return(None)
+        #Return features list
+        return(list(pd.read_csv(input_obj, sep = "\t", engine='python', header = None)[0]))
+
     def run_cv_task(
         self,
         mochi_data_args,
@@ -159,7 +222,7 @@ class MochiProject():
         RT = None,
         seq_position_offset = 0):
         """
-        Run MochiTask object to disk.
+        Run MochiTask and save to disk.
 
         :param mochi_data_args: Dictionary of arguments for MochiData constructor (required).
         :param mochi_task_args: Dictionary of arguments for MochiTask constructor (required).
@@ -196,4 +259,17 @@ class MochiProject():
             task = mochi_task,
             RT = RT)
 
+        #Aggregate energies per sequence position
+        energies_agg = mochi_task.get_additive_trait_weights(
+            seq_position_offset = seq_position_offset,
+            RT = RT,
+            aggregate = True,
+            aggregate_absolute_value = False)
+
+        #Aggregate absolute value of energies per sequence position
+        energies_agg_abs = mochi_task.get_additive_trait_weights(
+            seq_position_offset = seq_position_offset,
+            RT = RT,
+            aggregate = True,
+            aggregate_absolute_value = True)
 
