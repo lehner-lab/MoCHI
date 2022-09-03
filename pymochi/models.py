@@ -566,7 +566,7 @@ class MochiTask():
             param_list = []
             for i in range(len(models_subset)):
                 #Get all global weights
-                param_list += [{g:models_subset[i].globalparams[j][g].detach().numpy() for g in models_subset[i].globalparams[j].keys()}]
+                param_list += [{g:models_subset[i].globalparams[j][g].detach().cpu().numpy() for g in models_subset[i].globalparams[j].keys()}]
                 param_list[-1] = {'fold': models_subset[i].metadata.fold} | param_list[-1]
             at_list += [pd.DataFrame(param_list)]
 
@@ -620,7 +620,7 @@ class MochiTask():
                 linear_parameters = [item for item in models_subset[i].linears[j].parameters()]
                 param_list += [
                     [models_subset[i].metadata.fold]+
-                    [linear_parameters[0][0][0].detach().numpy(), linear_parameters[1][0].detach().numpy()]]
+                    [linear_parameters[0][0][0].detach().cpu().numpy(), linear_parameters[1][0].detach().cpu().numpy()]]
             at_list += [pd.DataFrame(param_list, columns = ['fold', 'kernel', 'bias'])]
 
         #Save model weights
@@ -685,7 +685,7 @@ class MochiTask():
             for i in range(len(models_subset)):
                 additivetrait_parameters = models_subset[i].additivetraits[j].parameters()
                 additivetrait_parameters = [item for sublist in additivetrait_parameters for item in sublist]
-                additivetrait_parameters = np.asarray(additivetrait_parameters[0].detach())
+                additivetrait_parameters = np.asarray(additivetrait_parameters[0].detach().cpu())
                 #Subset mask to phenotypes reporting on this additive trait
                 phenotypes_with_trait = [pindex for pindex in range(self.data.model_design.shape[0]) if (j+1) in self.data.model_design.loc[pindex,'trait']]
                 mask = pd.DataFrame(np.asarray(models_subset[i].mask.detach().cpu())).iloc[phenotypes_with_trait,:].sum(axis=0)
@@ -1078,7 +1078,7 @@ class MochiTask():
             for select, X in model_data_loader:
                 select, X = select.to(self.device), X.to(self.device)
                 #Predicted phenotype
-                y_pred_list += [model(select, X, mask).detach().numpy().flatten()]
+                y_pred_list += [model(select, X, mask).detach().cpu().numpy().flatten()]
 
                 #Additive traits
                 additive_traits = []
@@ -1094,7 +1094,7 @@ class MochiTask():
                             additive_traits_p += [torch.mul(torch.clone(additive_traits_p[0]),0)]
                     #Select
                     additive_traits += [torch.concat([torch.mul(j, select_list[pi]) for j in additive_traits_p], dim=1)]
-                at_pred_list += [sum(additive_traits).detach().numpy()]
+                at_pred_list += [sum(additive_traits).detach().cpu().numpy()]
             #Concatenate
             y_pred = np.concatenate(y_pred_list)
             at_pred = np.concatenate(at_pred_list)
@@ -1117,7 +1117,7 @@ class MochiTask():
         pred_df['ci95'] = pred_df['std']*1.96*2
         #Select data frame
         select_df = pd.DataFrame(
-            model_data["select"].detach().numpy(), 
+            model_data["select"].detach().cpu().numpy(), 
             columns = self.data.phenotype_names)
         #Fold data frame
         fold_df = pd.DataFrame({
