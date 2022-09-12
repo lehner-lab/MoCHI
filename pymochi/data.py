@@ -16,6 +16,7 @@ import pandas as pd
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.preprocessing import PolynomialFeatures
 import itertools
+import collections, functools, operator
 
 import time
 
@@ -445,7 +446,7 @@ class MochiData:
 
         :param phenotype: Phenotype number (default:1).
         :param max_order: Maximum interaction order (default:2).
-        :returns: list of interaction features.
+        :returns: dictionary of interaction features.
         """
         #Mutations observed for this phenotype
         mut_count = list(self.Xoh.loc[self.phenotypes['phenotype_'+str(phenotype)]==1,:].sum(axis = 0))
@@ -453,16 +454,35 @@ class MochiData:
         #All possible combinations of mutations
         all_pos = list(set([i[1:-1] for i in pheno_mut if i!="WT"]))
         all_pos_mut = {int(i):[j for j in pheno_mut if j[1:-1]==i] for i in all_pos}
-        all_features = []
+        all_features = {}
         for n in range(max_order + 1):
             #Order at least 2
             if n>1:
+                all_features[n] = []
                 #All position combinations
                 pos_comb = list(itertools.combinations(sorted(all_pos_mut.keys()), n))
                 for p in pos_comb:
                     #All mutation combinations for these positions
-                    all_features += ["_".join(c) for c in itertools.product(*[all_pos_mut[j] for j in p])]
+                    all_features[n] += ["_".join(c) for c in itertools.product(*[all_pos_mut[j] for j in p])]
         return all_features
+
+    def merge_dictionaries(
+        self,
+        dict1,
+        dict2):
+        """
+        Merge two dictionaries by keys (and unique values).
+
+        :param dict1: Dictionary 1.
+        :param dict2: Dictionary 2.
+        :returns: merged dictionary.
+        """
+        for k in dict2:
+            if k in dict1:
+                dict1[k] = list(set(dict1[k] + dict2[k]))
+            else:
+                dict1[k] = dict2[k]
+        return(dict1)
 
     def get_theoretical_interactions(
         self, 
@@ -471,17 +491,16 @@ class MochiData:
         Get theoretical interaction features.
 
         :param max_order: Maximum interaction order (default:2).
-        :returns: tuple with list of interaction features and dictionary of order counts.
+        :returns: tuple with dictionary of interaction features and dictionary of order counts.
         """
         #All features
-        all_features = []
+        all_features = {}
         for i in list(self.model_design.phenotype):
-            all_features += self.get_theoretical_interactions_phenotype(phenotype = i, max_order = max_order)
-        all_features = list(set(all_features))
+            all_features = self.merge_dictionaries(
+                dict1 = all_features,
+                dict2 = self.get_theoretical_interactions_phenotype(phenotype = i, max_order = max_order))
         #All feature orders
-        int_order = [len(i.split("_")) for i in all_features]
-        int_order_dict = pd.DataFrame(pd.DataFrame({'order' : int_order}).value_counts()).to_dict()[0]
-        int_order_dict = {i[0]:int_order_dict[i] for i in int_order_dict.keys()}
+        int_order_dict = {k:len(all_features[k]) for k in all_features}
         return((all_features, int_order_dict))
 
     def one_hot_encode_interactions(
@@ -536,27 +555,14 @@ class MochiData:
         int_columns = list(self.Xoh.columns)
         int_columns = [int_columns[i] for i in range(len(int_columns)) if i not in exclude]
 
+        #Get all theoretical interactions
         all_features,int_order_dict = self.get_theoretical_interactions(max_order = max_order)
-
-        # #All possible combinations of mutations
-        # all_pos = list(set([i[1:-1] for i in self.Xoh.columns if i!="WT"]))
-        # all_pos_mut = {int(i):[j for j in self.Xoh.columns if j[1:-1]==i] for i in all_pos}
-        # all_features = []
-        # int_order_dict = {}
-        # for n in range(max_order + 1):
-        #     #Order at least 2
-        #     if n>1:
-        #         #All position combinations
-        #         pos_comb = list(itertools.combinations(sorted(all_pos_mut.keys()), n))
-        #         for p in pos_comb:
-        #             #All mutation combinations for these positions
-        #             all_features += ["_".join(c) for c in itertools.product(*[all_pos_mut[j] for j in p])]
-        #         int_order_dict[n] = len(all_features) - sum(int_order_dict.values())
-
         print("... Total theoretical features (order:count): "+", ".join([str(i)+":"+str(int_order_dict[i]) for i in sorted(int_order_dict.keys())]))
+        #Flatten
+        all_features_flat = list(itertools.chain(*list(all_features.values())))
 
         #Check if all interaction features exist (i.e. with mutation order>1)
-        if len([i for i in features if (i not in all_features) and (len(i.split('_'))>1)]) != 0:
+        if len([i for i in features if (i not in all_features_flat) and (len(i.split('_'))>1)]) != 0:
             print(f"Error: Invalid feature names.")
             return
 
@@ -564,48 +570,56 @@ class MochiData:
         int_list = []
         int_order_dict_retained = {}
         int_list_names = []
-        #Shuffle if downsampling
+        #No shuffle if not downsampling
         if downsample_interactions == None:
-            all_features_loop = all_features
-        else:
+            all_features_loop = {0: all_features_flat}
+        #Shuffle flattened features
+        elif type(downsample_interactions) in [float, int]:
             random.seed(seed)
-            all_features_loop = random.sample(all_features, len(all_features))
-        #Loop over all features
-        for c in all_features_loop:
-            c_split = c.split("_")
-            #Check if feature desired
-            if (c in features) or features==[]:
-                int_col = (self.Xoh.loc[:,c_split].sum(axis = 1)==len(c_split)).astype(int)
-                #Check if minimum number of observations satisfied
-                if sum(int_col) >= min_observed:
-                    int_list += [int_col]
-                    int_list_names += [c]
-                    if len(c_split) not in int_order_dict_retained.keys():
-                        int_order_dict_retained[len(c_split)] = 1
-                    else:
-                        int_order_dict_retained[len(c_split)] += 1
-                # else:
-                #     if len(c_split)==3 and sum(int_col)==1:
-                #         print(c)
-                #Check memory footprint
-                if len(int_list)*len(self.Xoh) > max_cells:
-                    print(f"Error: Too many interaction terms: number of feature matrix cells >{max_cells:>.0e}")
-                    return
-                #Check if sufficient features obtained
-                if type(downsample_interactions) == float:
-                    if len(int_list) == int(len(all_features)*downsample_interactions):
-                        break
-                elif type(downsample_interactions) == int:
-                    if len(int_list) == downsample_interactions:
-                        break
-                elif type(downsample_interactions) == dict:
-                    if len(c_split) in int_order_dict_retained.keys():
-                        if int_order_dict_retained[len(c_split)] > downsample_interactions[len(c_split)] and downsample_interactions[len(c_split)]!=(-1):
-                            int_list.pop()
-                            int_list_names.pop()
-                            int_order_dict_retained[len(c_split)] -= 1
-                        elif int_order_dict_retained == downsample_interactions:
+            all_features_loop = {0: random.sample(all_features_flat, len(all_features_flat))}
+        #Shuffle features separately per order
+        else:
+            all_features_loop = {k:random.sample(all_features[k], len(all_features[k])) for k in all_features}
+
+        #Loop over all orders
+        for n in all_features_loop.keys():
+            #Loop over all features of this order
+            for c in all_features_loop[n]:
+                c_split = c.split("_")
+                #Check if feature desired
+                if (c in features) or features==[]:
+                    int_col = (self.Xoh.loc[:,c_split].sum(axis = 1)==len(c_split)).astype(int)
+                    #Check if minimum number of observations satisfied
+                    if sum(int_col) >= min_observed:
+                        int_list += [int_col]
+                        int_list_names += [c]
+                        if len(c_split) not in int_order_dict_retained.keys():
+                            int_order_dict_retained[len(c_split)] = 1
+                        else:
+                            int_order_dict_retained[len(c_split)] += 1
+                    # else:
+                    #     if len(c_split)==3 and sum(int_col)==1:
+                    #         print(c)
+                    #Check memory footprint
+                    if len(int_list)*len(self.Xoh) > max_cells:
+                        print(f"Error: Too many interaction terms: number of feature matrix cells >{max_cells:>.0e}")
+                        return
+                    #Check if sufficient features obtained
+                    if type(downsample_interactions) == float:
+                        if len(int_list) == int(len(all_features_flat)*downsample_interactions):
                             break
+                    elif type(downsample_interactions) == int:
+                        if len(int_list) == downsample_interactions:
+                            break
+                    elif type(downsample_interactions) == dict:
+                        if len(c_split) in int_order_dict_retained.keys():
+                            if int_order_dict_retained[len(c_split)] > downsample_interactions[len(c_split)] and downsample_interactions[len(c_split)]!=(-1):
+                                int_list.pop()
+                                int_list_names.pop()
+                                int_order_dict_retained[len(c_split)] -= 1
+                                break
+                            elif int_order_dict_retained == downsample_interactions:
+                                break
 
         print("... Total retained features (order:count): "+", ".join([str(i)+":"+str(int_order_dict_retained[i])+" ("+str(round(int_order_dict_retained[i]/int_order_dict[i]*100, 1))+"%)" for i in sorted(int_order_dict_retained.keys())]))
 
