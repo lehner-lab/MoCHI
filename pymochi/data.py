@@ -628,7 +628,7 @@ class MochiData:
             self.Xohi = pd.concat(int_list, axis=1)
             self.Xohi.columns = int_list_names
             #Reorder
-            self.Xohi = self.Xohi.loc[:,[i for i in all_features if i in self.Xohi.columns]]
+            self.Xohi = self.Xohi.loc[:,[i for i in all_features_flat if i in self.Xohi.columns]]
             self.Xohi = pd.concat([self.Xoh, self.Xohi], axis=1)
         else:
             self.Xohi = copy.deepcopy(self.Xoh)
