@@ -32,6 +32,68 @@ def Linear(
     else:
         return X[0]
 
+def ReLU(
+    X = None,
+    trainable_parameters = {}):
+    """
+    1-dimensional rectified linear unit (ReLU) function.
+
+    :param X: list of tensors (required).
+    :param trainable_parameters: dictionary of global parameter names (optional).
+    :returns: ReLU applied to first tensor in the input tensor list.
+    """  
+    if X == None:
+        return {}
+    else:
+        m = torch.nn.ReLU()
+        return(m(X[0]))
+
+def SiLU(
+    X = None,
+    trainable_parameters = {}):
+    """
+    1-dimensional sigmoid Linear Unit (SiLU) or swish function.
+
+    :param X: list of tensors (required).
+    :param trainable_parameters: dictionary of global parameter names (optional).
+    :returns: SiLU applied to first tensor in the input tensor list.
+    """  
+    if X == None:
+        return {}
+    else:
+        m = torch.nn.SiLU()
+        return(m(X[0]))
+
+def Sigmoid(
+    X = None,
+    trainable_parameters = {}):
+    """
+    1-dimensional sigmoid function.
+
+    :param X: list of tensors (required).
+    :param trainable_parameters: dictionary of global parameter names (optional).
+    :returns: Sigmoid function applied to first tensor in the input tensor list.
+    """  
+    if X == None:
+        return {}
+    else:
+        return(torch.sigmoid(X[0]))
+
+def SumOfSigmoids(
+    X = None,
+    trainable_parameters = {}):
+    """
+    Dummy function.
+
+    :param X: list of tensors (required).
+    :param trainable_parameters: dictionary of global parameter names (optional).
+    :returns: first tensor in the input tensor list.
+    """   
+    if X == None:
+        return {}
+    else:
+        return X[0]
+
 def TwoStateFractionFolded(
     X = None,
     trainable_parameters = {}):
@@ -77,21 +139,6 @@ def ThreeStateFractionBound(
         return {}
     else:
         return torch.pow(1+torch.mul(torch.exp(X[1]), 1+torch.exp(X[0])), -1)
-
-def SumOfSigmoids(
-    X = None,
-    trainable_parameters = {}):
-    """
-    Dummy function.
-
-    :param X: list of tensors (required).
-    :param trainable_parameters: dictionary of global parameter names (optional).
-    :returns: first tensor in the input tensor list.
-    """   
-    if X == None:
-        return {}
-    else:
-        return X[0]
 
 def ThreeStateFractionBoundLig(
     X = None,
