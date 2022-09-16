@@ -130,6 +130,10 @@ class FitnessData:
         except:
             file_type = "RData"
 
+        #Convert downsample_observations to integer if round number
+        if downsample_observations%1 == 0:
+            downsample_observations = int(downsample_observations)
+
         #Read file
         if file_type == "RData":
             self.vtable = self.read_fitness_r(file_path)
@@ -246,7 +250,7 @@ class MochiData:
         :param model_design: Model design DataFrame with phenotype, transformation, trait and file columns (required).
         :param order_subset: list of mutation orders corresponding to retained variants (optional).
         :param downsample_observations: number (if integer) or proportion (if float) of observations to retain including WT (optional).
-        :param downsample_interactions: number (if integer) or proportion (if float) of interaction terms to retain (optional).
+        :param downsample_interactions: number (if integer) or proportion (if float) or list of integer numbers (if string) of interaction terms to retain (optional).
         :param max_interaction_order: Maximum interaction order (default:1).
         :param min_observed: Minimum number of observations required to include interaction term (default:2).
         :param k_folds: Numbef of cross-validation folds (default:10).
