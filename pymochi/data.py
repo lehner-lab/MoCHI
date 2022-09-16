@@ -131,8 +131,9 @@ class FitnessData:
             file_type = "RData"
 
         #Convert downsample_observations to integer if round number
-        if downsample_observations%1 == 0:
-            downsample_observations = int(downsample_observations)
+        if downsample_observations!=None:
+            if downsample_observations%1 == 0:
+                downsample_observations = int(downsample_observations)
 
         #Read file
         if file_type == "RData":
