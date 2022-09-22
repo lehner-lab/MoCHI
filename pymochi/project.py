@@ -73,6 +73,34 @@ class MochiProject():
         :returns: MochiProject object.
         """ 
 
+        #Save attributes
+        self.directory = directory
+        self.seed = seed
+        self.RT = RT
+        self.seq_position_offset = seq_position_offset      
+        #MochiData arguments
+        self.model_design = model_design
+        self.order_subset = order_subset
+        self.downsample_observations = downsample_observations
+        self.downsample_interactions = downsample_interactions
+        self.max_interaction_order = max_interaction_order
+        self.min_observed = min_observed
+        self.k_folds = k_folds
+        self.validation_factor = validation_factor
+        self.holdout_minobs = holdout_minobs
+        self.holdout_orders = holdout_orders
+        self.holdout_WT = holdout_WT
+        self.features = features
+        self.ensemble = ensemble
+        #MochiTask arguments
+        self.batch_size = batch_size
+        self.learn_rate = learn_rate
+        self.num_epochs = num_epochs
+        self.num_epochs_grid = num_epochs_grid
+        self.l1_regularization_factor = l1_regularization_factor
+        self.l2_regularization_factor = l2_regularization_factor
+        self.scheduler_gamma = scheduler_gamma
+
         #Load model_design from file if necessary
         model_design = self.load_model_design(model_design)
         if type(model_design) != pd.DataFrame:
@@ -102,7 +130,7 @@ class MochiProject():
                     print("Error: Task directory already exists.")
                     break
                 #Run
-                self.run_cv_task(
+                self.tasks[seedi] = self.run_cv_task(
                     mochi_data_args = {
                         'model_design' : model_design,
                         'order_subset' : order_subset,
@@ -173,7 +201,7 @@ class MochiProject():
         """
         Load model design from file.
 
-        :param file_path:  (required).
+        :param input_obj: Input DataFrame, string path or Path object (required).
         :returns: A model design DataFrame.
         """ 
         #Object already a DataFrame
@@ -197,10 +225,10 @@ class MochiProject():
         """
         Load features from file.
 
-        :param file_path:  (required).
+        :param input_obj: Input list, string path or Path object (required).
         :returns: A features list.
         """ 
-        #Object already a DataFrame
+        #Object already a list
         if type(input_obj) == list:
             return(input_obj)
         #Object a string path
@@ -228,7 +256,7 @@ class MochiProject():
         :param mochi_task_args: Dictionary of arguments for MochiTask constructor (required).
         :param RT: R=gas constant (in kcal/K/mol) * T=Temperature (in K) (optional).
         :param seq_position_offset: Sequence position offset (default:0).
-        :returns: Nothing.
+        :returns: MochiTask object.
         """ 
 
         #Load mochi data
@@ -272,4 +300,70 @@ class MochiProject():
             RT = RT,
             aggregate = True,
             aggregate_absolute_value = True)
+        return(mochi_task)
+
+    def predict(
+        self, 
+        input_obj,
+        task_id = 1,
+        RT = None,
+        seq_position_offset = 0,
+        order_subset = None,
+        output_filename = "predicted_phenotypes_supp.txt"):
+        """
+        Predict phenotype for arbitrary genotypes.
+
+        :param input_obj: Input string path or Path object (required).
+        :param task_id: Task identifier to use for prediction (default:1).
+        :param RT: R=gas constant (in kcal/K/mol) * T=Temperature (in K) (optional).
+        :param seq_position_offset: Sequence position offset (default:0).
+        :param order_subset: List of mutation orders corresponding to retained variants (optional).
+        :param output_filename: Filename string for saved results (default:'predicted_phenotypes_misc.txt').
+        :returns: nothing.
+        """ 
+
+        #Task to use for prediction
+        if not task_id in self.tasks.keys():
+            print("Error: Invalid task identifier.")
+            return()
+        mochi_task = self.tasks[task_id]
+
+        #Model design
+        model_design = copy.deepcopy(mochi_task.data.model_design)
+        if not type(input_obj) in [pathlib.PosixPath, str]:
+            print("Error: Invalid string path or Path object 'input_obj'.")
+            return()
+        #Set file
+        model_design.file = str(input_obj)
+        #Set phenotype names
+        model_design.phenotype = [mochi_task.data.phenotype_names[i-1] for i in list(mochi_task.data.model_design.phenotype)]
+
+        #Load mochi data
+        mochi_data = MochiData(
+            model_design = model_design,
+            max_interaction_order = mochi_task.data.max_interaction_order,
+            min_observed = 0,
+            k_folds = mochi_task.data.k_folds,
+            seed = mochi_task.data.seed,
+            validation_factor = mochi_task.data.validation_factor, 
+            holdout_minobs = mochi_task.data.holdout_minobs, 
+            holdout_orders = mochi_task.data.holdout_orders, 
+            holdout_WT = mochi_task.data.holdout_WT,
+            features = list(mochi_task.data.Xohi.columns),
+            ensemble = mochi_task.data.ensemble)
+
+        #Predictions on all variants for all models
+        result_df = mochi_task.predict_all(
+            data = mochi_data)
+        #Remove Fold column
+        result_df = result_df[[i for i in result_df.columns if i!="Fold"]]
+
+        #Output predictions directory
+        directory = os.path.join(mochi_task.directory, 'predictions')
+
+        #Save
+        result_df.to_csv(os.path.join(directory, output_filename), sep = "\t", index = False)
+
+
+
 

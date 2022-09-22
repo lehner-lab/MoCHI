@@ -25,7 +25,7 @@ def init_argparse(
         description="MoCHI Command Line tool."
     )
     if not demo_mode:
-        parser.add_argument('--model_design', type = pathlib.Path, help = "path to model design file")
+        parser.add_argument('model_design', type = pathlib.Path, help = "path to model design file")
     parser.add_argument('--output_directory', type = pathlib.Path, default = ".", help = "output directory")
     parser.add_argument('--project_name', type = str, default = "mochi_project", help = "project name (output will be saved to output_directory/project_name) (default: 'mochi_project')")
     parser.add_argument('--order_subset', type = str, help = "comma-separated list of integer mutation orders to consider (default: all variants considered)")
@@ -48,6 +48,7 @@ def init_argparse(
     parser.add_argument('--l2_regularization_factor', default = 0, help = "lambda factor applied to L2 norm (default: 0)")
     parser.add_argument('--seq_position_offset', type = int, default = 0, help = "sequence position offset (default: 0)")
     parser.add_argument('--temperature', type = float, default = 30.0, help = "temperature in degrees celsius (default: 30.0)")
+    parser.add_argument('--predict', type = pathlib.Path, default = None, help = "path to supplementary variants file for prediction (default: None)")
     return parser
 
 def main(
@@ -113,3 +114,13 @@ def main(
         num_epochs_grid = args.num_epochs_grid,
         l1_regularization_factor = args.l1_regularization_factor,
         l2_regularization_factor = args.l2_regularization_factor)
+
+    #######################################################################
+    ## PREDICT PHENOTYPES ##
+    #######################################################################
+
+    #Predict supplementary variant phenotypes (if supplied)
+    if args.predict!=None:
+        mochi_project.predict(args.predict)
+
+

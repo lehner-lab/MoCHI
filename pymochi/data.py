@@ -264,8 +264,22 @@ class MochiData:
         :param ensemble: Ensemble encode features. (default:False).
         :returns: MochiData object.
         """
+        #Save attributes
+        self.model_design = model_design
+        self.order_subset = order_subset
+        self.downsample_observations = downsample_observations
+        self.downsample_interactions = downsample_interactions
+        self.max_interaction_order = max_interaction_order
+        self.min_observed = min_observed
+        self.k_folds = k_folds
+        self.seed = seed
+        self.validation_factor = validation_factor
+        self.holdout_minobs = holdout_minobs
+        self.holdout_orders = holdout_orders
+        self.holdout_WT = holdout_WT
+        self.features = features
+        self.ensemble = ensemble
         #Initialize attributes
-        self.model_design = None
         self.fdata = None
         self.additive_trait_names = None
         self.phenotype_names = None
@@ -274,13 +288,11 @@ class MochiData:
         self.X = None
         self.Xoh = None
         self.Xohi = None
-        self.k_folds = None
         self.cvgroups = None
         self.coefficients = None
-        self.seed = seed
 
         #Check and save model design
-        self.model_design = self.check_model_design(copy.deepcopy(model_design))
+        self.model_design = self.check_model_design(self.model_design)
         if len(self.model_design)==0:
             return
         #Load all datasets
@@ -319,7 +331,6 @@ class MochiData:
             seed = self.seed)
         #Split into training, validation and test sets
         print("Defining cross-validation groups")
-        self.k_folds = k_folds
         self.define_cross_validation_groups(
             k_folds = k_folds,
             seed = self.seed,

@@ -1029,19 +1029,23 @@ class MochiTask():
     def predict_all(
         self,
         folds = None,
-        grid_search = False):
+        grid_search = False,
+        data = None,
+        save = True):
         """
         Model predictions on all data.
 
         :param output_path: Output file path (required).
         :param folds: list of cross-validation folds (default:None i.e. all).
         :param grid_search: Whether or not to include grid_search models (default:False).
-        :returns: data.table of variants with phenotypes predictions.
+        :param data: Optional MochiData object to use for prediction (default:model data).
+        :param save: Save DataFrame to "predictions/predicted_phenotypes_all.txt" (default:True).
+        :returns: DataFrame of variants with phenotypes predictions.
         """ 
-        #Output weights directory
+        #Output predictions directory
         directory = os.path.join(self.directory, 'predictions')
 
-        #Create output weights directory
+        #Create output predictions directory
         try:
             os.mkdir(directory)
         except FileExistsError:
@@ -1059,7 +1063,9 @@ class MochiTask():
             return
 
         #Model data
-        model_data = self.data.get_data_index()
+        if data==None:
+            data = self.data
+        model_data = data.get_data_index()
         model_data_loader = FastTensorDataLoader(
             model_data["select"], 
             model_data["X"], batch_size=1024, shuffle=False)
@@ -1118,12 +1124,12 @@ class MochiTask():
         #Select data frame
         select_df = pd.DataFrame(
             model_data["select"].detach().cpu().numpy(), 
-            columns = self.data.phenotype_names)
+            columns = data.phenotype_names)
         #Fold data frame
         fold_df = pd.DataFrame({
-            'Fold': np.asarray(self.data.cvgroups.fold)})
+            'Fold': np.asarray(data.cvgroups.fold)})
         #Variant data
-        v_df = self.data.fdata.vtable
+        v_df = data.fdata.vtable
         v_df.reset_index(drop = True, inplace = True)
         select_df.reset_index(drop = True, inplace = True)
         pred_df.reset_index(drop = True, inplace = True)
@@ -1134,6 +1140,7 @@ class MochiTask():
         result_df = pd.concat([v_df, select_df, pred_df, fold_df, at_df], axis=1)
 
         #Save
-        result_df.to_csv(os.path.join(directory, "predicted_phenotypes_all.txt"), sep = "\t", index = False)
+        if save:
+            result_df.to_csv(os.path.join(directory, "predicted_phenotypes_all.txt"), sep = "\t", index = False)
         return result_df
 
