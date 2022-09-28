@@ -56,7 +56,7 @@ You can run a standard MoCHI workflow using the command line tool or a custom an
 
 MoCHI requires a table describing the measured phenotypes and how they relate to the underlying additive (biophysical) traits. The table should have the following 4 columns (see example file [here](pymochi/data/model_design_example.txt)):
  - *trait*: One or more additive trait names 
- - *transformation*: The shape of the global epistatic trend (Linear/TwoStateFractionFolded/ThreeStateFractionBound/SumOfSigmoids)
+ - *transformation*: The shape of the global epistatic trend (Linear/ReLU/SiLU/Sigmoid/SumOfSigmoids/TwoStateFractionFolded/ThreeStateFractionBound)
  - *phenotype*: A unique phenotype name e.g. Abundance, Binding or Kinase Activity
  - *file*: Path to DiMSum output (.RData) with variant fitness and error estimates for the corresponding phenotype (support for other input formats coming soon)
 
