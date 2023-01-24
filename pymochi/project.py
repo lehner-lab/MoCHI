@@ -155,7 +155,7 @@ class MochiProject():
                 try:
                     self.tasks[seedi] = self.run_cv_task(
                         mochi_data_args = {
-                            'directory' : os.path.join(self.directory, 'task_'+str(seedi), 'data'),
+                            # 'directory' : os.path.join(self.directory, 'task_'+str(seedi), 'data'),
                             'model_design' : self.model_design,
                             'order_subset' : self.order_subset,
                             'max_interaction_order' : self.max_interaction_order,

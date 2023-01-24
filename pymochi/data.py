@@ -295,7 +295,7 @@ class MochiData:
     """
     def __init__(
         self, 
-        directory,
+        # directory,
         model_design,
         order_subset = None,
         downsample_observations = None,
@@ -314,7 +314,7 @@ class MochiData:
         """
         Initialize a MochiData object.
 
-        :param directory: Path to directory where data should be saved/loaded (required).
+        # :param directory: Path to directory where data should be saved/loaded (required).
         :param model_design: Model design DataFrame with phenotype, transformation, trait and file columns (required).
         :param order_subset: list of mutation orders corresponding to retained variants (optional).
         :param downsample_observations: number (if integer) or proportion (if float) of observations to retain including WT (optional).
@@ -333,7 +333,7 @@ class MochiData:
         :returns: MochiData object.
         """
         #Save attributes
-        self.directory = directory
+        # self.directory = directory
         self.model_design = model_design
         self.order_subset = order_subset
         self.downsample_observations = downsample_observations
@@ -365,12 +365,12 @@ class MochiData:
         self.custom_transformations_code = None
         self.feature_names = None
 
-        #Create data directory
-        try:
-            os.makedirs(self.directory)
-        except FileExistsError:
-            print("Error: Data directory already exists.")
-            raise ValueError
+        # #Create data directory
+        # try:
+        #     os.makedirs(self.directory)
+        # except FileExistsError:
+        #     print("Error: Data directory already exists.")
+        #     raise ValueError
 
         #Check and save custom transformations
         self.custom_transformations = self.check_custom_transformations(self.custom_transformations) 
@@ -474,7 +474,10 @@ class MochiData:
             with open(input_obj, "rb") as source_file:
                 self.custom_transformations_code = source_file.read()
         #Restore custom transformation from code
-        self.custom_transformations = CustomTransformations(self.custom_transformations_code).transformations
+        if self.custom_transformations_code is None:
+            self.custom_transformations = {}
+        else:
+            self.custom_transformations = CustomTransformations(self.custom_transformations_code).transformations
 
     def check_model_design(
         self, 
@@ -687,52 +690,52 @@ class MochiData:
         int_order_dict = {k:len(all_features[k]) for k in all_features}
         return (all_features, int_order_dict)
 
-    def write_features(
-        self,
-        feature_list, 
-        feature_chunk_size,
-        samples_chunk_size = 100,
-        initial_chunk = False,
-        final_chunk = False):
-        """
-        Write features to disk.
+    # def write_features(
+    #     self,
+    #     feature_list, 
+    #     feature_chunk_size,
+    #     samples_chunk_size = 100,
+    #     initial_chunk = False,
+    #     final_chunk = False):
+    #     """
+    #     Write features to disk.
 
-        :param feature_list: List of features.
-        :param feature_chunk_size: Features chunk size in number of features.
-        :param samples_chunk_size: Samples chunk size in number of samples (default:100).
-        :param initial_chunk: Whether or not the supplied list is the initial chunk (default:False).
-        :param final_chunk: Whether or not the supplied list is the final chunk (default:False).
-        :returns: feature list.
-        """
-        #Check if anything to write
-        if len(feature_list)==feature_chunk_size or final_chunk or initial_chunk:
-            write_df = pd.concat(feature_list, axis = 1)
-            self.update_holdout_observations(write_df)
-            write_df = write_df.transpose()
-            write_count = 0
-            #Write feature data in chunks of rows (transposed)
-            while write_count < write_df.shape[1]:
-                write_file = os.path.join(self.directory, 'data_chunk'+str(write_count)+".csv")
-                write_df.iloc[:,list(range(write_count, min([write_count+samples_chunk_size, write_df.shape[1]])))].to_csv(
-                    write_file, mode='a', index=False, header=False)
-                write_count += samples_chunk_size
-            #Reset list and index
-            feature_list = []
-        return feature_list
+    #     :param feature_list: List of features.
+    #     :param feature_chunk_size: Features chunk size in number of features.
+    #     :param samples_chunk_size: Samples chunk size in number of samples (default:100).
+    #     :param initial_chunk: Whether or not the supplied list is the initial chunk (default:False).
+    #     :param final_chunk: Whether or not the supplied list is the final chunk (default:False).
+    #     :returns: feature list.
+    #     """
+    #     #Check if anything to write
+    #     if len(feature_list)==feature_chunk_size or final_chunk or initial_chunk:
+    #         write_df = pd.concat(feature_list, axis = 1)
+    #         self.update_holdout_observations(write_df)
+    #         write_df = write_df.transpose()
+    #         write_count = 0
+    #         #Write feature data in chunks of rows (transposed)
+    #         while write_count < write_df.shape[1]:
+    #             write_file = os.path.join(self.directory, 'data_chunk'+str(write_count)+".csv")
+    #             write_df.iloc[:,list(range(write_count, min([write_count+samples_chunk_size, write_df.shape[1]])))].to_csv(
+    #                 write_file, mode='a', index=False, header=False)
+    #             write_count += samples_chunk_size
+    #         #Reset list and index
+    #         feature_list = []
+    #     return feature_list
 
-    def transpose_features(
-        self):
-        """
-        Transpose features on disk.
+    # def transpose_features(
+    #     self):
+    #     """
+    #     Transpose features on disk.
 
-        :returns: nothing.
-        """
-        files = os.listdir(self.directory)
-        for f in files:
-            if f.startswith("data_chunk"):
-                pd.read_csv(
-                    os.path.join(self.directory, f), header=None).transpose().to_csv(
-                    os.path.join(self.directory, f), index=False, header=False)
+    #     :returns: nothing.
+    #     """
+    #     files = os.listdir(self.directory)
+    #     for f in files:
+    #         if f.startswith("data_chunk"):
+    #             pd.read_csv(
+    #                 os.path.join(self.directory, f), header=None).transpose().to_csv(
+    #                 os.path.join(self.directory, f), index=False, header=False)
 
     # def one_hot_encode_interactions_todisk(
     #     self, 
@@ -767,7 +770,7 @@ class MochiData:
     #     if features!=[]:
     #         print("Filtering features")
     #         self.Xoh = self.filter_features(
-    #             input_obj = self.Xoh,
+    #             input_df = self.Xoh,
     #             features = features)
     #     #Write to disk
     #     int_list = self.write_features(
@@ -917,7 +920,7 @@ class MochiData:
             if features!=[]:
                 print("Filtering features")
                 self.Xohi = self.filter_features(
-                    input_obj = self.Xohi,
+                    input_df = self.Xohi,
                     features = features)
             return
 
@@ -1025,7 +1028,7 @@ class MochiData:
         if features!=[]:
             print("Filtering features")
             self.Xohi = self.filter_features(
-                input_obj = self.Xohi,
+                input_df = self.Xohi,
                 features = features)
 
         #Save interaction feature names
