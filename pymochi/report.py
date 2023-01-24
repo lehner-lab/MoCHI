@@ -291,8 +291,13 @@ class MochiReport:
 
         #Check if valid MochiTask
         if 'models' not in dir(self.task):
-            print("Error: Cannot produce report. Not a valid MochiTask.")
-            return
+            print("Error: Cannot produce report. Invalid MochiTask instance.")
+            raise ValueError
+
+        #Check if valid MochiTask with at least one model
+        if self.task.models==[]:
+            print("Error: Cannot produce report. Invalid MochiTask instance. No fit models.")
+            raise ValueError
 
         #Output report directory
         directory = os.path.join(self.task.directory, 'report')

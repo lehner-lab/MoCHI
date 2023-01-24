@@ -1,6 +1,6 @@
 
 """
-MoCHI report module
+MoCHI transormation module
 """
 
 import math
@@ -8,14 +8,19 @@ import torch
 import numpy as np
 
 def get_transformation(
-    name):
+    name,
+    custom = {}):
     """
     Get a transformation function by name.
 
     :param name: transformation function name (required).
+    :param custom: dictionary of custom transformations where keys are function names and values are functions.
     :returns: transformation function.
-    """     
-    return eval(name)   
+    """
+    if name in custom.keys():
+        return custom[name]
+    else:
+        return eval(name)   
 
 def Linear(
     X = None,
@@ -27,7 +32,7 @@ def Linear(
     :param trainable_parameters: dictionary of global parameter names (optional).
     :returns: first tensor in the input tensor list.
     """   
-    if X == None:
+    if X is None:
         return {}
     else:
         return X[0]
@@ -42,11 +47,11 @@ def ReLU(
     :param trainable_parameters: dictionary of global parameter names (optional).
     :returns: ReLU applied to first tensor in the input tensor list.
     """  
-    if X == None:
+    if X is None:
         return {}
     else:
         m = torch.nn.ReLU()
-        return(m(X[0]))
+        return m(X[0])
 
 def SiLU(
     X = None,
@@ -58,11 +63,11 @@ def SiLU(
     :param trainable_parameters: dictionary of global parameter names (optional).
     :returns: SiLU applied to first tensor in the input tensor list.
     """  
-    if X == None:
+    if X is None:
         return {}
     else:
         m = torch.nn.SiLU()
-        return(m(X[0]))
+        return m(X[0])
 
 def Sigmoid(
     X = None,
@@ -74,10 +79,10 @@ def Sigmoid(
     :param trainable_parameters: dictionary of global parameter names (optional).
     :returns: Sigmoid function applied to first tensor in the input tensor list.
     """  
-    if X == None:
+    if X is None:
         return {}
     else:
-        return(torch.sigmoid(X[0]))
+        return torch.sigmoid(X[0])
 
 def SumOfSigmoids(
     X = None,
@@ -89,7 +94,7 @@ def SumOfSigmoids(
     :param trainable_parameters: dictionary of global parameter names (optional).
     :returns: first tensor in the input tensor list.
     """   
-    if X == None:
+    if X is None:
         return {}
     else:
         return X[0]
@@ -104,27 +109,11 @@ def TwoStateFractionFolded(
     :param trainable_parameters: dictionary of global parameter names (optional).
     :returns: fraction of molecules folded tensor.
     """  
-    if X == None:
+    if X is None:
         return {}
     else:
         return torch.pow(1+torch.exp(X[0]), -1)
-
-def TwoStateFractionFoldedGlobal(
-    X = None,
-    trainable_parameters = {}):
-    """
-    1-dimensional nonlinear transformation relating Gibbs free energy of folding to fraction of molecules folded.
-    Global effects on folding (e.g. chaperone) concentration is a trained parameter (c).
-
-    :param X: list of tensors (required).
-    :param trainable_parameters: dictionary of global parameter names (optional).
-    :returns: fraction of molecules folded tensor.
-    """  
-    if X == None:
-        return {'c': None}
-    else:
-        return torch.pow(1+torch.exp(X[0]+trainable_parameters['c']), -1)
-
+        
 def ThreeStateFractionBound(
     X = None,
     trainable_parameters = {}):
@@ -135,24 +124,9 @@ def ThreeStateFractionBound(
     :param trainable_parameters: dictionary of global parameter names (optional).
     :returns: fraction of molecules folded and bound tensor.
     """  
-    if X == None:
+    if X is None:
         return {}
     else:
         return torch.pow(1+torch.mul(torch.exp(X[1]), 1+torch.exp(X[0])), -1)
 
-def ThreeStateFractionBoundLig(
-    X = None,
-    trainable_parameters = {}):
-    """
-    2-dimensional nonlinear transformation relating Gibbs free energy of folding and binding to fraction of molecules folded and bound.
-    Ligand concentration is a trained parameter (c).
-
-    :param X: list of tensors (required).
-    :param trainable_parameters: dictionary of global parameter names (optional).
-    :returns: fraction of molecules folded and bound tensor.
-    """  
-    if X == None:
-        return {'c': None}
-    else:
-        return torch.pow(1+torch.mul(torch.exp(X[1] - torch.log(trainable_parameters['c'])), 1+torch.exp(X[0])), -1)
 

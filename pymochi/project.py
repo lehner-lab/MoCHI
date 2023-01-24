@@ -33,16 +33,20 @@ class MochiProject():
         holdout_minobs = 0, 
         holdout_orders = [], 
         holdout_WT = False,
-        features = [], #list, Path or str
+        features = {}, #list, dict, Path or str
         ensemble = False,
+        custom_transformations = None, #Path or str
         #MochiTask arguments
-        batch_size = 512,
+        batch_size = "512,1024,2048",
         learn_rate = 0.05,
-        num_epochs = 300,
+        num_epochs = 1000,
         num_epochs_grid = 100,
         l1_regularization_factor = 0,
-        l2_regularization_factor = 0,
-        scheduler_gamma = 0.98):
+        l2_regularization_factor = 0.000001,
+        scheduler_gamma = 0.98,
+        init_weights_directory = None,
+        init_weights_task_id = 1,
+        fix_weights = {}):
         """
         Initialize a MochiProject object.
 
@@ -61,15 +65,19 @@ class MochiProject():
         :param holdout_minobs: Minimum number of observations of additive trait weights to be held out (default:0).
         :param holdout_orders: list of mutation orders corresponding to retained variants (default:[] i.e. variants of all mutation orders can be held out).
         :param holdout_WT: Whether or not to WT variant can be held out (default:False).
-        :param features: list (or path to file) of feature names to filter (default:[] i.e. all features retained).
+        :param features: List, dictionary (or path to file) of trait-specific feature names to fit (default:empty dict i.e. all features fit).
         :param ensemble: Ensemble encode features. (default:False).
+        :param custom_transformations: Path to custom transformations file (optional).
         :param batch_size: Minibatch size (default:512).
         :param learn_rate: Learning rate (default:0.05).
         :param num_epochs: Number of training epochs (default:300).
         :param num_epochs_grid: Number of grid search epochs (default:100).
         :param l1_regularization_factor: Lambda factor applied to L1 norm (default:0).
-        :param l2_regularization_factor: Lambda factor applied to L2 norm (default:0).
+        :param l2_regularization_factor: Lambda factor applied to L2 norm (default:0.000001).
         :param scheduler_gamma: Multiplicative factor of learning rate decay (default:0.98).
+        :param init_weights_directory: Path to project directory for model weight initialization (optional).
+        :param init_weights_task_id: Task identifier to use for model weight initialization (default:1).
+        :param fix_weights: Dictionary (or path to file) of layer names to fix weights (default:empty dict i.e. no layers fixed).
         :returns: MochiProject object.
         """ 
 
@@ -92,6 +100,7 @@ class MochiProject():
         self.holdout_WT = holdout_WT
         self.features = features
         self.ensemble = ensemble
+        self.custom_transformations = custom_transformations
         #MochiTask arguments
         self.batch_size = batch_size
         self.learn_rate = learn_rate
@@ -100,23 +109,36 @@ class MochiProject():
         self.l1_regularization_factor = l1_regularization_factor
         self.l2_regularization_factor = l2_regularization_factor
         self.scheduler_gamma = scheduler_gamma
+        self.init_weights_directory = init_weights_directory
+        self.init_weights_task_id = init_weights_task_id
+        self.fix_weights = fix_weights
 
         #Load model_design from file if necessary
-        model_design = self.load_model_design(model_design)
-        if type(model_design) != pd.DataFrame:
+        self.model_design = self.load_model_design(self.model_design)
+        if type(self.model_design) != pd.DataFrame:
             print("Error: Invalid model_design file path: does not exist.")
             return
 
         #Load features from file if necessary
-        features = self.load_features(features)
-        if type(features) != list:
+        self.features = self.load_features(self.features)
+        if type(self.features) != dict:
             print("Error: Invalid features file path: does not exist.")
             return
 
-        #Initialise remaining attributes
-        self.directory = directory
+        #Load project and task for model weight initialization if necessary
+        init_weights = None
+        if not self.init_weights_directory is None:
+            init_weights = MochiProject(
+                directory = self.init_weights_directory).tasks[self.init_weights_task_id]
+
+        #Load layer names to fix from file if necessary
+        self.fix_weights = self.load_fix_weights(self.fix_weights)
+        if type(self.fix_weights) != dict:
+            print("Error: Could not load fix_weights file.")
+            return
+
         self.tasks = {}
-        if not model_design.empty:
+        if not self.model_design.empty:
             #Create project directory
             try:
                 os.mkdir(self.directory)
@@ -124,38 +146,45 @@ class MochiProject():
                 print("Warning: Project directory already exists.")
 
             #Run CV task
-            for seedi in [int(i) for i in str(seed).split(",")]:
+            for seedi in [int(i) for i in str(self.seed).split(",")]:
                 #Check if task directory exists
                 if os.path.exists(os.path.join(self.directory, 'task_'+str(seedi))):
                     print("Error: Task directory already exists.")
                     break
                 #Run
-                self.tasks[seedi] = self.run_cv_task(
-                    mochi_data_args = {
-                        'model_design' : model_design,
-                        'order_subset' : order_subset,
-                        'max_interaction_order' : max_interaction_order,
-                        'downsample_observations' : downsample_observations,
-                        'downsample_interactions' : downsample_interactions,
-                        'k_folds' : k_folds,
-                        'seed' : seedi,
-                        'validation_factor' : validation_factor, 
-                        'holdout_minobs' : holdout_minobs, 
-                        'holdout_orders' : holdout_orders, 
-                        'holdout_WT' : holdout_WT,
-                        'features' : features,
-                        'ensemble' : ensemble},
-                    mochi_task_args = {
-                        'directory' : os.path.join(self.directory, 'task_'+str(seedi)),
-                        'batch_size' : batch_size,
-                        'learn_rate' : learn_rate,
-                        'num_epochs' : num_epochs,
-                        'num_epochs_grid' : num_epochs_grid,
-                        'l1_regularization_factor' : l1_regularization_factor,
-                        'l2_regularization_factor' : l2_regularization_factor},
-                    RT = RT,
-                    seq_position_offset = seq_position_offset)
-
+                try:
+                    self.tasks[seedi] = self.run_cv_task(
+                        mochi_data_args = {
+                            'directory' : os.path.join(self.directory, 'task_'+str(seedi), 'data'),
+                            'model_design' : self.model_design,
+                            'order_subset' : self.order_subset,
+                            'max_interaction_order' : self.max_interaction_order,
+                            'downsample_observations' : self.downsample_observations,
+                            'downsample_interactions' : self.downsample_interactions,
+                            'k_folds' : self.k_folds,
+                            'seed' : seedi,
+                            'validation_factor' : self.validation_factor, 
+                            'holdout_minobs' : self.holdout_minobs, 
+                            'holdout_orders' : self.holdout_orders, 
+                            'holdout_WT' : self.holdout_WT,
+                            'features' : self.features,
+                            'ensemble' : self.ensemble,
+                            'custom_transformations' : self.custom_transformations},
+                        mochi_task_args = {
+                            'directory' : os.path.join(self.directory, 'task_'+str(seedi)),
+                            'batch_size' : self.batch_size,
+                            'learn_rate' : self.learn_rate,
+                            'num_epochs' : self.num_epochs,
+                            'num_epochs_grid' : self.num_epochs_grid,
+                            'l1_regularization_factor' : self.l1_regularization_factor,
+                            'l2_regularization_factor' : self.l2_regularization_factor},
+                        RT = self.RT,
+                        seq_position_offset = self.seq_position_offset,
+                        init_weights = init_weights,
+                        fix_weights = self.fix_weights)
+                except ValueError:
+                    print("Error: Failed to create MochiTask.")
+                    break
         else:
             #Check if model directory exists
             if not os.path.exists(self.directory):
@@ -186,7 +215,7 @@ class MochiProject():
                     legacy_task.save(overwrite = True)
 
             #Load saved tasks
-            for seedi in [int(i) for i in str(seed).split(",")]:
+            for seedi in [int(i) for i in str(self.seed).split(",")]:
                 task_directory = os.path.join(self.directory, "task_"+str(seedi))
                 print("Loading task "+str(seedi))
                 #Check if task directory exists
@@ -206,18 +235,32 @@ class MochiProject():
         """ 
         #Object already a DataFrame
         if type(input_obj) == pd.DataFrame:
-            return(input_obj)
+            return input_obj
         #Object a string path
         elif type(input_obj) == str:
             input_obj = pathlib.Path(input_obj)
         #Object not a path
         elif type(input_obj) != pathlib.PosixPath:
-            return(None)
+            print("Error: Invalid fix_weights file path: does not exist.")
+            return
+            return None
         #Object does not exist or not a file
         if not (input_obj.exists() and input_obj.is_file()):
-            return(None)
+            return None
         #Return model_design
-        return(pd.read_csv(input_obj, sep = "\t", index_col = False))
+        return pd.read_csv(input_obj, sep = "\t", index_col = False)
+
+    def detect_delimiter(
+        self,
+        input_path):
+        """
+        Detect file delimiter.
+
+        :param input_path: Path object (required).
+        :returns: delimiter string.
+        """ 
+        reader = pd.read_csv(input_path, sep = None, iterator = True, engine='python')
+        return reader._engine.data.dialect.delimiter
 
     def load_features(
         self,
@@ -225,30 +268,78 @@ class MochiProject():
         """
         Load features from file.
 
-        :param input_obj: Input list, string path or Path object (required).
-        :returns: A features list.
+        :param input_obj: Input list, dict, string path or Path object (required).
+        :returns: A features dict.
         """ 
         #Object already a list
         if type(input_obj) == list:
-            return(input_obj)
+            return {None: input_obj}
+        #Object already a dict
+        if type(input_obj) == dict:
+            return input_obj
         #Object a string path
         elif type(input_obj) == str:
             input_obj = pathlib.Path(input_obj)
         #Object not a path
         elif type(input_obj) != pathlib.PosixPath:
-            return(None)
+            return None
         #Object does not exist or not a file
         if not (input_obj.exists() and input_obj.is_file()):
-            return(None)
-        #Return features list
-        return(list(pd.read_csv(input_obj, sep = "\t", engine='python', header = None)[0]))
+            return None
+        #Detect delimiter
+        delimiter = self.detect_delimiter(input_obj)
+        if delimiter not in [",", ";", " ", "\t"]:
+            delimiter = "\t"
+        #Return features dict
+        return pd.read_csv(input_obj, sep = delimiter, engine='python').to_dict("list")
+
+    def load_fix_weights(
+        self,
+        input_obj):
+        """
+        Load fixed weights from file.
+
+        :param input_obj: Input dict, string path or Path object (required).
+        :returns: A dict.
+        """ 
+        #Object already a dict
+        if type(input_obj) == dict:
+            return input_obj
+        #Object a string path
+        elif type(input_obj) == str:
+            input_obj = pathlib.Path(input_obj)
+        #Object not a path
+        elif type(input_obj) != pathlib.PosixPath:
+            print("Error: Invalid features file path: does not exist.")
+            return None
+        #Object does not exist or not a file
+        if not (input_obj.exists() and input_obj.is_file()):
+            print("Error: Invalid features file path: does not exist.")
+            return None
+        #Read file
+        fix_df = pd.read_csv(input_obj, sep = "\t", engine='python', header = None)
+        #Check if entries separated by colons
+        if sum([i for i in list(fix_df.iloc[:,0]) if len(i.split(':'))<2])!=0:
+            print("Error: Invalid features file path: entries must be colon-separated.")
+            return None
+        #Construct dictionary
+        fix_phenotype = [i.split(':')[1] for i in list(fix_df.iloc[:,0]) if i.split(':')[0]=='phenotype']
+        fix_trait = [i.split(':')[1] for i in list(fix_df.iloc[:,0]) if i.split(':')[0]=='trait']
+        fix_global = [i.split(':')[1] for i in list(fix_df.iloc[:,0]) if i.split(':')[0]=='global']
+        fix_weights = {
+            'phenotype' : fix_phenotype,
+            'trait' : fix_trait,
+            'global' : fix_global}
+        return fix_weights
 
     def run_cv_task(
         self,
         mochi_data_args,
         mochi_task_args,
         RT = None,
-        seq_position_offset = 0):
+        seq_position_offset = 0,
+        init_weights = None,
+        fix_weights = {}):
         """
         Run MochiTask and save to disk.
 
@@ -256,6 +347,8 @@ class MochiProject():
         :param mochi_task_args: Dictionary of arguments for MochiTask constructor (required).
         :param RT: R=gas constant (in kcal/K/mol) * T=Temperature (in K) (optional).
         :param seq_position_offset: Sequence position offset (default:0).
+        :param init_weights: Task to use for model weight initialization (optional).
+        :param fix_weights: Dictionary of layer names to fix weights (required).
         :returns: MochiTask object.
         """ 
 
@@ -268,11 +361,18 @@ class MochiProject():
             **mochi_task_args)
 
         #Grid search
-        mochi_task.grid_search(seed = mochi_data_args['seed'])
+        mochi_task.grid_search(
+            seed = mochi_data_args['seed'],
+            init_weights = init_weights,
+            fix_weights = fix_weights)
 
         #Fit model using best hyperparameters
         for i in range(mochi_data_args['k_folds']):
-            mochi_task.fit_best(fold = i+1, seed = mochi_data_args['seed'])
+            mochi_task.fit_best(
+                fold = i+1, 
+                seed = mochi_data_args['seed'],
+                init_weights = init_weights,
+                fix_weights = fix_weights)
             
         #Save all models
         mochi_task.save(overwrite = True)
@@ -300,7 +400,7 @@ class MochiProject():
             RT = RT,
             aggregate = True,
             aggregate_absolute_value = True)
-        return(mochi_task)
+        return mochi_task
 
     def predict(
         self, 
@@ -322,17 +422,19 @@ class MochiProject():
         :returns: nothing.
         """ 
 
+        ### TODO: make this work for already-existing project
+
         #Task to use for prediction
         if not task_id in self.tasks.keys():
             print("Error: Invalid task identifier.")
-            return()
+            return
         mochi_task = self.tasks[task_id]
 
         #Model design
         model_design = copy.deepcopy(mochi_task.data.model_design)
         if not type(input_obj) in [pathlib.PosixPath, str]:
             print("Error: Invalid string path or Path object 'input_obj'.")
-            return()
+            return
         #Set file
         model_design.file = str(input_obj)
         #Set phenotype names
@@ -349,7 +451,7 @@ class MochiProject():
             holdout_minobs = mochi_task.data.holdout_minobs, 
             holdout_orders = mochi_task.data.holdout_orders, 
             holdout_WT = mochi_task.data.holdout_WT,
-            features = list(mochi_task.data.Xohi.columns),
+            features = {None: list(mochi_task.data.Xohi.columns)},
             ensemble = mochi_task.data.ensemble)
 
         #Predictions on all variants for all models
