@@ -6,6 +6,8 @@ MoCHI project module
 import os
 import torch
 import pathlib
+import numpy as np
+import copy
 from pathlib import Path
 from pymochi.data import *
 from pymochi.models import *
@@ -46,7 +48,8 @@ class MochiProject():
         scheduler_gamma = 0.98,
         init_weights_directory = None,
         init_weights_task_id = 1,
-        fix_weights = {}):
+        fix_weights = {},
+        sparse_method = None):
         """
         Initialize a MochiProject object.
 
@@ -78,6 +81,7 @@ class MochiProject():
         :param init_weights_directory: Path to project directory for model weight initialization (optional).
         :param init_weights_task_id: Task identifier to use for model weight initialization (default:1).
         :param fix_weights: Dictionary (or path to file) of layer names to fix weights (default:empty dict i.e. no layers fixed).
+        :param sparse_method: Sparse model inference method: one of 'sig_highestorder_step' (optional).
         :returns: MochiProject object.
         """ 
 
@@ -112,6 +116,7 @@ class MochiProject():
         self.init_weights_directory = init_weights_directory
         self.init_weights_task_id = init_weights_task_id
         self.fix_weights = fix_weights
+        self.sparse_method = sparse_method
 
         #Load model_design from file if necessary
         self.model_design = self.load_model_design(self.model_design)
@@ -145,46 +150,19 @@ class MochiProject():
             except FileExistsError:
                 print("Warning: Project directory already exists.")
 
-            #Run CV task
-            for seedi in [int(i) for i in str(self.seed).split(",")]:
-                #Check if task directory exists
-                if os.path.exists(os.path.join(self.directory, 'task_'+str(seedi))):
-                    print("Error: Task directory already exists.")
-                    break
-                #Run
-                try:
-                    self.tasks[seedi] = self.run_cv_task(
-                        mochi_data_args = {
-                            # 'directory' : os.path.join(self.directory, 'task_'+str(seedi), 'data'),
-                            'model_design' : self.model_design,
-                            'order_subset' : self.order_subset,
-                            'max_interaction_order' : self.max_interaction_order,
-                            'downsample_observations' : self.downsample_observations,
-                            'downsample_interactions' : self.downsample_interactions,
-                            'k_folds' : self.k_folds,
-                            'seed' : seedi,
-                            'validation_factor' : self.validation_factor, 
-                            'holdout_minobs' : self.holdout_minobs, 
-                            'holdout_orders' : self.holdout_orders, 
-                            'holdout_WT' : self.holdout_WT,
-                            'features' : self.features,
-                            'ensemble' : self.ensemble,
-                            'custom_transformations' : self.custom_transformations},
-                        mochi_task_args = {
-                            'directory' : os.path.join(self.directory, 'task_'+str(seedi)),
-                            'batch_size' : self.batch_size,
-                            'learn_rate' : self.learn_rate,
-                            'num_epochs' : self.num_epochs,
-                            'num_epochs_grid' : self.num_epochs_grid,
-                            'l1_regularization_factor' : self.l1_regularization_factor,
-                            'l2_regularization_factor' : self.l2_regularization_factor},
-                        RT = self.RT,
-                        seq_position_offset = self.seq_position_offset,
-                        init_weights = init_weights,
-                        fix_weights = self.fix_weights)
-                except ValueError:
-                    print("Error: Failed to create MochiTask.")
-                    break
+            if sparse_method is None:
+                #Run CV tasks for all seeds
+                self.run_cv_tasks(init_weights = init_weights)
+            elif sparse_method == "sig_highestorder_step":
+                #Check that only one starting seed supplied
+                if len(str(self.seed).split(",")) != 1:
+                    print("Error: Sparse model inference method 'sig_highestorder_step' cannot be run with multiple starting seeds.")
+                    return                
+                #Run sparse model inference method 'sig_highestorder_step'
+                self.run_sparse_sig_highestorder_step(init_weights = init_weights)                
+            else:
+                print("Error: Invalid sparse model inference method.")
+                return
         else:
             #Check if model directory exists
             if not os.path.exists(self.directory):
@@ -332,6 +310,140 @@ class MochiProject():
             'global' : fix_global}
         return fix_weights
 
+    def run_sparse_sig_highestorder_step(
+        self,
+        init_weights = None):
+        """
+        Run sparse model inference method 'sig_highestorder_step'.
+        This method iteratively removes nominally non-significant model weights/terms/coefficients from highest to lowest order (minimum order 1)
+
+        :param init_weights: Task to use for model weight initialization (optional).
+        :returns: nothing.
+        """
+
+        #Run sparse model inference method 'sig_highestorder_step'
+        taski = 1
+        l1_regularization_factori = self.l1_regularization_factor
+        for orderi in range(self.max_interaction_order, -2, -1):
+            #Check if task directory exists
+            if os.path.exists(os.path.join(self.directory, 'task_'+str(taski))):
+                print("Error: Task directory already exists.")
+                break
+            #First model features
+            features = self.features
+            #Restrict features based on previous task in the path
+            if orderi < self.max_interaction_order:
+                #Get additive trait weights from previous model
+                at_list = self.tasks[taski-1].get_additive_trait_weights()
+                #Restrict features
+                features = {}
+                for i in range(len(at_list)):
+                    #Add mutant order
+                    at_list[i]['mut_order'] = [len(str(j).split('_')) for j in list(at_list[i]['Pos'])]
+                    at_list[i].loc[at_list[i]['id']=='WT','mut_order'] = 0
+                    #Additive trait name
+                    at_name = self.tasks[taski-1].data.additive_trait_names[i]
+                    if orderi > -1:
+                        features[at_name] = list(at_list[i].loc[(at_list[i]['mut_order'] <= orderi) | ((np.abs(at_list[i]['mean']) - at_list[i]['ci95']/2)>0),'id'])
+                    else:
+                        #Final model
+                        features[at_name] = list(at_list[i]['id'])
+                #Reformat features
+                features = self.load_features(features)
+                if type(features) != dict:
+                    print("Error: Invalid features file path: does not exist.")
+                    return
+            #Fit final models without regularization
+            if orderi <= -1:
+                l1_regularization_factori = 0
+            #Run
+            try:
+                self.tasks[taski] = self.run_cv_task(
+                    mochi_data_args = copy.deepcopy({
+                        'model_design' : self.model_design,
+                        'order_subset' : self.order_subset,
+                        'max_interaction_order' : self.max_interaction_order,
+                        'downsample_observations' : self.downsample_observations,
+                        'downsample_interactions' : self.downsample_interactions,
+                        'k_folds' : self.k_folds,
+                        'seed' : self.seed,
+                        'validation_factor' : self.validation_factor, 
+                        'holdout_minobs' : self.holdout_minobs, 
+                        'holdout_orders' : self.holdout_orders, 
+                        'holdout_WT' : self.holdout_WT,
+                        'features' : features,
+                        'ensemble' : self.ensemble,
+                        'custom_transformations' : self.custom_transformations}),
+                    mochi_task_args = copy.deepcopy({
+                        'directory' : os.path.join(self.directory, 'task_'+str(taski)),
+                        'batch_size' : self.batch_size,
+                        'learn_rate' : self.learn_rate,
+                        'num_epochs' : self.num_epochs,
+                        'num_epochs_grid' : self.num_epochs_grid,
+                        'l1_regularization_factor' : l1_regularization_factori,
+                        'l2_regularization_factor' : self.l2_regularization_factor,
+                        'scheduler_gamma' : self.scheduler_gamma}),
+                    RT = self.RT,
+                    seq_position_offset = self.seq_position_offset,
+                    init_weights = init_weights,
+                    fix_weights = self.fix_weights)
+            except ValueError:
+                print("Error: Failed to create MochiTask.")
+                break
+            #Increment seed
+            taski += 1
+
+    def run_cv_tasks(
+        self,
+        init_weights = None):
+        """
+        Run independent CV tasks for all supplied seeds.
+
+        :param init_weights: Task to use for model weight initialization (optional).
+        :returns: nothing.
+        """
+
+        #Run CV tasks for all seeds
+        for seedi in [int(i) for i in str(self.seed).split(",")]:
+            #Check if task directory exists
+            if os.path.exists(os.path.join(self.directory, 'task_'+str(seedi))):
+                print("Error: Task directory already exists.")
+                break
+            #Run
+            try:
+                self.tasks[seedi] = self.run_cv_task(
+                    mochi_data_args = copy.deepcopy({
+                        'model_design' : self.model_design,
+                        'order_subset' : self.order_subset,
+                        'max_interaction_order' : self.max_interaction_order,
+                        'downsample_observations' : self.downsample_observations,
+                        'downsample_interactions' : self.downsample_interactions,
+                        'k_folds' : self.k_folds,
+                        'seed' : seedi,
+                        'validation_factor' : self.validation_factor, 
+                        'holdout_minobs' : self.holdout_minobs, 
+                        'holdout_orders' : self.holdout_orders, 
+                        'holdout_WT' : self.holdout_WT,
+                        'features' : self.features,
+                        'ensemble' : self.ensemble,
+                        'custom_transformations' : self.custom_transformations}),
+                    mochi_task_args = copy.deepcopy({
+                        'directory' : os.path.join(self.directory, 'task_'+str(seedi)),
+                        'batch_size' : self.batch_size,
+                        'learn_rate' : self.learn_rate,
+                        'num_epochs' : self.num_epochs,
+                        'num_epochs_grid' : self.num_epochs_grid,
+                        'l1_regularization_factor' : self.l1_regularization_factor,
+                        'l2_regularization_factor' : self.l2_regularization_factor,
+                        'scheduler_gamma' : self.scheduler_gamma}),
+                    RT = self.RT,
+                    seq_position_offset = self.seq_position_offset,
+                    init_weights = init_weights,
+                    fix_weights = self.fix_weights)
+            except ValueError:
+                print("Error: Failed to create MochiTask.")
+                break
+
     def run_cv_task(
         self,
         mochi_data_args,
@@ -436,7 +548,7 @@ class MochiProject():
             print("Error: Invalid string path or Path object 'input_obj'.")
             return
         #Set file
-        model_design.file = str(input_obj)
+        model_design.file = input_obj.split(",")
         #Set phenotype names
         model_design.phenotype = [mochi_task.data.phenotype_names[i-1] for i in list(mochi_task.data.model_design.phenotype)]
 
@@ -454,9 +566,22 @@ class MochiProject():
             features = {None: list(mochi_task.data.Xohi.columns)},
             ensemble = mochi_task.data.ensemble)
 
+        #Reorder feature matrix columns
+        mochi_data.Xohi = mochi_data.Xohi.loc[:,list(mochi_task.data.Xohi.columns)]
+        mochi_data.feature_names = mochi_data.Xohi.columns
+        #Split into training, validation and test sets
+        mochi_data.define_cross_validation_groups()
+        #Define coefficients to fit (for each phenotype and trait)
+        mochi_data.define_coefficient_groups(
+            k_folds = mochi_task.data.k_folds)
+        #Ensemble encode features
+        if mochi_task.data.ensemble:
+            mochi_data.Xohi = mochi_data.ensemble_encode_features()
+
         #Predictions on all variants for all models
         result_df = mochi_task.predict_all(
-            data = mochi_data)
+            data = mochi_data,
+            save = False)
         #Remove Fold column
         result_df = result_df[[i for i in result_df.columns if i!="Fold"]]
 

@@ -57,9 +57,9 @@ class MochiModel(torch.nn.Module):
         self.globalparams = torch.nn.ModuleList(
             [torch.nn.ParameterDict({j:torch.nn.Parameter(torch.tensor(1.0), requires_grad=True) for j in get_transformation(i, custom = self.custom_transformations)().keys()}) for i in self.model_design.transformation])
 
-        #Arbitrary non-linear transformations (depth=3)
+        #Arbitrary non-linear transformations (depth=3) - SumOfSigmoids
         n_sumofsigmoids = len([i for i in self.model_design.transformation if i=="SumOfSigmoids"])
-        self.model_design.loc[self.model_design.transformation=="SumOfSigmoids",'s_index'] = list(range(n_sumofsigmoids))
+        self.model_design.loc[self.model_design.transformation=="SumOfSigmoids",'sos_index'] = list(range(n_sumofsigmoids))
         self.sumofsigmoids1 = torch.nn.ModuleList([torch.nn.Linear(len(self.model_design.loc[i,'trait']), 20, dtype=torch.float32) for i in range(len(self.model_design)) if self.model_design.loc[i,'transformation']=="SumOfSigmoids"])
         self.sumofsigmoids2 = torch.nn.ModuleList([torch.nn.Linear(20, 10, dtype=torch.float32) for i in range(n_sumofsigmoids)])
         self.sumofsigmoids3 = torch.nn.ModuleList([torch.nn.Linear(10, 5, dtype=torch.float32) for i in range(n_sumofsigmoids)])
@@ -106,14 +106,14 @@ class MochiModel(torch.nn.Module):
                 X, 
                 torch.reshape(torch.narrow(torch.narrow(mask, 0, j-1, 1), 1, i, 1), (1, -1)))) for j in self.model_design.loc[i,'trait']]
             #Molecular phenotypes
-            if self.model_design.loc[i,'transformation']!="SumOfSigmoids":
+            if self.model_design.loc[i,'transformation'] not in ["SumOfSigmoids", "SumOfSwishes"]:
                 globalparams = self.globalparams[i]
                 transformed_trait = get_transformation(self.model_design.loc[i,'transformation'], custom = self.custom_transformations)(additive_traits, globalparams)           
-            else:
-                transformed_trait1 = torch.sigmoid(self.sumofsigmoids1[int(self.model_design.loc[i,'s_index'])](torch.cat(additive_traits, 1)))
-                transformed_trait2 = torch.sigmoid(self.sumofsigmoids2[int(self.model_design.loc[i,'s_index'])](transformed_trait1))
-                transformed_trait3 = torch.sigmoid(self.sumofsigmoids3[int(self.model_design.loc[i,'s_index'])](transformed_trait2))
-                transformed_trait = self.sumofsigmoids4[int(self.model_design.loc[i,'s_index'])](transformed_trait3)
+            elif self.model_design.loc[i,'transformation'] == "SumOfSigmoids":
+                transformed_trait1 = torch.sigmoid(self.sumofsigmoids1[int(self.model_design.loc[i,'sos_index'])](torch.cat(additive_traits, 1)))
+                transformed_trait2 = torch.sigmoid(self.sumofsigmoids2[int(self.model_design.loc[i,'sos_index'])](transformed_trait1))
+                transformed_trait3 = torch.sigmoid(self.sumofsigmoids3[int(self.model_design.loc[i,'sos_index'])](transformed_trait2))
+                transformed_trait = self.sumofsigmoids4[int(self.model_design.loc[i,'sos_index'])](transformed_trait3)
             #Observed phenotypes
             observed_phenotypes += [torch.mul(self.linears[i](transformed_trait), select_list[i])]
         #Sum observed phenotypes
@@ -172,6 +172,18 @@ class MochiModel(torch.nn.Module):
         additivetrait_parameters = [item for sublist in additivetrait_parameters for item in sublist]
         l1_norm = sum(p[0][1:].abs().sum() for p in additivetrait_parameters)
         l2_norm = sum(p[0][1:].pow(2.0).sum() for p in additivetrait_parameters)
+
+        # #Get weights for all sigmoidal layers
+        # sigmoid_parameters = [
+        #     [i.parameters() for i in self.sumofsigmoids1],
+        #     [i.parameters() for i in self.sumofsigmoids2],
+        #     [i.parameters() for i in self.sumofsigmoids3],
+        #     [i.parameters() for i in self.sumofsigmoids4]]
+        # sigmoid_parameters = [item for sublist in sigmoid_parameters for item in sublist]
+        # sigmoid_parameters = [item for sublist in sigmoid_parameters for item in sublist]
+        # l1_norm += sum(p.abs().sum() for p in sigmoid_parameters)*100
+        # l2_norm += sum(p.pow(2.0).sum() for p in sigmoid_parameters)*100
+
         return (l1_norm, l2_norm)
 
     def train_model(

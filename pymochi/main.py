@@ -50,6 +50,12 @@ def init_argparse(
     parser.add_argument('--seq_position_offset', type = int, default = 0, help = "sequence position offset (default: 0)")
     parser.add_argument('--temperature', type = float, default = 30.0, help = "temperature in degrees celsius (default: 30.0)")
     parser.add_argument('--predict', type = pathlib.Path, default = None, help = "path to supplementary variants file for prediction (default: None)")
+    parser.add_argument('--min_observed', type = int, default = 2, help = "minimum number of observations required to include interaction term (default:2)")
+    parser.add_argument('--scheduler_gamma', type = float, default = 0.98, help = "multiplicative factor of learning rate decay (default:0.98)")
+    parser.add_argument('--init_weights_directory', type = pathlib.Path, default = None, help = "path to project directory for model weight initialization (default: random model weight initialization)")
+    parser.add_argument('--init_weights_task_id', type = int, default = 1, help = "task identifier to use for model weight initialization (default:1)")
+    parser.add_argument('--fix_weights', type = pathlib.Path, default = None, help = "path to file of layer names to fix weights (default: no layers fixed)")
+    parser.add_argument('--sparse_method', type = str, default = None, help = "sparse model inference method: one of 'sig_highestorder_step' (default: no sparse inference)")
     return parser
 
 def main(
@@ -82,7 +88,7 @@ def main(
     if args.model_design is None and not args.predict is None:
         args.model_design = pd.DataFrame()
 
-    #Reformat lists
+    #Reformat lists and dictionaries
     if args.order_subset!=None:
         args.order_subset = [int(i) for i in args.order_subset.split(',')]
     if args.holdout_orders is None:
@@ -91,6 +97,8 @@ def main(
         args.holdout_orders = [int(i) for i in args.holdout_orders.split(',')]
     if args.features is None:
         args.features = []
+    if args.fix_weights is None:
+        args.fix_weights = {}
 
     #######################################################################
     ## CREATE PROJECT ##
@@ -120,7 +128,13 @@ def main(
         num_epochs = args.num_epochs,
         num_epochs_grid = args.num_epochs_grid,
         l1_regularization_factor = args.l1_regularization_factor,
-        l2_regularization_factor = args.l2_regularization_factor)
+        l2_regularization_factor = args.l2_regularization_factor,
+        min_observed = args.min_observed,
+        scheduler_gamma = args.scheduler_gamma,
+        init_weights_directory = args.init_weights_directory,
+        init_weights_task_id = args.init_weights_task_id,
+        fix_weights = args.fix_weights,
+        sparse_method = args.sparse_method)
 
     #######################################################################
     ## PREDICT PHENOTYPES ##
