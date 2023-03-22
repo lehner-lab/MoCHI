@@ -669,7 +669,8 @@ class MochiTask():
         RT = None,
         seq_position_offset = 0,
         aggregate = False,
-        aggregate_absolute_value = False):
+        aggregate_absolute_value = False,
+        save = True):
         """
         Get additive trait weights.
 
@@ -679,6 +680,7 @@ class MochiTask():
         :param seq_position_offset: Sequence position offset (default:0).
         :param aggregate: Whether or not to aggregate trait weights per reference position by error weighted averaging (default:False).
         :param aggregate_absolute_value: Whether or not to aggregate trait weights per reference position by error weighted average of the absolute value (default:False).
+        :param save: Save linear, global and additive trait weights to "weights/" (default:True).
         :returns: A list of data frames (one per additive trait).
         """ 
 
@@ -691,16 +693,19 @@ class MochiTask():
         directory = os.path.join(self.directory, 'weights')
 
         #Create output weights directory
-        try:
-            os.mkdir(directory)
-        except FileExistsError:
-            pass
+        if save:
+            try:
+                os.mkdir(directory)
+            except FileExistsError:
+                pass
 
         #Save linear weights
-        self.get_linear_weights(folds = folds, grid_search = grid_search)
+        if save:
+            self.get_linear_weights(folds = folds, grid_search = grid_search)
 
         #Save linear weights
-        self.get_global_weights(folds = folds, grid_search = grid_search)
+        if save:
+            self.get_global_weights(folds = folds, grid_search = grid_search)
 
         #Set folds if not supplied
         if folds is None:
@@ -771,10 +776,12 @@ class MochiTask():
             #Save aggregated model weights
             file_prefix = ["weights_agg_", "weights_agg_abs_"][int(aggregate_absolute_value)]
             for i in range(len(agg_list)):
-                agg_list[i].to_csv(os.path.join(directory, file_prefix+self.data.additive_trait_names[i]+".txt"), sep = "\t", index = False)
+                if save:
+                    agg_list[i].to_csv(os.path.join(directory, file_prefix+self.data.additive_trait_names[i]+".txt"), sep = "\t", index = False)
         #Save model weights
         for i in range(len(at_list)):
-            at_list[i].to_csv(os.path.join(directory, "weights_"+self.data.additive_trait_names[i]+".txt"), sep = "\t", index = False)
+            if save:
+                at_list[i].to_csv(os.path.join(directory, "weights_"+self.data.additive_trait_names[i]+".txt"), sep = "\t", index = False)
         #Return
         if aggregate:
             return agg_list

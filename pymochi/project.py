@@ -335,7 +335,7 @@ class MochiProject():
             #Restrict features based on previous task in the path
             if orderi < self.max_interaction_order:
                 #Get additive trait weights from previous model
-                at_list = self.tasks[taski-1].get_additive_trait_weights()
+                at_list = self.tasks[taski-1].get_additive_trait_weights(save = False)
                 #Restrict features
                 features = {}
                 for i in range(len(at_list)):
