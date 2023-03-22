@@ -323,6 +323,7 @@ class MochiProject():
 
         #Run sparse model inference method 'sig_highestorder_step'
         taski = 1
+        save_task_data = False
         l1_regularization_factori = self.l1_regularization_factor
         for orderi in range(self.max_interaction_order, -2, -1):
             #Check if task directory exists
@@ -356,6 +357,7 @@ class MochiProject():
             #Fit final models without regularization
             if orderi <= -1:
                 l1_regularization_factori = 0
+                save_task_data = True
             #Run
             try:
                 self.tasks[taski] = self.run_cv_task(
@@ -386,7 +388,10 @@ class MochiProject():
                     RT = self.RT,
                     seq_position_offset = self.seq_position_offset,
                     init_weights = init_weights,
-                    fix_weights = self.fix_weights)
+                    fix_weights = self.fix_weights,
+                    save_model = save_task_data,
+                    save_report = save_task_data,
+                    save_weights = save_task_data)
             except ValueError:
                 print("Error: Failed to create MochiTask.")
                 break
@@ -451,7 +456,10 @@ class MochiProject():
         RT = None,
         seq_position_offset = 0,
         init_weights = None,
-        fix_weights = {}):
+        fix_weights = {},
+        save_model = True,
+        save_report = True,
+        save_weights = True):
         """
         Run MochiTask and save to disk.
 
@@ -461,6 +469,9 @@ class MochiProject():
         :param seq_position_offset: Sequence position offset (default:0).
         :param init_weights: Task to use for model weight initialization (optional).
         :param fix_weights: Dictionary of layer names to fix weights (required).
+        :param save_model: Whether or not to save all models (default:True).
+        :param save_report: Whether or not to save task report (default:True).
+        :param save_weights: Whether or not to save model weights (default:True).
         :returns: MochiTask object.
         """ 
 
@@ -487,31 +498,36 @@ class MochiProject():
                 fix_weights = fix_weights)
             
         #Save all models
-        mochi_task.save(overwrite = True)
+        if save_model:
+            mochi_task.save(overwrite = True)
 
-        #Get model weights
-        energies = mochi_task.get_additive_trait_weights(
-            seq_position_offset = seq_position_offset,
-            RT = RT)
+        #Save task report
+        if save_report:
+            mochi_report = MochiReport(
+                task = mochi_task,
+                RT = RT)
 
-        #Generate project report
-        mochi_report = MochiReport(
-            task = mochi_task,
-            RT = RT)
+        #Save model weights
+        if save_weights:
+            #Get model weights
+            energies = mochi_task.get_additive_trait_weights(
+                seq_position_offset = seq_position_offset,
+                RT = RT)
 
-        #Aggregate energies per sequence position
-        energies_agg = mochi_task.get_additive_trait_weights(
-            seq_position_offset = seq_position_offset,
-            RT = RT,
-            aggregate = True,
-            aggregate_absolute_value = False)
+            #Aggregate energies per sequence position
+            energies_agg = mochi_task.get_additive_trait_weights(
+                seq_position_offset = seq_position_offset,
+                RT = RT,
+                aggregate = True,
+                aggregate_absolute_value = False)
 
-        #Aggregate absolute value of energies per sequence position
-        energies_agg_abs = mochi_task.get_additive_trait_weights(
-            seq_position_offset = seq_position_offset,
-            RT = RT,
-            aggregate = True,
-            aggregate_absolute_value = True)
+            #Aggregate absolute value of energies per sequence position
+            energies_agg_abs = mochi_task.get_additive_trait_weights(
+                seq_position_offset = seq_position_offset,
+                RT = RT,
+                aggregate = True,
+                aggregate_absolute_value = True)
+
         return mochi_task
 
     def predict(
