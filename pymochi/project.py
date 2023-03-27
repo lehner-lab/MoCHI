@@ -395,6 +395,10 @@ class MochiProject():
             except ValueError:
                 print("Error: Failed to create MochiTask.")
                 break
+            #Save additive trait weights for starting model
+            if orderi == self.max_interaction_order:
+                #Get additive trait weights
+                at_list = self.tasks[taski].get_additive_trait_weights(save = True)
             #Increment seed
             taski += 1
 
