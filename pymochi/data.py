@@ -158,7 +158,6 @@ class FitnessData:
         vtable = pd.DataFrame()
         #Read file
         try:
-            print("read_fitness_txt")
             vtable = pd.read_csv(file_path, sep = None, engine='python', na_values = [''], keep_default_na = False)
         except:
             print("Error: Invalid plain text fitness file: cannot read file.")
