@@ -158,7 +158,8 @@ class FitnessData:
         vtable = pd.DataFrame()
         #Read file
         try:
-            vtable = pd.read_csv(file_path, sep = None, engine='python')
+            print("read_fitness_txt")
+            vtable = pd.read_csv(file_path, sep = None, engine='python', na_values = [''], keep_default_na = False)
         except:
             print("Error: Invalid plain text fitness file: cannot read file.")
             raise ValueError
@@ -526,6 +527,11 @@ class MochiData:
         #Translate phenotypes to integers
         self.phenotype_names = all_phenotypes_unique
         model_design['phenotype'] = range(1, len(model_design)+1)
+        #Check phenotype names
+        forbidden_pnames = ['nt_seq', 'aa_seq', 'Nham_nt', 'Nham_aa', 'WT', 'fitness', 'sigma', 'phenotype', 'mean', 'std', 'ci95', 'Fold']
+        if sum([(i in forbidden_pnames) or (i.startswith('fold_')) for i in self.phenotype_names])!=0:
+            print("Error: Forbidden phenotype names.")
+            raise ValueError
         #Check files not duplicated
         all_files = list(model_design['file'])
         if len(all_files)!=len(list(set(all_files))):
