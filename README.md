@@ -58,12 +58,12 @@ MoCHI requires a table describing the measured phenotypes and how they relate to
  - *trait*: One or more additive trait names 
  - *transformation*: The shape of the global epistatic trend (Linear/ReLU/SiLU/Sigmoid/SumOfSigmoids/TwoStateFractionFolded/ThreeStateFractionBound)
  - *phenotype*: A unique phenotype name e.g. Abundance, Binding or Kinase Activity
- - *file*: Path to DiMSum output (.RData) with variant fitness and error estimates for the corresponding phenotype (support for other input formats coming soon)
+ - *file*: Path to DiMSum output (.RData) or plain text file with variant fitness and error estimates for the corresponding phenotype
 
 ## Option A: MoCHI command line tool
    ```
    $ conda activate pymochi
-   $ run_mochi.py model_design.txt
+   $ run_mochi.py --model_design model_design.txt
    ```
 
 Get help with additional command line parameters:
