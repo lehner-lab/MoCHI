@@ -23,7 +23,8 @@ class ConstrainedLinear(torch.nn.Linear):
     def forward(
         self, 
         input):
-        return F.linear(input, self.weight.clamp(min=0, max=1000), self.bias)
+        # return F.linear(input, self.weight.clamp(min=0, max=1000), self.bias)
+        return F.linear(input, self.weight.abs(), self.bias)
 
 class MochiModel(torch.nn.Module):
     """
@@ -655,7 +656,8 @@ class MochiTask():
                 linear_parameters = [item for item in models_subset[i].linears[j].parameters()]
                 param_list += [
                     [models_subset[i].metadata.fold]+
-                    [linear_parameters[0][0][0].detach().cpu().numpy(), linear_parameters[1][0].detach().cpu().numpy()]]
+                    # [linear_parameters[0][0][0].detach().cpu().numpy(), linear_parameters[1][0].detach().cpu().numpy()]]
+                    [linear_parameters[0][0][0].detach().abs().cpu().numpy(), linear_parameters[1][0].detach().cpu().numpy()]]
             at_list += [pd.DataFrame(param_list, columns = ['fold', 'kernel', 'bias'])]
 
         #Save model weights
