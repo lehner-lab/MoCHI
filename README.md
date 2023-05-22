@@ -138,11 +138,13 @@ Comprehensive documentation is coming soon, but in the meantime get more informa
 
 You may submit a bug report here on GitHub as an issue or you could send an email to ajfaure@gmail.com.
 
+# Citing MoCHI
 
-### Copyright
+Please cite the following publications if you use MoCHI:
 
-Copyright (c) 2022, Andre J Faure
+Faure, A. J., Domingo, J., Schmiedel, J. M., Hidalgo-Carcedo, C., Diss, G., & Lehner, B. Mapping the energetic and allosteric landscapes of protein binding domains. Nature, 604(7904), 175–183 (2022). [10.1038/s41586-022-04586-4](http://doi.org/10.1038/s41586-022-04586-4)
 
+Weng, C., Faure, A. J., & Ben Lehner. The energetic and allosteric landscape for KRAS inhibition. bioRxiv, 2022.12.06.519122 (2022). [10.1101/2022.12.06.519122](http://doi.org/10.1101/2022.12.06.519122)
 
 #### Acknowledgements
  
@@ -150,4 +152,3 @@ Project based on the
 [Computational Molecular Science Python Cookiecutter](https://github.com/molssi/cookiecutter-cms) version 1.6.
 
 (Vector illustration credit: <a href="https://www.vecteezy.com">Vecteezy!</a>)
-
