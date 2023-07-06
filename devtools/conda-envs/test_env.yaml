@@ -1,9 +1,9 @@
 name: test
 channels:
-  # - pytorch
-  # - conda-forge
-  # - bioconda
-  # - defaults
+  - pytorch
+  - conda-forge
+  - bioconda
+  - defaults
 dependencies:
     # Base depends
   - python
