@@ -58,6 +58,17 @@ class MochiModel(torch.nn.Module):
         self.globalparams = torch.nn.ModuleList(
             [torch.nn.ParameterDict({j:torch.nn.Parameter(torch.tensor(1.0), requires_grad=True) for j in get_transformation(i, custom = self.custom_transformations)().keys()}) for i in self.model_design.transformation])
 
+        # #Shared global parameters
+        # #Identify shared global parameters
+        # shared_globalparams = {}
+        # for i in self.globalparams:
+        #     shared_globalparams = shared_globalparams|{k:v for k,v in i if k.endswith("_shared")}
+        # #Set pointers to shared global parameters
+        # for i in self.globalparams:
+        #     for j in i.keys():
+        #         if j.endswith("_shared"):
+        #             i[j] = shared_globalparams[j]
+
         #Arbitrary non-linear transformations (depth=3) - SumOfSigmoids
         n_sumofsigmoids = len([i for i in self.model_design.transformation if i=="SumOfSigmoids"])
         self.model_design.loc[self.model_design.transformation=="SumOfSigmoids",'sos_index'] = list(range(n_sumofsigmoids))

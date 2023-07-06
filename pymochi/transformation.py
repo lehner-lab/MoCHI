@@ -128,5 +128,3 @@ def ThreeStateFractionBound(
         return {}
     else:
         return torch.pow(1+torch.mul(torch.exp(X[1]), 1+torch.exp(X[0])), -1)
-
-
