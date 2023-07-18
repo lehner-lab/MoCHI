@@ -568,7 +568,7 @@ class MochiProject():
             print("Error: Invalid string path or Path object 'input_obj'.")
             return
         #Set file
-        model_design.file = input_obj.split(",")
+        model_design.file = str(input_obj).split(",")
         #Set phenotype names
         model_design.phenotype = [mochi_task.data.phenotype_names[i-1] for i in list(mochi_task.data.model_design.phenotype)]
 
