@@ -44,7 +44,7 @@ MoCHI is currently only available through GitHub, but we recommend using [this y
    $ pip install -e ./
    ```
 
-5. Run the demo to ensure that you have a working installation:
+5. Run the demo to ensure that you have a working installation (expected run time <10min):
    ```
    $ cd ..
    $ demo_mochi.py
