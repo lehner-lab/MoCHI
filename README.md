@@ -6,7 +6,7 @@
 
 # MoCHI
 
-Welcome to the GitHub repository for MoCHI: A tool to fit mechanistic models to deep mutational scanning data.
+Welcome to the GitHub repository for MoCHI: Neural networks to quantify energies, energetic couplings, epistasis and allostery from deep mutational scanning data.
 
 # Installation
 
