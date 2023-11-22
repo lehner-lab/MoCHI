@@ -172,9 +172,9 @@ class FitnessData:
         downsample_observations = None,
         seed = 1):
         """
-        Read fitness from DiMSum RData file.
+        Read fitness from DiMSum file.
 
-        :param file_path: path to RData file (required).
+        :param file_path: path to file (required).
         :param name: name of fitness dataset (optional).
         :param order_subset: list of mutation orders corresponding to retained variants (optional).
         :param downsample_observations: number (if integer) or proportion (if float) of observations to retain including WT (optional).
@@ -225,7 +225,7 @@ class FitnessData:
             'WT', 
             'fitness',
             'sigma']])!=0:
-            print("Error: Invalid RData object: required columns not found.")
+            print("Error: Invalid fitness data: required columns not found.")
             raise ValueError
 
         #Remove variants with STOP or STOP_readthrough (if columns present)
@@ -241,7 +241,7 @@ class FitnessData:
 
         #Check single WT variant present
         if sum(self.vtable['WT']==True)!=1:
-            print("Error: Invalid RData object: WT variant missing or ambiguous.")
+            print("Error: Invalid fitness data: WT variant missing or ambiguous.")
             raise ValueError
 
         #Remove synonymous variants (if present)
