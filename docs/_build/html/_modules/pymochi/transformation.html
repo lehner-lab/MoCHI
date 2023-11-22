@@ -10,11 +10,11 @@
     <script src="../../_static/js/html5shiv.min.js"></script>
   <![endif]-->
   
-        <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
-        <script src="../../_static/jquery.js"></script>
-        <script src="../../_static/underscore.js"></script>
-        <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
-        <script src="../../_static/doctools.js"></script>
+        <script src="../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../_static/documentation_options.js?v=5929fcd5"></script>
+        <script src="../../_static/doctools.js?v=888ff710"></script>
+        <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../genindex.html" />
     <link rel="search" title="Search" href="../../search.html" /> 
@@ -25,11 +25,15 @@
     <nav data-toggle="wy-nav-shift" class="wy-nav-side">
       <div class="wy-side-scroll">
         <div class="wy-side-nav-search" >
-            <a href="../../index.html" class="icon icon-home"> MoCHI
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            MoCHI
           </a>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
-    <input type="text" name="q" placeholder="Search docs" />
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
     <input type="hidden" name="check_keywords" value="yes" />
     <input type="hidden" name="area" value="default" />
   </form>
@@ -54,9 +58,9 @@
         <div class="rst-content">
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
-      <li><a href="../../index.html" class="icon icon-home"></a> &raquo;</li>
-          <li><a href="../index.html">Module code</a> &raquo;</li>
-      <li>pymochi.transformation</li>
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">pymochi.transformation</li>
       <li class="wy-breadcrumbs-aside">
       </li>
   </ul>
@@ -68,52 +72,176 @@
   <h1>Source code for pymochi.transformation</h1><div class="highlight"><pre>
 <span></span>
 <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">MoCHI report module</span>
+<span class="sd">MoCHI transormation module</span>
 <span class="sd">&quot;&quot;&quot;</span>
 
 <span class="kn">import</span> <span class="nn">math</span>
 <span class="kn">import</span> <span class="nn">torch</span>
 <span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
 
-<div class="viewcode-block" id="get_transformation"><a class="viewcode-back" href="../../api.html#pymochi.transformation.get_transformation">[docs]</a><span class="k">def</span> <span class="nf">get_transformation</span><span class="p">(</span>
-    <span class="n">name</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<div class="viewcode-block" id="get_transformation">
+<a class="viewcode-back" href="../../api.html#pymochi.transformation.get_transformation">[docs]</a>
+<span class="k">def</span> <span class="nf">get_transformation</span><span class="p">(</span>
+    <span class="n">name</span><span class="p">,</span>
+    <span class="n">custom</span> <span class="o">=</span> <span class="p">{}):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Get a transformation function by name.</span>
 
 <span class="sd">    :param name: transformation function name (required).</span>
+<span class="sd">    :param custom: dictionary of custom transformations where keys are function names and values are functions.</span>
 <span class="sd">    :returns: transformation function.</span>
-<span class="sd">    &quot;&quot;&quot;</span>     
-    <span class="k">return</span> <span class="nb">eval</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>   </div>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">custom</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+        <span class="k">return</span> <span class="n">custom</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">eval</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>   </div>
 
-<div class="viewcode-block" id="Linear"><a class="viewcode-back" href="../../api.html#pymochi.transformation.Linear">[docs]</a><span class="k">def</span> <span class="nf">Linear</span><span class="p">(</span>
-    <span class="n">X</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="Linear">
+<a class="viewcode-back" href="../../api.html#pymochi.transformation.Linear">[docs]</a>
+<span class="k">def</span> <span class="nf">Linear</span><span class="p">(</span>
+    <span class="n">X</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">trainable_parameters</span> <span class="o">=</span> <span class="p">{}):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    1-dimensional linear transformation function.</span>
 
 <span class="sd">    :param X: list of tensors (required).</span>
+<span class="sd">    :param trainable_parameters: dictionary of global parameter names (optional).</span>
 <span class="sd">    :returns: first tensor in the input tensor list.</span>
 <span class="sd">    &quot;&quot;&quot;</span>   
-    <span class="k">return</span> <span class="n">X</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></div>
+    <span class="k">if</span> <span class="n">X</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{}</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">X</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></div>
 
-<div class="viewcode-block" id="TwoStateFractionFolded"><a class="viewcode-back" href="../../api.html#pymochi.transformation.TwoStateFractionFolded">[docs]</a><span class="k">def</span> <span class="nf">TwoStateFractionFolded</span><span class="p">(</span>
-    <span class="n">X</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="ReLU">
+<a class="viewcode-back" href="../../api.html#pymochi.transformation.ReLU">[docs]</a>
+<span class="k">def</span> <span class="nf">ReLU</span><span class="p">(</span>
+    <span class="n">X</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">trainable_parameters</span> <span class="o">=</span> <span class="p">{}):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    1-dimensional rectified linear unit (ReLU) function.</span>
+
+<span class="sd">    :param X: list of tensors (required).</span>
+<span class="sd">    :param trainable_parameters: dictionary of global parameter names (optional).</span>
+<span class="sd">    :returns: ReLU applied to first tensor in the input tensor list.</span>
+<span class="sd">    &quot;&quot;&quot;</span>  
+    <span class="k">if</span> <span class="n">X</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{}</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">m</span><span class="p">(</span><span class="n">X</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="SiLU">
+<a class="viewcode-back" href="../../api.html#pymochi.transformation.SiLU">[docs]</a>
+<span class="k">def</span> <span class="nf">SiLU</span><span class="p">(</span>
+    <span class="n">X</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">trainable_parameters</span> <span class="o">=</span> <span class="p">{}):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    1-dimensional sigmoid Linear Unit (SiLU) or swish function.</span>
+
+<span class="sd">    :param X: list of tensors (required).</span>
+<span class="sd">    :param trainable_parameters: dictionary of global parameter names (optional).</span>
+<span class="sd">    :returns: SiLU applied to first tensor in the input tensor list.</span>
+<span class="sd">    &quot;&quot;&quot;</span>  
+    <span class="k">if</span> <span class="n">X</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{}</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">SiLU</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">m</span><span class="p">(</span><span class="n">X</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="Sigmoid">
+<a class="viewcode-back" href="../../api.html#pymochi.transformation.Sigmoid">[docs]</a>
+<span class="k">def</span> <span class="nf">Sigmoid</span><span class="p">(</span>
+    <span class="n">X</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">trainable_parameters</span> <span class="o">=</span> <span class="p">{}):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    1-dimensional sigmoid function.</span>
+
+<span class="sd">    :param X: list of tensors (required).</span>
+<span class="sd">    :param trainable_parameters: dictionary of global parameter names (optional).</span>
+<span class="sd">    :returns: Sigmoid function applied to first tensor in the input tensor list.</span>
+<span class="sd">    &quot;&quot;&quot;</span>  
+    <span class="k">if</span> <span class="n">X</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{}</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">sigmoid</span><span class="p">(</span><span class="n">X</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="SumOfSigmoids">
+<a class="viewcode-back" href="../../api.html#pymochi.transformation.SumOfSigmoids">[docs]</a>
+<span class="k">def</span> <span class="nf">SumOfSigmoids</span><span class="p">(</span>
+    <span class="n">X</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">trainable_parameters</span> <span class="o">=</span> <span class="p">{}):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Dummy function.</span>
+
+<span class="sd">    :param X: list of tensors (required).</span>
+<span class="sd">    :param trainable_parameters: dictionary of global parameter names (optional).</span>
+<span class="sd">    :returns: first tensor in the input tensor list.</span>
+<span class="sd">    &quot;&quot;&quot;</span>   
+    <span class="k">if</span> <span class="n">X</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{}</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">X</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="TwoStateFractionFolded">
+<a class="viewcode-back" href="../../api.html#pymochi.transformation.TwoStateFractionFolded">[docs]</a>
+<span class="k">def</span> <span class="nf">TwoStateFractionFolded</span><span class="p">(</span>
+    <span class="n">X</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">trainable_parameters</span> <span class="o">=</span> <span class="p">{}):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    1-dimensional nonlinear transformation relating Gibbs free energy of folding to fraction of molecules folded.</span>
 
 <span class="sd">    :param X: list of tensors (required).</span>
+<span class="sd">    :param trainable_parameters: dictionary of global parameter names (optional).</span>
 <span class="sd">    :returns: fraction of molecules folded tensor.</span>
 <span class="sd">    &quot;&quot;&quot;</span>  
-    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mi">1</span><span class="o">+</span><span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">X</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span></div>
+    <span class="k">if</span> <span class="n">X</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{}</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mi">1</span><span class="o">+</span><span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">X</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="ThreeStateFractionBound"><a class="viewcode-back" href="../../api.html#pymochi.transformation.ThreeStateFractionBound">[docs]</a><span class="k">def</span> <span class="nf">ThreeStateFractionBound</span><span class="p">(</span>
-    <span class="n">X</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+        
+<div class="viewcode-block" id="ThreeStateFractionBound">
+<a class="viewcode-back" href="../../api.html#pymochi.transformation.ThreeStateFractionBound">[docs]</a>
+<span class="k">def</span> <span class="nf">ThreeStateFractionBound</span><span class="p">(</span>
+    <span class="n">X</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">trainable_parameters</span> <span class="o">=</span> <span class="p">{}):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    2-dimensional nonlinear transformation relating Gibbs free energy of folding and binding to fraction of molecules folded and bound.</span>
 
 <span class="sd">    :param X: list of tensors (required).</span>
+<span class="sd">    :param trainable_parameters: dictionary of global parameter names (optional).</span>
 <span class="sd">    :returns: fraction of molecules folded and bound tensor.</span>
 <span class="sd">    &quot;&quot;&quot;</span>  
-    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mi">1</span><span class="o">+</span><span class="n">torch</span><span class="o">.</span><span class="n">mul</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">X</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="mi">1</span><span class="o">+</span><span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">X</span><span class="p">[</span><span class="mi">0</span><span class="p">])),</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span></div>
+    <span class="k">if</span> <span class="n">X</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{}</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mi">1</span><span class="o">+</span><span class="n">torch</span><span class="o">.</span><span class="n">mul</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">X</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="mi">1</span><span class="o">+</span><span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">X</span><span class="p">[</span><span class="mi">0</span><span class="p">])),</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="FourStateFractionBound">
+<a class="viewcode-back" href="../../api.html#pymochi.transformation.FourStateFractionBound">[docs]</a>
+<span class="k">def</span> <span class="nf">FourStateFractionBound</span><span class="p">(</span>
+    <span class="n">X</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">trainable_parameters</span> <span class="o">=</span> <span class="p">{}):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    3-dimensional nonlinear transformation relating Gibbs free energy of folding and binding and binding2 to fraction of molecules folded and bound.</span>
+
+<span class="sd">    :param X: list of tensors (required).</span>
+<span class="sd">    :param trainable_parameters: dictionary of global parameter names (optional).</span>
+<span class="sd">    :returns: fraction of molecules folded and bound tensor.</span>
+<span class="sd">    &quot;&quot;&quot;</span>  
+    <span class="k">if</span> <span class="n">X</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{}</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">div</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">X</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">-</span><span class="n">X</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="mi">1</span><span class="o">+</span><span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">X</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span><span class="o">+</span><span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">X</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">-</span><span class="n">X</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span><span class="o">+</span><span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">X</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">-</span><span class="n">X</span><span class="p">[</span><span class="mi">2</span><span class="p">]))</span></div>
+
 
 </pre></div>
 
