@@ -45,7 +45,10 @@ class MochiProject():
         num_epochs_grid = 100,
         l1_regularization_factor = 0,
         l2_regularization_factor = 0.000001,
+        training_resample = False,
+        early_stopping = True,
         scheduler_gamma = 0.98,
+        loss_function_name = 'WeightedL1',
         init_weights_directory = None,
         init_weights_task_id = 1,
         fix_weights = {},
@@ -77,7 +80,10 @@ class MochiProject():
         :param num_epochs_grid: Number of grid search epochs (default:100).
         :param l1_regularization_factor: Lambda factor applied to L1 norm (default:0).
         :param l2_regularization_factor: Lambda factor applied to L2 norm (default:0.000001).
+        :param training_resample: Whether or not to add random noise to training target data proportional to target error (default:False).
+        :param early_stopping: Whether or not to stop training early if validation loss not decreasing (default:True).
         :param scheduler_gamma: Multiplicative factor of learning rate decay (default:0.98).
+        :param loss_function_name: Loss function name: one of 'WeightedL1', 'GaussianNLL' (default:'WeightedL1').
         :param init_weights_directory: Path to project directory for model weight initialization (optional).
         :param init_weights_task_id: Task identifier to use for model weight initialization (default:1).
         :param fix_weights: Dictionary (or path to file) of layer names to fix weights (default:empty dict i.e. no layers fixed).
@@ -112,7 +118,10 @@ class MochiProject():
         self.num_epochs_grid = num_epochs_grid
         self.l1_regularization_factor = l1_regularization_factor
         self.l2_regularization_factor = l2_regularization_factor
+        self.training_resample = training_resample
+        self.early_stopping = early_stopping
         self.scheduler_gamma = scheduler_gamma
+        self.loss_function_name = loss_function_name
         self.init_weights_directory = init_weights_directory
         self.init_weights_task_id = init_weights_task_id
         self.fix_weights = fix_weights
@@ -384,7 +393,10 @@ class MochiProject():
                         'num_epochs_grid' : self.num_epochs_grid,
                         'l1_regularization_factor' : l1_regularization_factori,
                         'l2_regularization_factor' : self.l2_regularization_factor,
-                        'scheduler_gamma' : self.scheduler_gamma}),
+                        'training_resample' : self.training_resample,
+                        'early_stopping' : self.early_stopping,
+                        'scheduler_gamma' : self.scheduler_gamma,
+                        'loss_function_name' : self.loss_function_name}),
                     RT = self.RT,
                     seq_position_offset = self.seq_position_offset,
                     init_weights = init_weights,
@@ -444,6 +456,8 @@ class MochiProject():
                         'num_epochs_grid' : self.num_epochs_grid,
                         'l1_regularization_factor' : self.l1_regularization_factor,
                         'l2_regularization_factor' : self.l2_regularization_factor,
+                        'training_resample' : self.training_resample,
+                        'early_stopping' : self.early_stopping,
                         'scheduler_gamma' : self.scheduler_gamma}),
                     RT = self.RT,
                     seq_position_offset = self.seq_position_offset,

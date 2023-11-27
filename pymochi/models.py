@@ -26,6 +26,13 @@ class ConstrainedLinear(torch.nn.Linear):
         # return F.linear(input, self.weight.clamp(min=0, max=1000), self.bias)
         return F.linear(input, self.weight.abs(), self.bias)
 
+class WeightedL1Loss(torch.nn.L1Loss):
+    """
+    A weighted version of L1Loss with no reduction.
+    """
+    def forward(self, input: Tensor, target: Tensor, weight: Tensor) -> Tensor:
+        return F.l1_loss(input, target, reduction='none') * weight
+
 class MochiModel(torch.nn.Module):
     """
     A custom model/module.
@@ -201,7 +208,7 @@ class MochiModel(torch.nn.Module):
     def train_model(
         self, 
         dataloader, 
-        loss_fn, 
+        loss_function, 
         optimizer, 
         device, 
         l1_lambda = 0, 
@@ -210,7 +217,7 @@ class MochiModel(torch.nn.Module):
         Train model.
 
         :param dataloader: Dataloader (required).
-        :param loss_fn: Loss function (required).
+        :param loss_function: Loss function (required).
         :param optimizer: Optimizer (required).
         :param device: cpu or cuda (required).
         :param l1_lambda: Lambda factor applied to L1 norm (default:0).
@@ -228,7 +235,7 @@ class MochiModel(torch.nn.Module):
             l1_norm, l2_norm = self.calculate_l1l2_norm()
             # Compute prediction error (weighted by measurement error) + regularization terms
             pred = self(select, X, mask)
-            loss = sum(loss_fn(pred, y) * y_wt)/len(y) + l1_lambda * l1_norm + l2_lambda * l2_norm
+            loss = sum(loss_function(pred, y, y_wt))/len(y) + l1_lambda * l1_norm + l2_lambda * l2_norm
             # Backpropagation
             optimizer.zero_grad()
             loss.backward()
@@ -237,7 +244,7 @@ class MochiModel(torch.nn.Module):
     def validate_model(
         self, 
         dataloader, 
-        loss_fn, 
+        loss_function, 
         device, 
         l1_lambda = 0, 
         l2_lambda = 0, 
@@ -246,7 +253,7 @@ class MochiModel(torch.nn.Module):
         Validate model.
 
         :param dataloader: Dataloader (required).
-        :param loss_fn: Loss function (required).
+        :param loss_function: Loss function (required).
         :param optimizer: Optimizer (required).
         :param device: cpu or cuda (required).
         :param l1_lambda: Lambda factor applied to L1 norm (default:0).
@@ -267,7 +274,7 @@ class MochiModel(torch.nn.Module):
                 l1_norm, l2_norm = self.calculate_l1l2_norm()
                 # Compute prediction error (weighted by measurement error) + regularization terms
                 pred = self(select, X, mask)
-                val_loss += (sum(loss_fn(pred, y) * y_wt)/len(y) + l1_lambda * l1_norm + l2_lambda * l2_norm).item()
+                val_loss += (sum(loss_function(pred, y, y_wt))/len(y) + l1_lambda * l1_norm + l2_lambda * l2_norm).item()
             #Training history - WT residuals
             if data_WT!=None:
                 select_WT, X_WT, y_WT = data_WT['select'].to(device), data_WT['X'].to(device), data_WT['y'].to(device)
@@ -319,7 +326,8 @@ class MochiModelMetadata():
         training_resample,
         early_stopping,
         scheduler_gamma,
-        scheduler_epochs):
+        scheduler_epochs,
+        loss_function_name):
         """
         Initialize a MochiModelMetadata object.
 
@@ -336,6 +344,7 @@ class MochiModelMetadata():
         :param early_stopping: Whether or not to stop training early if validation loss not decreasing (required).
         :param scheduler_gamma: Multiplicative factor of learning rate decay (required).
         :param scheduler_epochs: Number of epochs over which to evaluate scheduler criteria (required).
+        :param loss_function_name: Loss function name (required).
         :returns: MochiModelMetadata object.
         """ 
         self.fold = fold
@@ -351,6 +360,7 @@ class MochiModelMetadata():
         self.early_stopping = early_stopping
         self.scheduler_gamma = scheduler_gamma
         self.scheduler_epochs = scheduler_epochs
+        self.loss_function_name = loss_function_name
 
     def __str__(self):
         """
@@ -374,7 +384,10 @@ class MochiTask():
         num_epochs_grid = 100,
         l1_regularization_factor = 0,
         l2_regularization_factor = 0,
-        scheduler_gamma = 0.98):
+        training_resample = False,
+        early_stopping = True,
+        scheduler_gamma = 0.98,
+        loss_function_name = 'WeightedL1'):
         """
         Initialize a MochiTask object.
 
@@ -386,7 +399,10 @@ class MochiTask():
         :param num_epochs_grid: Number of grid search epochs (default:100).
         :param l1_regularization_factor: Lambda factor applied to L1 norm (default:0).
         :param l2_regularization_factor: Lambda factor applied to L2 norm (default:0).
+        :param training_resample: Whether or not to add random noise to training target data proportional to target error (default:False).
+        :param early_stopping: Whether or not to stop training early if validation loss not decreasing (default:True).
         :param scheduler_gamma: Multiplicative factor of learning rate decay (default:0.98).
+        :param loss_function_name: Loss function name (default:'WeightedL1').
         :returns: MochiTask object.
         """ 
         #Get CPU or GPU device
@@ -410,7 +426,10 @@ class MochiTask():
             self.num_epochs_grid = num_epochs_grid
             self.l1_regularization_factor = [float(i) for i in str(l1_regularization_factor).split(",")]
             self.l2_regularization_factor = [float(i) for i in str(l2_regularization_factor).split(",")]
+            self.training_resample = training_resample
+            self.early_stopping = early_stopping
             self.scheduler_gamma = scheduler_gamma
+            self.loss_function_name = loss_function_name
         else:
             #Load saved models
             # print("Loading task.")
@@ -859,7 +878,10 @@ class MochiTask():
                     num_epochs_grid = self.num_epochs_grid,
                     l1_regularization_factor = b[2],
                     l2_regularization_factor = b[3],
+                    training_resample = self.training_resample,
+                    early_stopping = self.early_stopping,
                     scheduler_gamma = self.scheduler_gamma,
+                    loss_function_name = self.loss_function_name,
                     init_weights = init_weights,
                     fix_weights = fix_weights)
         except ValueError:
@@ -948,7 +970,10 @@ class MochiTask():
             num_epochs = self.num_epochs,
             l1_regularization_factor = grid_search_models[best_model_index].metadata.l1_regularization_factor,
             l2_regularization_factor = grid_search_models[best_model_index].metadata.l2_regularization_factor,
+            training_resample = self.training_resample,
+            early_stopping = self.early_stopping,
             scheduler_gamma = self.scheduler_gamma,
+            loss_function_name = self.loss_function_name,
             epoch_status = epoch_status,
             init_weights = init_weights,
             fix_weights = fix_weights)
@@ -1136,10 +1161,11 @@ class MochiTask():
         l1_regularization_factor = 0,
         l2_regularization_factor = 0,
         epoch_status = 10,
-        training_resample = True,
+        training_resample = False,
         early_stopping = True,
         scheduler_gamma = 0.98,
         scheduler_epochs = 10,
+        loss_function_name = 'WeightedL1',
         init_weights = None,
         fix_weights = {}):
         """
@@ -1155,10 +1181,11 @@ class MochiTask():
         :param l1_regularization_factor: Lambda factor applied to L1 norm (default:0).
         :param l2_regularization_factor: Lambda factor applied to L2 norm (default:0).
         :param epoch_status: Number of training epochs after which to print status messages (default:10).
-        :param training_resample: Whether or not to add random noise to training target data proportional to target error (default:True).
+        :param training_resample: Whether or not to add random noise to training target data proportional to target error (default:False).
         :param early_stopping: Whether or not to stop training early if validation loss not decreasing (default:True).
         :param scheduler_gamma: Multiplicative factor of learning rate decay (default:0.98).
         :param scheduler_epochs: Number of epochs over which to evaluate scheduler criteria (default:10).
+        :param loss_function_name: Loss function name (default:'WeightedL1').
         :param init_weights: Task to use for model weight initialization (optional).
         :param fix_weights: Dictionary of layer names to fix weights (default:empty dict i.e. no layers fixed).
         :returns: Nothing.
@@ -1227,7 +1254,8 @@ class MochiTask():
             training_resample = training_resample,
             early_stopping = early_stopping,
             scheduler_gamma = scheduler_gamma,
-            scheduler_epochs = scheduler_epochs)
+            scheduler_epochs = scheduler_epochs,
+            loss_function_name = loss_function_name)
         print("Fitting model:")
         print(model.metadata)
 
@@ -1235,7 +1263,10 @@ class MochiTask():
         train_dataloader, valid_dataloader, test_dataloader = model.get_data_loaders(model_data, batch_size)
 
         #Construct loss function and Optimizer
-        loss_fn = torch.nn.L1Loss(reduction = "none")
+        if loss_function_name == 'WeightedL1':
+            loss_function = WeightedL1Loss()
+        elif loss_function_name == 'GaussianNLL':
+            loss_function = torch.nn.GaussianNLLLoss(full = True, eps = 0, reduction = "none")
         optimizer = torch.optim.Adam(model.parameters(), lr=learn_rate)
 
         #Scheduler
@@ -1248,14 +1279,14 @@ class MochiTask():
         for epoch in range(total_epochs):
             model.train_model(
                 train_dataloader, 
-                loss_fn, 
+                loss_function, 
                 optimizer,
                 self.device, 
                 l1_regularization_factor, 
                 l2_regularization_factor)
             model.validate_model(
                 valid_dataloader, 
-                loss_fn, 
+                loss_function, 
                 self.device, 
                 l1_regularization_factor, 
                 l2_regularization_factor, 
