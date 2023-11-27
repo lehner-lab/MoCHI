@@ -10,11 +10,11 @@
     <script src="../../_static/js/html5shiv.min.js"></script>
   <![endif]-->
   
-        <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
-        <script src="../../_static/jquery.js"></script>
-        <script src="../../_static/underscore.js"></script>
-        <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
-        <script src="../../_static/doctools.js"></script>
+        <script src="../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../_static/documentation_options.js?v=5929fcd5"></script>
+        <script src="../../_static/doctools.js?v=888ff710"></script>
+        <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../genindex.html" />
     <link rel="search" title="Search" href="../../search.html" /> 
@@ -25,11 +25,15 @@
     <nav data-toggle="wy-nav-shift" class="wy-nav-side">
       <div class="wy-side-scroll">
         <div class="wy-side-nav-search" >
-            <a href="../../index.html" class="icon icon-home"> MoCHI
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            MoCHI
           </a>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
-    <input type="text" name="q" placeholder="Search docs" />
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
     <input type="hidden" name="check_keywords" value="yes" />
     <input type="hidden" name="area" value="default" />
   </form>
@@ -54,9 +58,9 @@
         <div class="rst-content">
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
-      <li><a href="../../index.html" class="icon icon-home"></a> &raquo;</li>
-          <li><a href="../index.html">Module code</a> &raquo;</li>
-      <li>pymochi.report</li>
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">pymochi.report</li>
       <li class="wy-breadcrumbs-aside">
       </li>
   </ul>
@@ -80,33 +84,37 @@
 <span class="kn">import</span> <span class="nn">seaborn</span> <span class="k">as</span> <span class="nn">sns</span>
 <span class="kn">from</span> <span class="nn">matplotlib.colors</span> <span class="kn">import</span> <span class="n">LinearSegmentedColormap</span>
 
-<div class="viewcode-block" id="MochiReport"><a class="viewcode-back" href="../../api.html#pymochi.report.MochiReport">[docs]</a><span class="k">class</span> <span class="nc">MochiReport</span><span class="p">:</span>
-    <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    A class for generating reports about MochiProject objects.</span>
+<div class="viewcode-block" id="MochiReport">
+<a class="viewcode-back" href="../../api.html#pymochi.report.MochiReport">[docs]</a>
+<span class="k">class</span> <span class="nc">MochiReport</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A class for generating reports about MochiTask objects.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> 
-        <span class="n">project</span><span class="p">,</span>
+        <span class="n">task</span><span class="p">,</span>
         <span class="n">RT</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Initialize a MochiReport object.</span>
 
-<span class="sd">        :param project: a MochiProject object (required).</span>
+<span class="sd">        :param task: a MochiTask object (required).</span>
 <span class="sd">        :param RT: R=gas constant (in kcal/K/mol) * T=Temperature (in K) (optional).</span>
 <span class="sd">        :returns: MochiReport object.</span>
 <span class="sd">        &quot;&quot;&quot;</span>     
         <span class="c1">#Initialize attributes</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">project</span> <span class="o">=</span> <span class="n">project</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">task</span> <span class="o">=</span> <span class="n">task</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">RT</span> <span class="o">=</span> <span class="n">RT</span>
         <span class="c1">#Generate report</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">report</span><span class="p">()</span>
 
-<div class="viewcode-block" id="MochiReport.plot_loss_vs_epoch"><a class="viewcode-back" href="../../api.html#pymochi.report.MochiReport.plot_loss_vs_epoch">[docs]</a>    <span class="k">def</span> <span class="nf">plot_loss_vs_epoch</span><span class="p">(</span>
+<div class="viewcode-block" id="MochiReport.plot_loss_vs_epoch">
+<a class="viewcode-back" href="../../api.html#pymochi.report.MochiReport.plot_loss_vs_epoch">[docs]</a>
+    <span class="k">def</span> <span class="nf">plot_loss_vs_epoch</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">output_path</span><span class="p">,</span>
         <span class="n">folds</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">grid_search</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Plot validation loss for all training epochs.</span>
 
 <span class="sd">        :param output_path: Output file path (required).</span>
@@ -116,10 +124,10 @@
 <span class="sd">        &quot;&quot;&quot;</span> 
         <span class="c1">#Set folds if not supplied</span>
         <span class="k">if</span> <span class="n">folds</span><span class="o">==</span><span class="kc">None</span><span class="p">:</span>
-            <span class="n">folds</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">k_folds</span><span class="p">)]</span>
+            <span class="n">folds</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">k_folds</span><span class="p">)]</span>
 
         <span class="c1">#Model subset</span>
-        <span class="n">models_subset</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">models</span> <span class="k">if</span> <span class="p">((</span><span class="n">i</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">grid_search</span><span class="o">==</span><span class="n">grid_search</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">i</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">fold</span> <span class="ow">in</span> <span class="n">folds</span><span class="p">))]</span>
+        <span class="n">models_subset</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">models</span> <span class="k">if</span> <span class="p">((</span><span class="n">i</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">grid_search</span><span class="o">==</span><span class="n">grid_search</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">i</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">fold</span> <span class="ow">in</span> <span class="n">folds</span><span class="p">))]</span>
         <span class="c1">#Check if at least one model remaining</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">models_subset</span><span class="p">)</span><span class="o">==</span><span class="mi">0</span><span class="p">:</span>
             <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;No models satisfying criteria.&quot;</span><span class="p">)</span>
@@ -141,13 +149,16 @@
         <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">loc</span><span class="o">=</span><span class="s1">&#39;center left&#39;</span><span class="p">,</span> <span class="n">bbox_to_anchor</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">))</span>
         <span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="n">output_path</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="MochiReport.plot_WT_coefficient_vs_epoch"><a class="viewcode-back" href="../../api.html#pymochi.report.MochiReport.plot_WT_coefficient_vs_epoch">[docs]</a>    <span class="k">def</span> <span class="nf">plot_WT_coefficient_vs_epoch</span><span class="p">(</span>
+
+<div class="viewcode-block" id="MochiReport.plot_WT_coefficient_vs_epoch">
+<a class="viewcode-back" href="../../api.html#pymochi.report.MochiReport.plot_WT_coefficient_vs_epoch">[docs]</a>
+    <span class="k">def</span> <span class="nf">plot_WT_coefficient_vs_epoch</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">output_path</span><span class="p">,</span>
         <span class="n">folds</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">grid_search</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">RT</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Plot WT coefficient for all training epochs.</span>
 
 <span class="sd">        :param output_path: Output file path (required).</span>
@@ -158,14 +169,14 @@
 <span class="sd">        &quot;&quot;&quot;</span> 
         <span class="c1">#Set folds if not supplied</span>
         <span class="k">if</span> <span class="n">folds</span><span class="o">==</span><span class="kc">None</span><span class="p">:</span>
-            <span class="n">folds</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">k_folds</span><span class="p">)]</span>
+            <span class="n">folds</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">k_folds</span><span class="p">)]</span>
 
         <span class="c1">#Set RT if not supplied</span>
         <span class="k">if</span> <span class="n">RT</span><span class="o">==</span><span class="kc">None</span><span class="p">:</span>
             <span class="n">RT</span> <span class="o">=</span> <span class="mi">1</span>
 
         <span class="c1">#Model subset</span>
-        <span class="n">models_subset</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">models</span> <span class="k">if</span> <span class="p">((</span><span class="n">i</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">grid_search</span><span class="o">==</span><span class="n">grid_search</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">i</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">fold</span> <span class="ow">in</span> <span class="n">folds</span><span class="p">))]</span>
+        <span class="n">models_subset</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">models</span> <span class="k">if</span> <span class="p">((</span><span class="n">i</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">grid_search</span><span class="o">==</span><span class="n">grid_search</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">i</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">fold</span> <span class="ow">in</span> <span class="n">folds</span><span class="p">))]</span>
         <span class="c1">#Check if at least one model remaining</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">models_subset</span><span class="p">)</span><span class="o">==</span><span class="mi">0</span><span class="p">:</span>
             <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;No models satisfying criteria.&quot;</span><span class="p">)</span>
@@ -177,7 +188,7 @@
                 <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
                     <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">models_subset</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">training_history</span><span class="p">[</span><span class="s1">&#39;additivetrait&#39;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">+</span><span class="s1">&#39;_WT&#39;</span><span class="p">])),</span> 
                     <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">models_subset</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">training_history</span><span class="p">[</span><span class="s1">&#39;additivetrait&#39;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">+</span><span class="s1">&#39;_WT&#39;</span><span class="p">])</span><span class="o">*</span><span class="n">RT</span><span class="p">,</span> 
-                    <span class="n">label</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">additive_trait_names</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">+</span><span class="s2">&quot; cvfold_&quot;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="o">+</span><span class="mi">1</span><span class="p">));</span> 
+                    <span class="n">label</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">additive_trait_names</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">+</span><span class="s2">&quot; cvfold_&quot;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="o">+</span><span class="mi">1</span><span class="p">));</span> 
         <span class="c1">#Decorations</span>
         <span class="n">plt</span><span class="o">.</span><span class="n">axhline</span><span class="p">(</span><span class="n">y</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="n">color</span> <span class="o">=</span> <span class="s1">&#39;black&#39;</span><span class="p">,</span> <span class="n">linestyle</span> <span class="o">=</span> <span class="s1">&#39;--&#39;</span><span class="p">)</span>
         <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;Epoch&#39;</span><span class="p">,</span> <span class="n">size</span> <span class="o">=</span> <span class="mi">14</span><span class="p">)</span>
@@ -189,12 +200,15 @@
         <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">loc</span><span class="o">=</span><span class="s1">&#39;center left&#39;</span><span class="p">,</span> <span class="n">bbox_to_anchor</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">))</span>
         <span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="n">output_path</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="MochiReport.plot_WT_residual_vs_epoch"><a class="viewcode-back" href="../../api.html#pymochi.report.MochiReport.plot_WT_residual_vs_epoch">[docs]</a>    <span class="k">def</span> <span class="nf">plot_WT_residual_vs_epoch</span><span class="p">(</span>
+
+<div class="viewcode-block" id="MochiReport.plot_WT_residual_vs_epoch">
+<a class="viewcode-back" href="../../api.html#pymochi.report.MochiReport.plot_WT_residual_vs_epoch">[docs]</a>
+    <span class="k">def</span> <span class="nf">plot_WT_residual_vs_epoch</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">output_path</span><span class="p">,</span>
         <span class="n">folds</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">grid_search</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Plot WT residual phenotype for all training epochs.</span>
 
 <span class="sd">        :param output_path: Output file path (required).</span>
@@ -204,22 +218,22 @@
 <span class="sd">        &quot;&quot;&quot;</span> 
         <span class="c1">#Set folds if not supplied</span>
         <span class="k">if</span> <span class="n">folds</span><span class="o">==</span><span class="kc">None</span><span class="p">:</span>
-            <span class="n">folds</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">k_folds</span><span class="p">)]</span>
+            <span class="n">folds</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">k_folds</span><span class="p">)]</span>
 
         <span class="c1">#Model subset</span>
-        <span class="n">models_subset</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">models</span> <span class="k">if</span> <span class="p">((</span><span class="n">i</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">grid_search</span><span class="o">==</span><span class="n">grid_search</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">i</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">fold</span> <span class="ow">in</span> <span class="n">folds</span><span class="p">))]</span>
+        <span class="n">models_subset</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">models</span> <span class="k">if</span> <span class="p">((</span><span class="n">i</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">grid_search</span><span class="o">==</span><span class="n">grid_search</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">i</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">fold</span> <span class="ow">in</span> <span class="n">folds</span><span class="p">))]</span>
         <span class="c1">#Check if at least one model remaining</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">models_subset</span><span class="p">)</span><span class="o">==</span><span class="mi">0</span><span class="p">:</span>
             <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;No models satisfying criteria.&quot;</span><span class="p">)</span>
             <span class="k">return</span>
 
         <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>  <span class="c1"># Create a figure containing a single axes.</span>
-        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">model_design</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">model_design</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
             <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">models_subset</span><span class="p">)):</span>
                 <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
                 <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">models_subset</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">training_history</span><span class="p">[</span><span class="s1">&#39;residual&#39;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">+</span><span class="s1">&#39;_WT&#39;</span><span class="p">])),</span> 
                 <span class="n">models_subset</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">training_history</span><span class="p">[</span><span class="s1">&#39;residual&#39;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">+</span><span class="s1">&#39;_WT&#39;</span><span class="p">],</span> 
-                <span class="n">label</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">phenotype_names</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">+</span><span class="s2">&quot; cvfold_&quot;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="o">+</span><span class="mi">1</span><span class="p">));</span>  <span class="c1"># Plot some data on the axes.</span>
+                <span class="n">label</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">phenotype_names</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">+</span><span class="s2">&quot; cvfold_&quot;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">j</span><span class="o">+</span><span class="mi">1</span><span class="p">));</span>  <span class="c1"># Plot some data on the axes.</span>
         <span class="n">plt</span><span class="o">.</span><span class="n">axhline</span><span class="p">(</span><span class="n">y</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="n">color</span> <span class="o">=</span> <span class="s1">&#39;black&#39;</span><span class="p">,</span> <span class="n">linestyle</span> <span class="o">=</span> <span class="s1">&#39;--&#39;</span><span class="p">)</span>
         <span class="c1">#Decorations</span>
         <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;Epoch&#39;</span><span class="p">,</span> <span class="n">size</span> <span class="o">=</span> <span class="mi">14</span><span class="p">)</span>
@@ -231,11 +245,14 @@
         <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">loc</span><span class="o">=</span><span class="s1">&#39;center left&#39;</span><span class="p">,</span> <span class="n">bbox_to_anchor</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">))</span>
         <span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="n">output_path</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="MochiReport.plot_test_performance"><a class="viewcode-back" href="../../api.html#pymochi.report.MochiReport.plot_test_performance">[docs]</a>    <span class="k">def</span> <span class="nf">plot_test_performance</span><span class="p">(</span>
+
+<div class="viewcode-block" id="MochiReport.plot_test_performance">
+<a class="viewcode-back" href="../../api.html#pymochi.report.MochiReport.plot_test_performance">[docs]</a>
+    <span class="k">def</span> <span class="nf">plot_test_performance</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">input_df</span><span class="p">,</span>
         <span class="n">output_path_prefix</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Plot model performance on test data.</span>
 
 <span class="sd">        :param input_df: Input DataFrame with all predictions (required).</span>
@@ -274,7 +291,7 @@
             <span class="n">plt</span><span class="o">.</span><span class="n">axhline</span><span class="p">(</span><span class="n">y</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="n">color</span> <span class="o">=</span> <span class="s1">&#39;black&#39;</span><span class="p">,</span> <span class="n">linestyle</span> <span class="o">=</span> <span class="s1">&#39;--&#39;</span><span class="p">)</span>
             <span class="n">plt</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="n">x</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="n">color</span> <span class="o">=</span> <span class="s1">&#39;black&#39;</span><span class="p">,</span> <span class="n">linestyle</span> <span class="o">=</span> <span class="s1">&#39;--&#39;</span><span class="p">)</span>
             <span class="c1">#Labels</span>
-            <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">phenotype_names</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">i</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">phenotype_names</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">i</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
             <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;Observed phenotype&#39;</span><span class="p">,</span> <span class="n">size</span> <span class="o">=</span> <span class="mi">14</span><span class="p">)</span>
             <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;Predicted phenotype&#39;</span><span class="p">,</span> <span class="n">size</span> <span class="o">=</span> <span class="mi">14</span><span class="p">)</span>
             <span class="n">ax</span><span class="o">.</span><span class="n">set_aspect</span><span class="p">(</span><span class="s2">&quot;equal&quot;</span><span class="p">)</span>
@@ -288,15 +305,18 @@
                 <span class="n">prop</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">14</span><span class="p">),</span> <span class="n">frameon</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">loc</span><span class="o">=</span><span class="s1">&#39;upper left&#39;</span><span class="p">)</span>
             <span class="n">ax</span><span class="o">.</span><span class="n">add_artist</span><span class="p">(</span><span class="n">at</span><span class="p">)</span>
             <span class="c1">#Save</span>
-            <span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="n">output_path_prefix</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">phenotype_names</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">i</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">+</span><span class="s2">&quot;.pdf&quot;</span><span class="p">)</span></div>
+            <span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="n">output_path_prefix</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">phenotype_names</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">i</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">+</span><span class="s2">&quot;.pdf&quot;</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="MochiReport.plot_observed_phenotype_vs_additivetrait"><a class="viewcode-back" href="../../api.html#pymochi.report.MochiReport.plot_observed_phenotype_vs_additivetrait">[docs]</a>    <span class="k">def</span> <span class="nf">plot_observed_phenotype_vs_additivetrait</span><span class="p">(</span>
+
+<div class="viewcode-block" id="MochiReport.plot_observed_phenotype_vs_additivetrait">
+<a class="viewcode-back" href="../../api.html#pymochi.report.MochiReport.plot_observed_phenotype_vs_additivetrait">[docs]</a>
+    <span class="k">def</span> <span class="nf">plot_observed_phenotype_vs_additivetrait</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">input_df</span><span class="p">,</span>
         <span class="n">output_path_prefix</span><span class="p">,</span>
         <span class="n">folds</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">RT</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Plot observed phenoypte versus additive trait (1-dimensional additive traits only).</span>
 
 <span class="sd">        :param input_df: Input DataFrame with all predictions (required).</span>
@@ -307,7 +327,7 @@
 <span class="sd">        &quot;&quot;&quot;</span> 
         <span class="c1">#Set folds if not supplied</span>
         <span class="k">if</span> <span class="n">folds</span><span class="o">==</span><span class="kc">None</span><span class="p">:</span>
-            <span class="n">folds</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">k_folds</span><span class="p">)]</span>
+            <span class="n">folds</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">k_folds</span><span class="p">)]</span>
 
         <span class="c1">#Set RT if not supplied</span>
         <span class="k">if</span> <span class="n">RT</span><span class="o">==</span><span class="kc">None</span><span class="p">:</span>
@@ -317,9 +337,9 @@
         <span class="n">observed_phenotype_col</span> <span class="o">=</span> <span class="s1">&#39;fitness&#39;</span>
 
         <span class="c1">#Plot performance for all 1-dimensional phenotypes</span>
-        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">model_design</span><span class="p">)):</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">model_design</span><span class="p">)):</span>
             <span class="c1">#1-dimensional additive traits</span>
-            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">model_design</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="s1">&#39;trait&#39;</span><span class="p">])</span><span class="o">==</span><span class="mi">1</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">model_design</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="s1">&#39;trait&#39;</span><span class="p">])</span><span class="o">==</span><span class="mi">1</span><span class="p">:</span>
                 <span class="n">predicted_phenotype_col</span> <span class="o">=</span> <span class="s1">&#39;fold_&#39;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">fold</span><span class="p">)</span>
                 <span class="n">additive_trait_col</span> <span class="o">=</span> <span class="n">predicted_phenotype_col</span><span class="o">+</span><span class="s1">&#39;_additive_trait0&#39;</span>
                 <span class="n">plot_df_sort</span> <span class="o">=</span> <span class="n">input_df</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">input_df</span><span class="o">.</span><span class="n">phenotype</span><span class="o">==</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">),:]</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="n">additive_trait_col</span><span class="p">)</span>
@@ -343,27 +363,35 @@
                 <span class="n">plt</span><span class="o">.</span><span class="n">axhline</span><span class="p">(</span><span class="n">y</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="n">color</span> <span class="o">=</span> <span class="s1">&#39;black&#39;</span><span class="p">,</span> <span class="n">linestyle</span> <span class="o">=</span> <span class="s1">&#39;--&#39;</span><span class="p">)</span>
                 <span class="n">plt</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="n">x</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="n">color</span> <span class="o">=</span> <span class="s1">&#39;black&#39;</span><span class="p">,</span> <span class="n">linestyle</span> <span class="o">=</span> <span class="s1">&#39;--&#39;</span><span class="p">)</span>
                 <span class="c1">#Labels</span>
-                <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">phenotype_names</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">i</span><span class="p">)])</span>
+                <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">phenotype_names</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">i</span><span class="p">)])</span>
                 <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;Additive trait&#39;</span><span class="p">,</span> <span class="n">size</span> <span class="o">=</span> <span class="mi">14</span><span class="p">)</span>
                 <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;Observed phenotype&#39;</span><span class="p">,</span> <span class="n">size</span> <span class="o">=</span> <span class="mi">14</span><span class="p">)</span>
                 <span class="c1">#Save</span>
-                <span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="n">output_path_prefix</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">phenotype_names</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">i</span><span class="p">)]</span><span class="o">+</span><span class="s2">&quot;.pdf&quot;</span><span class="p">)</span></div>
+                <span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="n">output_path_prefix</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">phenotype_names</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">i</span><span class="p">)]</span><span class="o">+</span><span class="s2">&quot;.pdf&quot;</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="MochiReport.report"><a class="viewcode-back" href="../../api.html#pymochi.report.MochiReport.report">[docs]</a>    <span class="k">def</span> <span class="nf">report</span><span class="p">(</span>
+
+<div class="viewcode-block" id="MochiReport.report">
+<a class="viewcode-back" href="../../api.html#pymochi.report.MochiReport.report">[docs]</a>
+    <span class="k">def</span> <span class="nf">report</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Produce project report.</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Produce task report.</span>
 
 <span class="sd">        :returns: Nothing.</span>
 <span class="sd">        &quot;&quot;&quot;</span> 
 
-        <span class="c1">#Check if valid MochiProject</span>
-        <span class="k">if</span> <span class="s1">&#39;models&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="nb">dir</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">project</span><span class="p">):</span>
-            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Error: Cannot produce report. Not a valid MochiProject.&quot;</span><span class="p">)</span>
-            <span class="k">return</span>
+        <span class="c1">#Check if valid MochiTask</span>
+        <span class="k">if</span> <span class="s1">&#39;models&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="nb">dir</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">task</span><span class="p">):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Error: Cannot produce report. Invalid MochiTask instance.&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span>
+
+        <span class="c1">#Check if valid MochiTask with at least one model</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">models</span><span class="o">==</span><span class="p">[]:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Error: Cannot produce report. Invalid MochiTask instance. No fit models.&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span>
 
         <span class="c1">#Output report directory</span>
-        <span class="n">directory</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">directory</span><span class="p">,</span> <span class="s1">&#39;report&#39;</span><span class="p">)</span>
+        <span class="n">directory</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">directory</span><span class="p">,</span> <span class="s1">&#39;report&#39;</span><span class="p">)</span>
 
         <span class="c1">#Create output report directory</span>
         <span class="k">try</span><span class="p">:</span>
@@ -386,7 +414,7 @@
             <span class="n">folds</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">])</span>
 
         <span class="c1">#Predictions on all data for all models</span>
-        <span class="n">prediction_df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">project</span><span class="o">.</span><span class="n">predict_all</span><span class="p">()</span>
+        <span class="n">prediction_df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">task</span><span class="o">.</span><span class="n">predict_all</span><span class="p">()</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">plot_test_performance</span><span class="p">(</span>
             <span class="n">input_df</span> <span class="o">=</span> <span class="n">prediction_df</span><span class="p">,</span>
@@ -396,7 +424,9 @@
             <span class="n">input_df</span> <span class="o">=</span> <span class="n">prediction_df</span><span class="p">,</span>
             <span class="n">output_path_prefix</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">directory</span><span class="p">,</span> <span class="s2">&quot;observed_phenotype_vs_additivetrait_&quot;</span><span class="p">),</span>
             <span class="n">folds</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">],</span>
-            <span class="n">RT</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">RT</span><span class="p">)</span></div></div>
+            <span class="n">RT</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">RT</span><span class="p">)</span></div>
+</div>
+
 
 
 
