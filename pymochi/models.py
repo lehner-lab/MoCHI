@@ -384,7 +384,7 @@ class MochiTask():
         num_epochs_grid = 100,
         l1_regularization_factor = 0,
         l2_regularization_factor = 0,
-        training_resample = False,
+        training_resample = True,
         early_stopping = True,
         scheduler_gamma = 0.98,
         loss_function_name = 'WeightedL1'):
@@ -399,7 +399,7 @@ class MochiTask():
         :param num_epochs_grid: Number of grid search epochs (default:100).
         :param l1_regularization_factor: Lambda factor applied to L1 norm (default:0).
         :param l2_regularization_factor: Lambda factor applied to L2 norm (default:0).
-        :param training_resample: Whether or not to add random noise to training target data proportional to target error (default:False).
+        :param training_resample: Whether or not to add random noise to training target data proportional to target error (default:True).
         :param early_stopping: Whether or not to stop training early if validation loss not decreasing (default:True).
         :param scheduler_gamma: Multiplicative factor of learning rate decay (default:0.98).
         :param loss_function_name: Loss function name (default:'WeightedL1').
@@ -1161,7 +1161,7 @@ class MochiTask():
         l1_regularization_factor = 0,
         l2_regularization_factor = 0,
         epoch_status = 10,
-        training_resample = False,
+        training_resample = True,
         early_stopping = True,
         scheduler_gamma = 0.98,
         scheduler_epochs = 10,
@@ -1181,7 +1181,7 @@ class MochiTask():
         :param l1_regularization_factor: Lambda factor applied to L1 norm (default:0).
         :param l2_regularization_factor: Lambda factor applied to L2 norm (default:0).
         :param epoch_status: Number of training epochs after which to print status messages (default:10).
-        :param training_resample: Whether or not to add random noise to training target data proportional to target error (default:False).
+        :param training_resample: Whether or not to add random noise to training target data proportional to target error (default:True).
         :param early_stopping: Whether or not to stop training early if validation loss not decreasing (default:True).
         :param scheduler_gamma: Multiplicative factor of learning rate decay (default:0.98).
         :param scheduler_epochs: Number of epochs over which to evaluate scheduler criteria (default:10).

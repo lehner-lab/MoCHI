@@ -52,7 +52,7 @@ def init_argparse(
     parser.add_argument('--num_epochs_grid', type = int, default = 100, help = "number of grid search epochs (default: 100)")
     parser.add_argument('--l1_regularization_factor', default = 0, help = "lambda factor applied to L1 norm (default: 0)")
     parser.add_argument('--l2_regularization_factor', default = 0.000001, help = "lambda factor applied to L2 norm (default: 0.000001)")
-    parser.add_argument('--training_resample', default = True, help = "whether or not to add random noise to training target data proportional to target error (default:False)")
+    parser.add_argument('--training_resample', default = True, help = "whether or not to add random noise to training target data proportional to target error (default:True)")
     parser.add_argument('--early_stopping', default = True, help = "whether or not to stop training early if validation loss not decreasing (default:True)")
     parser.add_argument('--scheduler_gamma', type = float, default = 0.98, help = "multiplicative factor of learning rate decay (default:0.98)")
     parser.add_argument('--loss_function_name', type = str, default = 'WeightedL1', help = "loss function name: one of 'WeightedL1', 'GaussianNLL' (default:'WeightedL1')")
