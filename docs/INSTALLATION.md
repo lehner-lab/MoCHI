@@ -83,7 +83,7 @@ This [this yaml file](../pymochi.yaml) can be used to create a dedicated Conda e
 
 ## Demo MoCHI
 
-Run the demo to ensure that you have a working installation (expected run time <10min):
+Run the demo to ensure that you have a working MoCHI installation (expected run time <10min):
    ```
    $ demo_mochi.py
    ```
