@@ -1,4 +1,8 @@
 ![example workflow](https://github.com/lehner-lab/MoCHI/actions/workflows/CI.yaml/badge.svg)
+[![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat)](http://bioconda.github.io/recipes/pymochi/README.html)
+[![Anaconda-Server Badge](https://anaconda.org/bioconda/pymochi/badges/version.svg?branch=master&kill_cache=1)](https://anaconda.org/bioconda/pymochi)
+[![Anaconda-Server Badge](https://anaconda.org/bioconda/pymochi/badges/latest_release_relative_date.svg?branch=master&kill_cache=1)](https://anaconda.org/bioconda/pymochi)
+[![Anaconda-Server Badge](https://anaconda.org/bioconda/pymochi/badges/downloads.svg?branch=master&kill_cache=1)](https://anaconda.org/bioconda/pymochi)
 
 <p align="left">
   <img src="./Mochi.png" width="100">
@@ -7,6 +11,17 @@
 # MoCHI
 
 Welcome to the GitHub repository for MoCHI: Neural networks to quantify energies, energetic couplings, epistasis and allostery from deep mutational scanning data.
+
+# Table Of Contents
+
+1. **[Installation](#installation)**
+1. **[Usage](#usage)**
+   1. **[Option A: MoCHI command line tool](docs/ARGUMENTS.md)**
+   1. **[Option B: Custom python script](docs/FILEFORMATS.md)**
+   1. **[Demo](#demo-mochi)**
+1. **[Manual](#manual)**
+1. **[Bugs and feedback](#bugs-and-feedback)**
+1. **[Citing MoCHI](#citing-mochi)**
 
 # Installation
 
@@ -93,13 +108,19 @@ Below is an example of a custom MoCHI workflow to infer the underlying free ener
    ```
 Report plots, predictions and additive trait summaries will be saved to the "my_task/report", "my_task/predictions" and "my_task/weights" subfolders.
 
+## Demo MoCHI
+
+Run the demo to ensure that you have a working MoCHI installation (expected run time <10min):
+   ```
+   $ demo_mochi.py
+   ```
+
 # Manual
 
 Comprehensive documentation is coming soon, but in the meantime get more information about specific classes/methods in python e.g.
    ```
    help(MochiData)
    ```
-
 
 # Bugs and feedback
 
