@@ -16,8 +16,8 @@ Welcome to the GitHub repository for MoCHI: Neural networks to quantify energies
 
 1. **[Installation](#installation)**
 1. **[Usage](#usage)**
-   1. **[Option A: MoCHI command line tool](docs/ARGUMENTS.md)**
-   1. **[Option B: Custom python script](docs/FILEFORMATS.md)**
+   1. **[Option A: MoCHI command line tool](#option-a-mochi-command-line-tool)**
+   1. **[Option B: Custom python script](#option-b-custom-python-script)**
    1. **[Demo](#demo-mochi)**
 1. **[Manual](#manual)**
 1. **[Bugs and feedback](#bugs-and-feedback)**
