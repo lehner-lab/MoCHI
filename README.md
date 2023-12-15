@@ -10,7 +10,7 @@
 
 # MoCHI
 
-Welcome to the GitHub repository for MoCHI: Neural networks to quantify energies, energetic couplings, epistasis and allostery from deep mutational scanning data.
+Welcome to the GitHub repository for MoCHI: Neural networks to fit interpretable models and quantify energies, energetic couplings, epistasis and allostery from deep mutational scanning data.
 
 # Table Of Contents
 
