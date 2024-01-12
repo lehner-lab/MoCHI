@@ -1,4 +1,8 @@
 ![example workflow](https://github.com/lehner-lab/MoCHI/actions/workflows/CI.yaml/badge.svg)
+[![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat)](http://bioconda.github.io/recipes/pymochi/README.html)
+[![Anaconda-Server Badge](https://anaconda.org/bioconda/pymochi/badges/version.svg?branch=master&kill_cache=1)](https://anaconda.org/bioconda/pymochi)
+[![Anaconda-Server Badge](https://anaconda.org/bioconda/pymochi/badges/latest_release_relative_date.svg?branch=master&kill_cache=1)](https://anaconda.org/bioconda/pymochi)
+[![Anaconda-Server Badge](https://anaconda.org/bioconda/pymochi/badges/downloads.svg?branch=master&kill_cache=1)](https://anaconda.org/bioconda/pymochi)
 
 <p align="left">
   <img src="./Mochi.png" width="100">
@@ -6,49 +10,27 @@
 
 # MoCHI
 
-Welcome to the GitHub repository for MoCHI: Neural networks to quantify energies, energetic couplings, epistasis and allostery from deep mutational scanning data.
+Welcome to the GitHub repository for MoCHI: Neural networks to fit interpretable models and quantify energies, energetic couplings, epistasis and allostery from deep mutational scanning data.
+
+# Table Of Contents
+
+1. **[Installation](#installation)**
+1. **[Usage](#usage)**
+   1. **[Option A: MoCHI command line tool](#option-a-mochi-command-line-tool)**
+   1. **[Option B: Custom python script](#option-b-custom-python-script)**
+   1. **[Demo](#demo-mochi)**
+1. **[Manual](#manual)**
+1. **[Bugs and feedback](#bugs-and-feedback)**
+1. **[Citing MoCHI](#citing-mochi)**
 
 # Installation
 
-MoCHI is currently only available through GitHub, but we recommend using [this yaml file](pymochi.yaml) to create a dedicated Conda environment with all necessary dependencies (as explained below).
+The easiest way to install MoCHI is by using the [bioconda package](http://bioconda.github.io/recipes/pymochi/README.html):
+```
+conda install -c bioconda pymochi
+```
 
-1. Install the [Conda](https://docs.conda.io/) package/environment management system (if you already have Conda skip to step 2):
-
-   On MacOS, run:
-   ```
-   $ curl -O https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-x86_64.sh
-   $ sh Miniconda3-latest-MacOSX-x86_64.sh
-   ```
-   On Linux, run:
-   ```
-   $ curl -O https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
-   $ sh Miniconda3-latest-Linux-x86_64.sh
-   ```
-
-   **IMPORTANT:** If in doubt, respond with "yes" to the following question during installation: "Do you wish the installer to initialize Miniconda3 by running conda init?". In this case Conda will modify your shell scripts (*~/.bashrc* or *~/.bash_profile*) to initialize Miniconda3 on startup. Ensure that any future modifications to your *$PATH* variable in your shell scripts occur **before** this code to initialize Miniconda3.
-
-2. Clone the MoCHI GitHub repository:
-   ```
-   $ git clone https://github.com/lehner-lab/MoCHI.git
-   ```
-
-3. Create the pymochi Conda environment:
-   ```
-   $ conda env create -f MoCHI/pymochi.yaml
-   ```
-
-4. Install MoCHI:
-   ```
-   $ conda activate pymochi
-   $ cd MoCHI
-   $ pip install -e ./
-   ```
-
-5. Run the demo to ensure that you have a working installation (expected run time <10min):
-   ```
-   $ cd ..
-   $ demo_mochi.py
-   ```
+See the full [Installation Instructions](docs/INSTALLATION.md) for further details and alternative installation options.
 
 # Usage
 
@@ -126,13 +108,19 @@ Below is an example of a custom MoCHI workflow to infer the underlying free ener
    ```
 Report plots, predictions and additive trait summaries will be saved to the "my_task/report", "my_task/predictions" and "my_task/weights" subfolders.
 
+## Demo MoCHI
+
+Run the demo to ensure that you have a working MoCHI installation (expected run time <10min):
+   ```
+   $ demo_mochi.py
+   ```
+
 # Manual
 
 Comprehensive documentation is coming soon, but in the meantime get more information about specific classes/methods in python e.g.
    ```
    help(MochiData)
    ```
-
 
 # Bugs and feedback
 
