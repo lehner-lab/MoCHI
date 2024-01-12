@@ -76,13 +76,21 @@ class MochiModel(torch.nn.Module):
         #         if j.endswith("_shared"):
         #             i[j] = shared_globalparams[j]
 
+        # #Arbitrary non-linear transformations (depth=3) - SumOfSigmoids
+        # n_sumofsigmoids = len([i for i in self.model_design.transformation if i=="SumOfSigmoids"])
+        # self.model_design.loc[self.model_design.transformation=="SumOfSigmoids",'sos_index'] = list(range(n_sumofsigmoids))
+        # self.sumofsigmoids1 = torch.nn.ModuleList([torch.nn.Linear(len(self.model_design.loc[i,'trait']), 20, dtype=torch.float32) for i in range(len(self.model_design)) if self.model_design.loc[i,'transformation']=="SumOfSigmoids"])
+        # self.sumofsigmoids2 = torch.nn.ModuleList([torch.nn.Linear(20, 10, dtype=torch.float32) for i in range(n_sumofsigmoids)])
+        # self.sumofsigmoids3 = torch.nn.ModuleList([torch.nn.Linear(10, 5, dtype=torch.float32) for i in range(n_sumofsigmoids)])
+        # self.sumofsigmoids4 = torch.nn.ModuleList([torch.nn.Linear(5, 1, dtype=torch.float32) for i in range(n_sumofsigmoids)])
+
         #Arbitrary non-linear transformations (depth=3) - SumOfSigmoids
         n_sumofsigmoids = len([i for i in self.model_design.transformation if i=="SumOfSigmoids"])
         self.model_design.loc[self.model_design.transformation=="SumOfSigmoids",'sos_index'] = list(range(n_sumofsigmoids))
         self.sumofsigmoids1 = torch.nn.ModuleList([torch.nn.Linear(len(self.model_design.loc[i,'trait']), 20, dtype=torch.float32) for i in range(len(self.model_design)) if self.model_design.loc[i,'transformation']=="SumOfSigmoids"])
-        self.sumofsigmoids2 = torch.nn.ModuleList([torch.nn.Linear(20, 10, dtype=torch.float32) for i in range(n_sumofsigmoids)])
-        self.sumofsigmoids3 = torch.nn.ModuleList([torch.nn.Linear(10, 5, dtype=torch.float32) for i in range(n_sumofsigmoids)])
-        self.sumofsigmoids4 = torch.nn.ModuleList([torch.nn.Linear(5, 1, dtype=torch.float32) for i in range(n_sumofsigmoids)])
+        self.sumofsigmoids2 = torch.nn.ModuleList([torch.nn.Linear(20, 20, dtype=torch.float32) for i in range(n_sumofsigmoids)])
+        self.sumofsigmoids3 = torch.nn.ModuleList([torch.nn.Linear(20, 1, dtype=torch.float32) for i in range(n_sumofsigmoids)])
+
         #Fitness linear transformations
         n_linears = len(self.model_design)
         self.linears = torch.nn.ModuleList([ConstrainedLinear(1, 1, dtype=torch.float32) for i in range(n_linears)])
@@ -132,7 +140,8 @@ class MochiModel(torch.nn.Module):
                 transformed_trait1 = torch.sigmoid(self.sumofsigmoids1[int(self.model_design.loc[i,'sos_index'])](torch.cat(additive_traits, 1)))
                 transformed_trait2 = torch.sigmoid(self.sumofsigmoids2[int(self.model_design.loc[i,'sos_index'])](transformed_trait1))
                 transformed_trait3 = torch.sigmoid(self.sumofsigmoids3[int(self.model_design.loc[i,'sos_index'])](transformed_trait2))
-                transformed_trait = self.sumofsigmoids4[int(self.model_design.loc[i,'sos_index'])](transformed_trait3)
+                # transformed_trait = self.sumofsigmoids4[int(self.model_design.loc[i,'sos_index'])](transformed_trait3)
+                transformed_trait = transformed_trait3
             #Observed phenotypes
             observed_phenotypes += [torch.mul(self.linears[i](transformed_trait), select_list[i])]
         #Sum observed phenotypes

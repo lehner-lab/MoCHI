@@ -571,6 +571,11 @@ class MochiData:
             print("Error: One or more invalid trait names in 'features' argument.")
             raise ValueError
 
+        #Check all dictionary values include WT
+        if sum([1 for i in features.keys() if 'WT' in features[i]])!=len(features):
+            print("Error: 'WT' missing for one or more traits in 'features' argument.")
+            raise ValueError        
+
         #Copy features dictionary
         features_trait = copy.deepcopy(features)
         #List of unique features
