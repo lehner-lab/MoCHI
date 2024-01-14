@@ -49,6 +49,8 @@ class MochiProject():
         early_stopping = True,
         scheduler_gamma = 0.98,
         loss_function_name = 'WeightedL1',
+        sos_architecture = [20],
+        sos_outputlinear = False,
         init_weights_directory = None,
         init_weights_task_id = 1,
         fix_weights = {},
@@ -84,6 +86,8 @@ class MochiProject():
         :param early_stopping: Whether or not to stop training early if validation loss not decreasing (default:True).
         :param scheduler_gamma: Multiplicative factor of learning rate decay (default:0.98).
         :param loss_function_name: Loss function name: one of 'WeightedL1', 'GaussianNLL' (default:'WeightedL1').
+        :param sos_architecture: list of integers corresponding to number of neurons per fully-connected sumOfSigmoids hidden layer (default:[20]).
+        :param sos_outputlinear: boolean indicating whether final sumOfSigmoids should be linear rather than sigmoidal (default:False).
         :param init_weights_directory: Path to project directory for model weight initialization (optional).
         :param init_weights_task_id: Task identifier to use for model weight initialization (default:1).
         :param fix_weights: Dictionary (or path to file) of layer names to fix weights (default:empty dict i.e. no layers fixed).
@@ -122,6 +126,8 @@ class MochiProject():
         self.early_stopping = early_stopping
         self.scheduler_gamma = scheduler_gamma
         self.loss_function_name = loss_function_name
+        self.sos_architecture = sos_architecture
+        self.sos_outputlinear = sos_outputlinear
         self.init_weights_directory = init_weights_directory
         self.init_weights_task_id = init_weights_task_id
         self.fix_weights = fix_weights
@@ -396,7 +402,9 @@ class MochiProject():
                         'training_resample' : self.training_resample,
                         'early_stopping' : self.early_stopping,
                         'scheduler_gamma' : self.scheduler_gamma,
-                        'loss_function_name' : self.loss_function_name}),
+                        'loss_function_name' : self.loss_function_name,
+                        'sos_architecture' : self.sos_architecture,
+                        'sos_outputlinear' : self.sos_outputlinear}),
                     RT = self.RT,
                     seq_position_offset = self.seq_position_offset,
                     init_weights = init_weights,
@@ -458,7 +466,10 @@ class MochiProject():
                         'l2_regularization_factor' : self.l2_regularization_factor,
                         'training_resample' : self.training_resample,
                         'early_stopping' : self.early_stopping,
-                        'scheduler_gamma' : self.scheduler_gamma}),
+                        'scheduler_gamma' : self.scheduler_gamma,
+                        'loss_function_name' : self.loss_function_name,
+                        'sos_architecture' : self.sos_architecture,
+                        'sos_outputlinear' : self.sos_outputlinear}),
                     RT = self.RT,
                     seq_position_offset = self.seq_position_offset,
                     init_weights = init_weights,

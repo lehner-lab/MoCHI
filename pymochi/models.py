@@ -42,7 +42,9 @@ class MochiModel(torch.nn.Module):
         input_shape, 
         mask, 
         model_design,
-        custom_transformations):
+        custom_transformations,
+        sos_architecture,
+        sos_outputlinear):
         """
         Initialize a MochiModel object.
 
@@ -50,6 +52,8 @@ class MochiModel(torch.nn.Module):
         :param mask: tensor to mask weights that should not be fit (required).
         :param model_design: Model design data frame with phenotype, transformation and trait columns (required).
         :param custom_transformations: dictionary of custom transformations where keys are function names and values are functions (required).
+        :param sos_architecture: list of integers corresponding to number of neurons per fully-connected sumOfSigmoids hidden layer (required).
+        :param sos_outputlinear: boolean indicating whether final sumOfSigmoids should be linear rather than sigmoidal (required).
         :returns: MochiModel object.
         """     
         super(MochiModel, self).__init__()
@@ -57,6 +61,9 @@ class MochiModel(torch.nn.Module):
         self.model_design = model_design
         #Custom transformations
         self.custom_transformations = custom_transformations
+        #SOS parameters
+        self.sos_architecture = sos_architecture
+        self.sos_outputlinear = sos_outputlinear
         #Additive traits
         n_additivetraits = len(list(set([item for sublist in list(self.model_design['trait']) for item in sublist])))
         self.additivetraits = torch.nn.ModuleList([torch.nn.Linear(input_shape, 1, bias = False, dtype=torch.float32) for i in range(n_additivetraits)])
@@ -76,20 +83,22 @@ class MochiModel(torch.nn.Module):
         #         if j.endswith("_shared"):
         #             i[j] = shared_globalparams[j]
 
-        # #Arbitrary non-linear transformations (depth=3) - SumOfSigmoids
-        # n_sumofsigmoids = len([i for i in self.model_design.transformation if i=="SumOfSigmoids"])
-        # self.model_design.loc[self.model_design.transformation=="SumOfSigmoids",'sos_index'] = list(range(n_sumofsigmoids))
-        # self.sumofsigmoids1 = torch.nn.ModuleList([torch.nn.Linear(len(self.model_design.loc[i,'trait']), 20, dtype=torch.float32) for i in range(len(self.model_design)) if self.model_design.loc[i,'transformation']=="SumOfSigmoids"])
-        # self.sumofsigmoids2 = torch.nn.ModuleList([torch.nn.Linear(20, 10, dtype=torch.float32) for i in range(n_sumofsigmoids)])
-        # self.sumofsigmoids3 = torch.nn.ModuleList([torch.nn.Linear(10, 5, dtype=torch.float32) for i in range(n_sumofsigmoids)])
-        # self.sumofsigmoids4 = torch.nn.ModuleList([torch.nn.Linear(5, 1, dtype=torch.float32) for i in range(n_sumofsigmoids)])
-
-        #Arbitrary non-linear transformations (depth=3) - SumOfSigmoids
-        n_sumofsigmoids = len([i for i in self.model_design.transformation if i=="SumOfSigmoids"])
-        self.model_design.loc[self.model_design.transformation=="SumOfSigmoids",'sos_index'] = list(range(n_sumofsigmoids))
-        self.sumofsigmoids1 = torch.nn.ModuleList([torch.nn.Linear(len(self.model_design.loc[i,'trait']), 20, dtype=torch.float32) for i in range(len(self.model_design)) if self.model_design.loc[i,'transformation']=="SumOfSigmoids"])
-        self.sumofsigmoids2 = torch.nn.ModuleList([torch.nn.Linear(20, 20, dtype=torch.float32) for i in range(n_sumofsigmoids)])
-        self.sumofsigmoids3 = torch.nn.ModuleList([torch.nn.Linear(20, 1, dtype=torch.float32) for i in range(n_sumofsigmoids)])
+        #Arbitrary non-linear transformations (arbitrary architecture) - SumOfSigmoids
+        #Additive trait dimensionality of SOS phenotypes
+        sos_atdim = [len(self.model_design.loc[i,'trait']) for i in range(len(self.model_design)) if self.model_design.loc[i,'transformation']=="SumOfSigmoids"]
+        #SOS index of SOS phenytypes
+        self.model_design.loc[self.model_design.transformation=="SumOfSigmoids",'sos_index'] = list(range(len(sos_atdim)))
+        #SOS module list
+        #SOS first layer
+        self.sumofsigmoids_list = [torch.nn.ModuleList([torch.nn.Linear(i, self.sos_architecture[0], dtype=torch.float32) for i in sos_atdim])]
+        #SOS intermediate layers
+        if len(self.sos_architecture)>1:
+            for i in range(len(self.sos_architecture)-1):
+                self.sumofsigmoids_list += [torch.nn.ModuleList([torch.nn.Linear(self.sos_architecture[i], self.sos_architecture[i+1], dtype=torch.float32) for j in range(len(sos_atdim))])]
+        #SOS last layer
+        self.sumofsigmoids_list += [torch.nn.ModuleList([torch.nn.Linear(self.sos_architecture[-1], 1, dtype=torch.float32) for i in sos_atdim])]
+        #SOS convert to ModuleList of ModuleLists
+        self.sumofsigmoids_list = torch.nn.ModuleList(self.sumofsigmoids_list)
 
         #Fitness linear transformations
         n_linears = len(self.model_design)
@@ -133,15 +142,23 @@ class MochiModel(torch.nn.Module):
                 X, 
                 torch.reshape(torch.narrow(torch.narrow(mask, 0, j-1, 1), 1, i, 1), (1, -1)))) for j in self.model_design.loc[i,'trait']]
             #Molecular phenotypes
-            if self.model_design.loc[i,'transformation'] not in ["SumOfSigmoids", "SumOfSwishes"]:
+            if self.model_design.loc[i,'transformation'] not in ["SumOfSigmoids"]:
                 globalparams = self.globalparams[i]
                 transformed_trait = get_transformation(self.model_design.loc[i,'transformation'], custom = self.custom_transformations)(additive_traits, globalparams)           
             elif self.model_design.loc[i,'transformation'] == "SumOfSigmoids":
-                transformed_trait1 = torch.sigmoid(self.sumofsigmoids1[int(self.model_design.loc[i,'sos_index'])](torch.cat(additive_traits, 1)))
-                transformed_trait2 = torch.sigmoid(self.sumofsigmoids2[int(self.model_design.loc[i,'sos_index'])](transformed_trait1))
-                transformed_trait3 = torch.sigmoid(self.sumofsigmoids3[int(self.model_design.loc[i,'sos_index'])](transformed_trait2))
-                # transformed_trait = self.sumofsigmoids4[int(self.model_design.loc[i,'sos_index'])](transformed_trait3)
-                transformed_trait = transformed_trait3
+                #SumOfSigmoids layers
+                transformed_trait = None
+                for j in range(len(self.sumofsigmoids_list)):
+                    if j == 0:
+                        transformed_trait = torch.sigmoid(self.sumofsigmoids_list[j][int(self.model_design.loc[i,'sos_index'])](torch.cat(additive_traits, 1)))
+                    elif j != (len(self.sumofsigmoids_list)-1):
+                        transformed_trait = torch.sigmoid(self.sumofsigmoids_list[j][int(self.model_design.loc[i,'sos_index'])](transformed_trait))
+                    else:
+                        if self.sos_outputlinear:
+                            transformed_trait = self.sumofsigmoids_list[j][int(self.model_design.loc[i,'sos_index'])](transformed_trait)
+                        else:
+                            transformed_trait = torch.sigmoid(self.sumofsigmoids_list[j][int(self.model_design.loc[i,'sos_index'])](transformed_trait))
+
             #Observed phenotypes
             observed_phenotypes += [torch.mul(self.linears[i](transformed_trait), select_list[i])]
         #Sum observed phenotypes
@@ -161,6 +178,11 @@ class MochiModel(torch.nn.Module):
             for layer in layer_list:
                 if hasattr(layer, 'reset_parameters'):
                     layer.reset_parameters()
+                elif type(layer)==torch.nn.ModuleList:
+                    for ml_layer in layer:
+                        if hasattr(ml_layer, 'reset_parameters'):
+                            ml_layer.reset_parameters()
+
         #Initialize ConstrainedLinear layer weights
         for i in range(len(self.model_design)):
             # self.linears[i].weight.data.fill_(1)
@@ -336,7 +358,9 @@ class MochiModelMetadata():
         early_stopping,
         scheduler_gamma,
         scheduler_epochs,
-        loss_function_name):
+        loss_function_name,
+        sos_architecture,
+        sos_outputlinear):
         """
         Initialize a MochiModelMetadata object.
 
@@ -354,6 +378,8 @@ class MochiModelMetadata():
         :param scheduler_gamma: Multiplicative factor of learning rate decay (required).
         :param scheduler_epochs: Number of epochs over which to evaluate scheduler criteria (required).
         :param loss_function_name: Loss function name (required).
+        :param sos_architecture: list of integers corresponding to number of neurons per fully-connected sumOfSigmoids hidden layer (required).
+        :param sos_outputlinear: boolean indicating whether final sumOfSigmoids should be linear rather than sigmoidal (required).
         :returns: MochiModelMetadata object.
         """ 
         self.fold = fold
@@ -370,6 +396,8 @@ class MochiModelMetadata():
         self.scheduler_gamma = scheduler_gamma
         self.scheduler_epochs = scheduler_epochs
         self.loss_function_name = loss_function_name
+        self.sos_architecture = sos_architecture
+        self.sos_outputlinear = sos_outputlinear
 
     def __str__(self):
         """
@@ -396,7 +424,9 @@ class MochiTask():
         training_resample = True,
         early_stopping = True,
         scheduler_gamma = 0.98,
-        loss_function_name = 'WeightedL1'):
+        loss_function_name = 'WeightedL1',
+        sos_architecture = [20],
+        sos_outputlinear = False):
         """
         Initialize a MochiTask object.
 
@@ -412,6 +442,8 @@ class MochiTask():
         :param early_stopping: Whether or not to stop training early if validation loss not decreasing (default:True).
         :param scheduler_gamma: Multiplicative factor of learning rate decay (default:0.98).
         :param loss_function_name: Loss function name (default:'WeightedL1').
+        :param sos_architecture: list of integers corresponding to number of neurons per fully-connected sumOfSigmoids hidden layer (default:[20]).
+        :param sos_outputlinear: boolean indicating whether final sumOfSigmoids should be linear rather than sigmoidal (default:False).
         :returns: MochiTask object.
         """ 
         #Get CPU or GPU device
@@ -439,6 +471,8 @@ class MochiTask():
             self.early_stopping = early_stopping
             self.scheduler_gamma = scheduler_gamma
             self.loss_function_name = loss_function_name
+            self.sos_architecture = sos_architecture
+            self.sos_outputlinear = sos_outputlinear
         else:
             #Load saved models
             # print("Loading task.")
@@ -567,7 +601,9 @@ class MochiTask():
             input_shape = data['training']['X'].shape[1],
             mask = data['training']['mask'],
             model_design = self.data.model_design,
-            custom_transformations = self.data.custom_transformations).to(self.device)
+            custom_transformations = self.data.custom_transformations,
+            sos_architecture = self.sos_architecture,
+            sos_outputlinear = self.sos_outputlinear).to(self.device)
         return model
 
     def wavg(
@@ -891,6 +927,8 @@ class MochiTask():
                     early_stopping = self.early_stopping,
                     scheduler_gamma = self.scheduler_gamma,
                     loss_function_name = self.loss_function_name,
+                    sos_architecture = self.sos_architecture,
+                    sos_outputlinear = self.sos_outputlinear,
                     init_weights = init_weights,
                     fix_weights = fix_weights)
         except ValueError:
@@ -979,11 +1017,13 @@ class MochiTask():
             num_epochs = self.num_epochs,
             l1_regularization_factor = grid_search_models[best_model_index].metadata.l1_regularization_factor,
             l2_regularization_factor = grid_search_models[best_model_index].metadata.l2_regularization_factor,
+            epoch_status = epoch_status,
             training_resample = self.training_resample,
             early_stopping = self.early_stopping,
             scheduler_gamma = self.scheduler_gamma,
             loss_function_name = self.loss_function_name,
-            epoch_status = epoch_status,
+            sos_architecture = self.sos_architecture,
+            sos_outputlinear = self.sos_outputlinear,
             init_weights = init_weights,
             fix_weights = fix_weights)
 
@@ -1175,6 +1215,8 @@ class MochiTask():
         scheduler_gamma = 0.98,
         scheduler_epochs = 10,
         loss_function_name = 'WeightedL1',
+        sos_architecture = [20],
+        sos_outputlinear = False,
         init_weights = None,
         fix_weights = {}):
         """
@@ -1195,6 +1237,8 @@ class MochiTask():
         :param scheduler_gamma: Multiplicative factor of learning rate decay (default:0.98).
         :param scheduler_epochs: Number of epochs over which to evaluate scheduler criteria (default:10).
         :param loss_function_name: Loss function name (default:'WeightedL1').
+        :param sos_architecture: list of integers corresponding to number of neurons per fully-connected sumOfSigmoids hidden layer (default:[20]).
+        :param sos_outputlinear: boolean indicating whether final sumOfSigmoids should be linear rather than sigmoidal (default:False).
         :param init_weights: Task to use for model weight initialization (optional).
         :param fix_weights: Dictionary of layer names to fix weights (default:empty dict i.e. no layers fixed).
         :returns: Nothing.
@@ -1264,7 +1308,9 @@ class MochiTask():
             early_stopping = early_stopping,
             scheduler_gamma = scheduler_gamma,
             scheduler_epochs = scheduler_epochs,
-            loss_function_name = loss_function_name)
+            loss_function_name = loss_function_name,
+            sos_architecture = sos_architecture,
+            sos_outputlinear = sos_outputlinear)
         print("Fitting model:")
         print(model.metadata)
 
