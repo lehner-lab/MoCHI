@@ -33,6 +33,13 @@ class WeightedL1Loss(torch.nn.L1Loss):
     def forward(self, input: Tensor, target: Tensor, weight: Tensor) -> Tensor:
         return F.l1_loss(input, target, reduction='none') * weight
 
+class MochiGaussianNLLLoss(torch.nn.GaussianNLLLoss):
+    """
+    Mochi version of GaussianNLLLoss with no reduction that accepts weights (1/sigma) rather than var = sigma^2.
+    """
+    def forward(self, input: Tensor, target: Tensor, weight: Tensor) -> Tensor:
+        return F.gaussian_nll_loss(input, target, torch.pow(weight, -2), full = True, eps = 0, reduction = "none")
+
 class MochiModel(torch.nn.Module):
     """
     A custom model/module.
@@ -1321,7 +1328,7 @@ class MochiTask():
         if loss_function_name == 'WeightedL1':
             loss_function = WeightedL1Loss()
         elif loss_function_name == 'GaussianNLL':
-            loss_function = torch.nn.GaussianNLLLoss(full = True, eps = 0, reduction = "none")
+            loss_function = MochiGaussianNLLLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=learn_rate)
 
         #Scheduler

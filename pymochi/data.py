@@ -393,7 +393,7 @@ class MochiData:
         self.fitness = self.fdata.vtable.loc[:,['fitness', 'sigma']]
         #Phenotypes
         self.phenotypes = self.one_hot_encode_phenotypes()
-        #Fitness weights
+        #Fitness weights (1/sigma)
         for i in range(len(self.model_design)):
             self.fitness.loc[self.phenotypes['phenotype_'+str(self.model_design.loc[i,'phenotype'])]==1,'weight'] = self.model_design.loc[i,'weight']
         self.fitness['weight'] = 1/np.power(np.asarray(self.fitness['sigma']), 1) * self.fitness['weight']
