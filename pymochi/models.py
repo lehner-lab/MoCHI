@@ -35,7 +35,7 @@ class WeightedL1Loss(torch.nn.L1Loss):
 
 class MochiGaussianNLLLoss(torch.nn.GaussianNLLLoss):
     """
-    Mochi version of GaussianNLLLoss with no reduction that accepts weights (1/sigma) rather than var = sigma^2.
+    Mochi version of GaussianNLLLoss with no reduction that accepts fitness weights (1/sigma) rather than var = sigma^2.
     """
     def forward(self, input: Tensor, target: Tensor, weight: Tensor) -> Tensor:
         return F.gaussian_nll_loss(input, target, torch.pow(weight, -2), full = True, eps = 0, reduction = "none")
