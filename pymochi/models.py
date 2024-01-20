@@ -14,7 +14,7 @@ from pymochi.data import *
 from pymochi.transformation import get_transformation
 import itertools
 import shutil
-from functools import reduce
+import functools
 
 class ConstrainedLinear(torch.nn.Linear):
     """
@@ -26,7 +26,7 @@ class ConstrainedLinear(torch.nn.Linear):
         # return F.linear(input, self.weight.clamp(min=0, max=1000), self.bias)
         return F.linear(input, self.weight.abs(), self.bias)
 
-class WeightedL1Loss(torch.nn.L1Loss):
+class MochiWeightedL1Loss(torch.nn.L1Loss):
     """
     A weighted version of L1Loss with no reduction.
     """
@@ -826,7 +826,7 @@ class MochiTask():
                 #Remove weights not reported on by a single corresponding phenotype
                 at_list[-1][-1] = at_list[-1][-1].loc[mask!=0,:]
             #Merge weight data frames corresponding to different folds
-            at_list[-1] = reduce(lambda x, y: pd.merge(x, y, how='outer', on = ['id', 'id_ref', 'Pos', 'Pos_ref']), at_list[-1])
+            at_list[-1] = functools.reduce(lambda x, y: pd.merge(x, y, how='outer', on = ['id', 'id_ref', 'Pos', 'Pos_ref']), at_list[-1])
             fold_cols = [i for i in list(at_list[-1].columns) if not i in ['id', 'id_ref', 'Pos', 'Pos_ref']]
             at_list[-1]['n'] = at_list[-1].loc[:,fold_cols].notnull().sum(axis=1)
             at_list[-1]['mean'] = at_list[-1].loc[:,fold_cols].mean(axis=1)
@@ -1326,7 +1326,7 @@ class MochiTask():
 
         #Construct loss function and Optimizer
         if loss_function_name == 'WeightedL1':
-            loss_function = WeightedL1Loss()
+            loss_function = MochiWeightedL1Loss()
         elif loss_function_name == 'GaussianNLL':
             loss_function = MochiGaussianNLLLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=learn_rate)

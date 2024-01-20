@@ -113,6 +113,24 @@ def test_MochiData_invalid_features_argument_features(capsys):
     print(captured.out)
     assert captured.out.split("\n")[-2] == "Error: Invalid feature names." and e_info
 
+def test_MochiData_invalid_features_argument_missingWT(capsys):
+    """Test MochiData initialization with invalid features argument missing WT"""
+    model_design = pd.read_csv(Path(__file__).parent.parent / "data/model_design.txt", sep = "\t", index_col = False)
+    model_design['file'] = [
+        str(Path(__file__).parent.parent / "data/fitness_abundance.txt"),
+        str(Path(__file__).parent.parent / "data/fitness_binding.txt")]
+    #Create a problematic features dict
+    features = {
+        'Folding': ["WT"],
+        'Binding': ["Hello"]}
+    with pytest.raises(ValueError) as e_info:
+        MochiData(
+            model_design = model_design, 
+            features = features)
+    captured = capsys.readouterr()
+    print(captured.out)
+    assert captured.out.split("\n")[-2] == "Error: 'WT' missing for one or more traits in 'features' argument." and e_info
+
 def test_MochiData_features_argument_Nonekey(capsys):
     """Test MochiData initialization with features argument None key"""
     model_design = pd.read_csv(Path(__file__).parent.parent / "data/model_design.txt", sep = "\t", index_col = False)
@@ -186,7 +204,10 @@ def test_fit_best_exploded_grid_search_models(capsys):
             training_resample = True,
             early_stopping = True,
             scheduler_gamma = mochi_task.scheduler_gamma,
-            scheduler_epochs = 10)
+            scheduler_epochs = 10,
+            loss_function_name = 'WeightedL1',
+            sos_architecture = [20],
+            sos_outputlinear = False)
         model.training_history['val_loss'] = [1.0, 1.0, np.nan]
     #Fit best model
     with pytest.raises(ValueError) as e_info:

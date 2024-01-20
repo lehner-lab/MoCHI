@@ -1,10 +1,10 @@
 """A tool to fit mechanistic models to deep mutational scanning data"""
+# Import classes users will interact with
 
-# Add imports here
-from .pymochi import *
+from pymochi.project import MochiProject
 
 # Handle versioneer
-from ._version import get_versions
+from pymochi._version import get_versions
 versions = get_versions()
 __version__ = versions['version']
 __git_revision__ = versions['full-revisionid']
