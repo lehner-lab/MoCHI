@@ -32,6 +32,7 @@ After installing Conda you will need to add the bioconda channel as well as the 
 ```
 conda config --add channels defaults
 conda config --add channels bioconda
+conda config --add channels conda-forge
 ```
 
 Next, create a dedicated Conda environment to install the [MoCHI bioconda package](http://bioconda.github.io/recipes/pymochi/README.html) and it's dependencies:
