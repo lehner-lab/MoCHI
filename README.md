@@ -128,11 +128,9 @@ You may submit a bug report here on GitHub as an issue or you could send an emai
 
 # Citing MoCHI
 
-Please cite the following publications if you use MoCHI:
+Please cite the following publication if you use MoCHI:
 
-Faure, A. J., Domingo, J., Schmiedel, J. M., Hidalgo-Carcedo, C., Diss, G., & Lehner, B. Mapping the energetic and allosteric landscapes of protein binding domains. Nature, 604(7904), 175–183 (2022). [10.1038/s41586-022-04586-4](http://doi.org/10.1038/s41586-022-04586-4)
-
-Weng, C., Faure, A. J., & Ben Lehner. The energetic and allosteric landscape for KRAS inhibition. bioRxiv, 2022.12.06.519122 (2022). [10.1101/2022.12.06.519122](http://doi.org/10.1101/2022.12.06.519122)
+Faure, A. J. & Lehner, B. MoCHI: neural networks to fit interpretable models and quantify energies, energetic couplings, epistasis and allostery from deep mutational scanning data. BioRxiv (2024). [10.1101/2024.01.21.575681](https://www.biorxiv.org/content/10.1101/2024.01.21.575681)
 
 #### Acknowledgements
  
