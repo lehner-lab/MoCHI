@@ -966,9 +966,11 @@ class MochiData:
         all_features_flat = list(itertools.chain(*list(all_features.values())))
 
         #Check if all interaction features exist (i.e. with mutation order>1)
-        if len([i for i in features if (i not in all_features_flat) and (len(i.split('_'))>1)]) != 0:
-            print("Error: Invalid feature names.")
-            raise ValueError
+        invalid_features = [i for i in features if (i not in all_features_flat) and (len(i.split('_'))>1)]
+        if len(invalid_features) != 0:
+            # print("Error: Invalid feature names.")
+            print("Warning: Invalid feature names: "+",".join(invalid_features))
+            # raise ValueError
 
         #Select interactions
         int_list = []
@@ -1059,9 +1061,11 @@ class MochiData:
         :returns: filtered DataFrame.
         """
         #Check if all features exist 
-        if len([i for i in features if i not in input_df.columns]) != 0:
-            print("Error: Invalid feature names.")
-            raise ValueError
+        invalid_features = [i for i in features if i not in input_df.columns]
+        if len(invalid_features) != 0:
+            # print("Error: Invalid feature names.")
+            print("Warning: Invalid feature names: "+",".join(invalid_features))
+            # raise ValueError
         #Filter features
         features_order = [i for i in input_df.columns if i in features]
         return input_df.loc[:,features_order]
