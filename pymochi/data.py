@@ -560,9 +560,6 @@ class MochiData:
                 return (features, {})
             elif key1 not in self.additive_trait_names:
                 #Filter applied to all traits
-                print("FILTER APPLIED TO ALL TRAITS")
-                print(key1)
-                print(self.additive_trait_names)
                 features = [key1]+features[key1]
                 return (features, {})
 
