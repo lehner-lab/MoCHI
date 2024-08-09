@@ -17,7 +17,7 @@ Welcome to the GitHub repository for MoCHI: Neural networks to fit interpretable
 1. **[Installation](#installation)**
 1. **[Usage](#usage)**
    1. **[Option A: MoCHI command line tool](#option-a-mochi-command-line-tool)**
-   1. **[Option B: Custom python script](#option-b-custom-python-script)**
+   1. **[Option B: Custom Python script](#option-b-custom-python-script)**
    1. **[Demo](#demo-mochi)**
 1. **[Manual](#manual)**
 1. **[Bugs and feedback](#bugs-and-feedback)**
@@ -43,92 +43,93 @@ MoCHI requires a table describing the measured phenotypes and how they relate to
  - *file*: Path to DiMSum output (.RData) or plain text file with variant fitness and error estimates for the corresponding phenotype
 
 ## Option A: MoCHI command line tool
-   ```
-   $ conda activate pymochi
-   $ run_mochi.py --model_design model_design.txt
-   ```
+```
+conda activate pymochi
+run_mochi.py --model_design model_design.txt
+```
 
 Get help with additional command line parameters:
-   ```
-   $ run_mochi.py -h
-   ```
+```
+run_mochi.py -h
+```
 
-## Option B: Custom python script
+## Option B: Custom Python script
 
-Below is an example of a custom MoCHI workflow to infer the underlying free energies of folding and binding from [doubledeepPCA](https://www.nature.com/articles/s41586-022-04586-4) data.
+Below is an example of a custom MoCHI workflow (written in Python) to infer the underlying free energies of folding and binding from [doubledeepPCA](https://www.nature.com/articles/s41586-022-04586-4) data.
 
-1. Create a *MochiTask* object with one-hot encoded variant sequences, interaction terms and 10 cross-validation groups:
-   ```
-    #Imports
-    import pymochi
-    from pymochi.data import MochiData
-    from pymochi.models import MochiTask
-    from pymochi.report import MochiReport
-    import pandas as pd
-    from pathlib import Path
-    
-    #Globals
-    k_folds = 10
-    abundance_path = str(Path(pymochi.__file__).parent / "data/fitness_abundance.txt") #MoCHI demo data
-    binding_path = str(Path(pymochi.__file__).parent / "data/fitness_binding.txt") #MoCHI demo data
-    
-    #Define model
-    my_model_design = pd.DataFrame({
-       'phenotype': ['Abundance', 'Binding'],
-       'transformation': ['TwoStateFractionFolded', 'ThreeStateFractionBound'],
-       'trait': [['Folding'], ['Folding', 'Binding']],
-       'file': [abundance_path, binding_path]})
-    
-    #Create Task
-    mochi_task = MochiTask(
-       directory = 'my_task',
-       data = MochiData(
-          model_design = my_model_design,
-          k_folds = k_folds))
-   ```
+```
+#Imports
+import pymochi
+from pymochi.data import MochiData
+from pymochi.models import MochiTask
+from pymochi.report import MochiReport
+import pandas as pd
+from pathlib import Path
 
-2. Hyperparameter tuning and model fitting:
-   ```
-    #Perform grid search overy hyperparameters
-    mochi_task.grid_search() 
-    
-    #Fit model using optimal hyperparameters
-    for i in range(k_folds):
-       mochi_task.fit_best(fold = i+1)
-   ``` 
+#####################
+# Step 1: Create a *MochiTask* object with one-hot encoded variant sequences, interaction terms and 10 cross-validation groups
+#####################
 
-3. Generate *MochiReport*, phenotype predictions, inferred additive trait summaries and save task:
-   ```
-    temperature_celcius = 30
-    
-    mochi_report = MochiReport(
-       task = mochi_task,
-       RT = (273+temperature_celcius)*0.001987)
-    
-    energies = mochi_task.get_additive_trait_weights(
-       RT = (273+temperature_celcius)*0.001987)
-     
-    mochi_task.save()
-   ```
-   Load previously saved task:
-   ```
-    mochi_task = MochiTask(directory = 'my_task')
-   ```
+#Globals
+k_folds = 10
+abundance_path = str(Path(pymochi.__file__).parent / "data/fitness_abundance.txt") #MoCHI demo data
+binding_path = str(Path(pymochi.__file__).parent / "data/fitness_binding.txt") #MoCHI demo data
+
+#Define model
+my_model_design = pd.DataFrame({
+   'phenotype': ['Abundance', 'Binding'],
+   'transformation': ['TwoStateFractionFolded', 'ThreeStateFractionBound'],
+   'trait': [['Folding'], ['Folding', 'Binding']],
+   'file': [abundance_path, binding_path]})
+
+#Create Task
+mochi_task = MochiTask(
+   directory = 'my_task',
+   data = MochiData(
+      model_design = my_model_design,
+      k_folds = k_folds))
+
+#####################
+# Step 2: Hyperparameter tuning and model fitting
+#####################
+
+#Perform grid search overy hyperparameters
+mochi_task.grid_search() 
+
+#Fit model using optimal hyperparameters
+for i in range(k_folds):
+   mochi_task.fit_best(fold = i+1)
+
+#####################
+# Step 3: Generate report, phenotype predictions, inferred additive trait summaries and save task
+#####################
+
+temperature_celcius = 30
+
+mochi_report = MochiReport(
+   task = mochi_task,
+   RT = (273+temperature_celcius)*0.001987)
+
+energies = mochi_task.get_additive_trait_weights(
+   RT = (273+temperature_celcius)*0.001987)
+ 
+mochi_task.save()
+```
 Report plots, predictions and additive trait summaries will be saved to the "my_task/report", "my_task/predictions" and "my_task/weights" subfolders.
 
 ## Demo MoCHI
 
 Run the demo to ensure that you have a working MoCHI installation (expected run time <10min):
-   ```
-   $ demo_mochi.py
-   ```
+```
+demo_mochi.py
+```
 
 # Manual
 
 Comprehensive documentation is coming soon, but in the meantime get more information about specific classes/methods in python e.g.
-   ```
-   help(MochiData)
-   ```
+```
+help(MochiData)
+```
 
 # Bugs and feedback
 
