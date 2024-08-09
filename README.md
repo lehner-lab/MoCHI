@@ -36,16 +36,17 @@ See the full [Installation Instructions](docs/INSTALLATION.md) for further detai
 
 You can run a standard MoCHI workflow using the command line tool or a custom analysis by taking advantage of the "pymochi" package in your own python script.
 
-MoCHI requires a table describing the measured phenotypes and how they relate to the underlying additive (biophysical) traits. The table should have the following 4 columns (see example file [here](pymochi/data/model_design_example.txt)):
- - *trait*: One or more additive trait names 
- - *transformation*: The shape of the global epistatic trend (Linear/ReLU/SiLU/Sigmoid/SumOfSigmoids/TwoStateFractionFolded/ThreeStateFractionBound)
- - *phenotype*: A unique phenotype name e.g. Abundance, Binding or Kinase Activity
- - *file*: Path to DiMSum output (.RData) or plain text file with variant fitness and error estimates for the corresponding phenotype
+MoCHI requires a plain text model design file containing a table describing the measured phenotypes and how they relate to the underlying additive (biophysical) traits. The table should have the following 4 tab-separated columns (see example [here](pymochi/data/model_design_example.txt)):
+ - `trait`: One or more additive trait names 
+ - `transformation`: The shape of the global epistatic trend (Linear/ReLU/SiLU/Sigmoid/SumOfSigmoids/TwoStateFractionFolded/ThreeStateFractionBound)
+ - `phenotype`: A unique phenotype name e.g. Abundance, Binding or Kinase Activity
+ - `file`: Path to DiMSum output (.RData) or plain text file with variant fitness and error estimates for the corresponding phenotype
 
 ## Option A: MoCHI command line tool
+
+Replace `MY_MODEL` with the path to your model design file (see example [here](pymochi/data/model_design_example.txt)).
 ```
-conda activate pymochi
-run_mochi.py --model_design model_design.txt
+run_mochi.py --model_design MY_MODEL
 ```
 
 Get help with additional command line parameters:
@@ -115,7 +116,7 @@ energies = mochi_task.get_additive_trait_weights(
  
 mochi_task.save()
 ```
-Report plots, predictions and additive trait summaries will be saved to the "my_task/report", "my_task/predictions" and "my_task/weights" subfolders.
+Report plots, predictions and additive trait summaries will be saved to the `my_task/report`, `my_task/predictions` and `my_task/weights` subfolders.
 
 ## Demo MoCHI
 
