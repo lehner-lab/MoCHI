@@ -806,7 +806,7 @@ class MochiTask():
             labels = np.array([trans_dict[i] for i in labels])
         except KeyError:
             print(f"Warning: Aligning additive traits using K-means clustering failed.")
-            return dfs
+            return []
 
         #Assign columns to DataFrames, preserving original order
         optimized_dfs = [pd.DataFrame() for _ in range(num_dfs)]
@@ -816,7 +816,7 @@ class MochiTask():
         #Check each DataFrame is complete
         if sum([i.shape[1]!=n for i in optimized_dfs]) != 0:
             print(f"Warning: Aligning additive traits using K-means clustering failed.")
-            return dfs
+            return []
 
         print(f"Aligning additive traits using K-means clustering succeeded.")
 
@@ -859,6 +859,9 @@ class MochiTask():
                 #Align DataFrames
                 opt_list = self.maximize_correlations_k_means(
                     dfs = [input_list[i-1][[j for j in input_list[i-1].columns if j.startswith("fold_")]] for i in mge_at])
+                #Check if clustering failed
+                if opt_list == []:
+                    return []
                 #Replace columns with aligned data
                 for i in range(len(opt_list)):
                     output_list[mge_at[i]-1][[j for j in output_list[mge_at[i]-1].columns if j.startswith("fold_")]] = opt_list[i]
