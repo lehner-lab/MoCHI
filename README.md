@@ -40,7 +40,7 @@ MoCHI requires a plain text model design file containing a table describing the 
  - `trait`: One or more additive trait names 
  - `transformation`: The shape of the global epistatic trend (Linear/ReLU/SiLU/Sigmoid/SumOfSigmoids/TwoStateFractionFolded/ThreeStateFractionBound)
  - `phenotype`: A unique phenotype name e.g. Abundance, Binding or Kinase Activity
- - `file`: Path to DiMSum output (.RData) or plain text file with variant fitness and error estimates for the corresponding phenotype
+ - `file`: Path to DiMSum output (.RData) or plain text file with variant fitness and error estimates for the corresponding phenotype(s) (nucleotide sequence example [here](https://github.com/lehner-lab/MoCHI/blob/master/pymochi/data/fitness_example_nt.txt), amino acid sequence example [here](https://github.com/lehner-lab/MoCHI/blob/master/pymochi/data/fitness_example_aa.txt))
 
 ## Option A: MoCHI command line tool
 
