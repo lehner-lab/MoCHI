@@ -10,7 +10,7 @@
 
 # MoCHI
 
-Welcome to the GitHub repository for MoCHI: Neural networks to fit interpretable models and quantify energies, energetic couplings, epistasis and allostery from deep mutational scanning data.
+Welcome to the GitHub repository for MoCHI: Neural networks to fit interpretable models and quantify energies, energetic couplings, epistasis, and allostery from deep mutational scanning data.
 
 # Table Of Contents
 
@@ -140,7 +140,7 @@ You may submit a bug report here on GitHub as an issue or you could send an emai
 
 Please cite the following publication if you use MoCHI:
 
-Faure, A. J. & Lehner, B. MoCHI: neural networks to fit interpretable models and quantify energies, energetic couplings, epistasis and allostery from deep mutational scanning data. BioRxiv (2024). [10.1101/2024.01.21.575681](https://www.biorxiv.org/content/10.1101/2024.01.21.575681)
+Faure, A. J. & Lehner, B. MoCHI: neural networks to fit interpretable models and quantify energies, energetic couplings, epistasis, and allostery from deep mutational scanning data. Genome Biol 25, 303 (2024). [10.1186/s13059-024-03444-y](https://doi.org/10.1186/s13059-024-03444-y)
 
 #### Acknowledgements
  
