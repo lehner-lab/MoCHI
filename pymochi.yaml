@@ -3,7 +3,6 @@ channels:
   - pytorch
   - conda-forge
   - bioconda
-  - defaults
 dependencies:
   - pandas=1.4.2
   - matplotlib=3.5.1
