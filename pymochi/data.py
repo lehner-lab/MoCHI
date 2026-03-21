@@ -4,10 +4,13 @@ MoCHI data module
 """
 
 import os
+import json
+import hashlib
 import re
 import copy
 import random
 import math
+import tempfile
 import time
 import csv
 import linecache
@@ -28,6 +31,17 @@ import collections, functools, operator
 
 import types
 from inspect import getmembers, isfunction
+
+def compact_feature_tensors():
+    """
+    Decide whether binary feature tensors should be kept as uint8 on host.
+
+    Set MOCHI_FEATURES_UINT8=0|1 to override.
+
+    :returns: Boolean.
+    """
+    compact_override = os.environ.get("MOCHI_FEATURES_UINT8", "0").lower()
+    return compact_override in ["1", "true", "yes", "on"]
 
 class CustomTransformations:
     """
@@ -359,6 +373,8 @@ class MochiData:
         self.X = None
         self.Xoh = None
         self.Xohi = None
+        self.Xohi_memmap = None
+        self.Xohi_memmap_path = None
         self.cvgroups = None
         self.coefficients = None
         self.coefficients_userspec = None
@@ -700,6 +716,102 @@ class MochiData:
         int_order_dict = {k:len(all_features[k]) for k in all_features}
         return (all_features, int_order_dict)
 
+    def get_xohi_cache_paths(
+        self,
+        max_order,
+        min_observed,
+        features,
+        downsample_interactions,
+        seed):
+        """
+        Get cache paths for interaction features if caching is enabled.
+
+        Set MOCHI_XOHI_CACHE_DIR to enable the cache.
+
+        :returns: Tuple of metadata path and memmap path, or (None, None).
+        """
+        cache_dir = os.environ.get("MOCHI_XOHI_CACHE_DIR")
+        if cache_dir in [None, ""]:
+            return (None, None)
+        os.makedirs(cache_dir, exist_ok = True)
+        file_stats = [
+            {
+                'path': str(pathlib.Path(i).resolve()),
+                'size': os.path.getsize(i),
+                'mtime_ns': os.stat(i).st_mtime_ns}
+            for i in list(self.model_design['file'])]
+        cache_input = {
+            'files': file_stats,
+            'max_order': max_order,
+            'min_observed': min_observed,
+            'features': features,
+            'downsample_interactions': downsample_interactions,
+            'seed': seed,
+            'order_subset': self.order_subset,
+            'downsample_observations': self.downsample_observations,
+            'xoh_columns': list(self.Xoh.columns),
+            'rows': len(self.Xoh)}
+        cache_key = hashlib.sha256(
+            json.dumps(cache_input, sort_keys = True, default = str).encode('utf-8')).hexdigest()
+        metadata_path = os.path.join(cache_dir, f"{cache_key}.json")
+        memmap_path = os.path.join(cache_dir, f"{cache_key}.dat")
+        return (metadata_path, memmap_path)
+
+    def load_cached_interactions(
+        self,
+        metadata_path,
+        memmap_path):
+        """
+        Load cached interaction features if present and valid.
+
+        :returns: True if cache hit, False otherwise.
+        """
+        if metadata_path is None:
+            return False
+        if not (os.path.exists(metadata_path) and os.path.exists(memmap_path)):
+            return False
+        try:
+            with open(metadata_path, "r") as handle:
+                metadata = json.load(handle)
+        except Exception:
+            return False
+        if metadata.get('rows') != len(self.Xoh):
+            return False
+        if metadata.get('base_columns') != list(self.Xoh.columns):
+            return False
+        print("Loading cached interaction features")
+        self.Xohi_memmap_path = memmap_path
+        self.Xohi_memmap = np.memmap(
+            self.Xohi_memmap_path,
+            dtype = np.uint8,
+            mode = "r+",
+            shape = tuple(metadata['shape']))
+        self.Xohi = pd.DataFrame(
+            self.Xohi_memmap,
+            index = self.Xoh.index,
+            columns = metadata['columns'],
+            copy = False)
+        return True
+
+    def save_cached_interactions(
+        self,
+        metadata_path,
+        columns):
+        """
+        Save interaction-feature cache metadata.
+
+        :returns: Nothing.
+        """
+        if metadata_path is None:
+            return
+        metadata = {
+            'shape': list(self.Xohi_memmap.shape),
+            'rows': len(self.Xoh),
+            'base_columns': list(self.Xoh.columns),
+            'columns': list(columns)}
+        with open(metadata_path, "w") as handle:
+            json.dump(metadata, handle)
+
     # def write_features(
     #     self,
     #     feature_list, 
@@ -956,6 +1068,23 @@ class MochiData:
                 print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
                 raise ValueError
 
+        metadata_path, memmap_path = self.get_xohi_cache_paths(
+            max_order = max_order,
+            min_observed = min_observed,
+            features = features,
+            downsample_interactions = downsample_interactions,
+            seed = seed)
+        if self.load_cached_interactions(
+            metadata_path = metadata_path,
+            memmap_path = memmap_path):
+            if features!=[]:
+                print("Filtering features")
+                self.Xohi = self.filter_features(
+                    input_df = self.Xohi,
+                    features = features)
+            self.feature_names = self.Xohi.columns
+            return
+
         #Get all theoretical interactions
         all_features,int_order_dict = self.get_theoretical_interactions(max_order = max_order)
         print("... Total theoretical features (order:count): "+", ".join([str(i)+":"+str(int_order_dict[i]) for i in sorted(int_order_dict.keys())]))
@@ -972,7 +1101,7 @@ class MochiData:
             # raise ValueError
 
         #Select interactions
-        int_arrays = []
+        int_set = set()
         int_order_dict_retained = {}
         int_list_names = []
         #No shuffle if not downsampling
@@ -997,8 +1126,8 @@ class MochiData:
                     int_col = np.all(xoh_values[:,feature_idx] == 1, axis = 1).astype(np.uint8, copy = False)
                     #Check if minimum number of observations satisfied
                     if int(np.sum(int_col)) >= min_observed:
-                        int_arrays += [int_col]
                         int_list_names += [c]
+                        int_set.add(c)
                         if len(c_split) not in int_order_dict_retained.keys():
                             int_order_dict_retained[len(c_split)] = 1
                         else:
@@ -1007,21 +1136,21 @@ class MochiData:
                     #     if len(c_split)==3 and sum(int_col)==1:
                     #         print(c)
                     #Check memory footprint
-                    if len(int_arrays)*len(self.Xoh) > max_cells:
+                    if len(int_list_names)*len(self.Xoh) > max_cells:
                         print(f"Error: Too many interaction terms: number of feature matrix cells >{max_cells:>.0e}")
                         raise ValueError
                     #Check if sufficient features obtained
                     if type(downsample_interactions) == float:
-                        if len(int_arrays) == int(len(all_features_flat)*downsample_interactions):
+                        if len(int_list_names) == int(len(all_features_flat)*downsample_interactions):
                             break
                     elif type(downsample_interactions) == int:
-                        if len(int_arrays) == downsample_interactions:
+                        if len(int_list_names) == downsample_interactions:
                             break
                     elif type(downsample_interactions) == dict:
                         if len(c_split) in int_order_dict_retained.keys():
                             if int_order_dict_retained[len(c_split)] > downsample_interactions[len(c_split)] and downsample_interactions[len(c_split)]!=(-1):
-                                int_arrays.pop()
-                                int_list_names.pop()
+                                removed_name = int_list_names.pop()
+                                int_set.remove(removed_name)
                                 int_order_dict_retained[len(c_split)] -= 1
                                 break
                             elif int_order_dict_retained == downsample_interactions:
@@ -1030,14 +1159,43 @@ class MochiData:
         print("... Total retained features (order:count): "+", ".join([str(i)+":"+str(int_order_dict_retained[i])+" ("+str(round(int_order_dict_retained[i]/int_order_dict[i]*100, 1))+"%)" for i in sorted(int_order_dict_retained.keys())]))
 
         #Concatenate into dataframe
-        if len(int_arrays)>0:
+        if len(int_list_names)>0:
+            ordered_interactions = [i for i in all_features_flat if i in int_set]
+            total_columns = xoh_values.shape[1] + len(ordered_interactions)
+            if memmap_path is None:
+                self.Xohi_memmap_path = tempfile.NamedTemporaryFile(
+                    prefix = "mochi_xohi_",
+                    suffix = ".dat",
+                    dir = "/tmp",
+                    delete = False).name
+            else:
+                self.Xohi_memmap_path = memmap_path
+            self.Xohi_memmap = np.memmap(
+                self.Xohi_memmap_path,
+                dtype = np.uint8,
+                mode = "w+",
+                shape = (xoh_values.shape[0], total_columns))
+            self.Xohi_memmap[:, :xoh_values.shape[1]] = xoh_values
+            chunk_size = 256
+            for chunk_start in range(0, len(ordered_interactions), chunk_size):
+                chunk_names = ordered_interactions[chunk_start:chunk_start+chunk_size]
+                chunk_arrays = np.column_stack([
+                    np.all(
+                        xoh_values[:, [xoh_column_index[j] for j in name.split("_")]] == 1,
+                        axis = 1).astype(np.uint8, copy = False)
+                    for name in chunk_names])
+                dest_start = xoh_values.shape[1] + chunk_start
+                dest_end = dest_start + len(chunk_names)
+                self.Xohi_memmap[:, dest_start:dest_end] = chunk_arrays
+            self.Xohi_memmap.flush()
             self.Xohi = pd.DataFrame(
-                data = np.column_stack(int_arrays),
+                self.Xohi_memmap,
                 index = self.Xoh.index,
-                columns = int_list_names)
-            #Reorder
-            self.Xohi = self.Xohi.loc[:,[i for i in all_features_flat if i in self.Xohi.columns]]
-            self.Xohi = pd.concat([self.Xoh, self.Xohi], axis=1)
+                columns = list(self.Xoh.columns) + ordered_interactions,
+                copy = False)
+            self.save_cached_interactions(
+                metadata_path = metadata_path,
+                columns = list(self.Xoh.columns) + ordered_interactions)
         else:
             self.Xohi = copy.deepcopy(self.Xoh)
 
@@ -1426,6 +1584,8 @@ class MochiData:
         mask_us = torch.transpose(torch.tensor(np.asarray(self.coefficients_userspec), dtype=torch.float32), 0, 1)
         mask_us = torch.reshape(mask_us, (mask_us.shape[0],1,mask_us.shape[1]))
         mask_tensor = mask_tensor*mask_us
+        feature_numpy_dtype = np.uint8 if compact_feature_tensors() else np.float32
+        feature_tensor_dtype = torch.uint8 if compact_feature_tensors() else torch.float32
         for g in list(set(self.cvgroups[fold_name])):
             #Shuffle indices for training data
             group_mask = np.asarray(self.cvgroups[fold_name]==g)
@@ -1439,8 +1599,8 @@ class MochiData:
             data_dict[g]['select'] = torch.tensor(select_values[sind,:], dtype=torch.float32)
             data_dict[g]['mask'] = mask_tensor
             #Feature tensor
-            feature_values = self.Xohi.loc[group_mask,:].to_numpy(dtype = np.float32, copy = True)
-            data_dict[g]['X'] = torch.tensor(feature_values[sind,:], dtype=torch.float32)
+            feature_values = self.Xohi.loc[group_mask,:].to_numpy(dtype = feature_numpy_dtype, copy = True)
+            data_dict[g]['X'] = torch.tensor(feature_values[sind,:], dtype = feature_tensor_dtype)
             #Target tensor
             y_values = self.fitness.loc[group_mask,'fitness'].to_numpy(dtype = np.float32, copy = True)
             #Add random noise to training target data proportional to target error (if specified)
@@ -1469,14 +1629,16 @@ class MochiData:
             indices = list(self.phenotypes.index)
 
         data_dict = {}
+        feature_numpy_dtype = np.uint8 if compact_feature_tensors() else np.float32
+        feature_tensor_dtype = torch.uint8 if compact_feature_tensors() else torch.float32
         #Select tensor
         data_dict['select'] = torch.tensor(
             self.phenotypes.iloc[indices,:].to_numpy(dtype = np.float32, copy = True),
             dtype = torch.float32)
         #Feature tensor
         data_dict['X'] = torch.tensor(
-            self.Xohi.iloc[indices,:].to_numpy(dtype = np.float32, copy = True),
-            dtype = torch.float32)
+            self.Xohi.iloc[indices,:].to_numpy(dtype = feature_numpy_dtype, copy = True),
+            dtype = feature_tensor_dtype)
         #Target tensor
         data_dict['y'] = torch.reshape(
             torch.tensor(
@@ -1607,7 +1769,7 @@ class FastTensorDataLoader:
         self.n_batches = n_batches
     def __iter__(self):
         if self.shuffle:
-            self.indices = torch.randperm(self.dataset_len)
+            self.indices = torch.randperm(self.dataset_len, device = self.tensors[0].device)
         else:
             self.indices = None
         self.i = 0

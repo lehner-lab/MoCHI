@@ -15,7 +15,129 @@ from pymochi.transformation import get_transformation
 import itertools
 import shutil
 import functools
+import math
 from sklearn.cluster import KMeans
+
+def move_tensor_to_device(
+    tensor,
+    device):
+    """
+    Move tensor to target device only when needed.
+
+    :param tensor: Tensor to move (required).
+    :param device: Target torch device (required).
+    :returns: Tensor on target device.
+    """
+    if tensor.device == device:
+        return tensor
+    return tensor.to(device, non_blocking = (device.type == "cuda"))
+
+def prepare_feature_tensor(
+    tensor,
+    device):
+    """
+    Move feature tensor to device and cast to float32 if needed.
+
+    :param tensor: Feature tensor (required).
+    :param device: Target torch device (required).
+    :returns: Float32 tensor on target device.
+    """
+    tensor = move_tensor_to_device(tensor, device)
+    if tensor.dtype != torch.float32:
+        tensor = tensor.to(torch.float32)
+    return tensor
+
+def tensors_fit_in_device_memory(
+    tensors,
+    device,
+    memory_fraction = 0.25):
+    """
+    Check whether a tensor collection is small enough to preload to device.
+
+    :param tensors: Iterable of tensors to consider (required).
+    :param device: Target torch device (required).
+    :param memory_fraction: Fraction of total device memory to reserve for preload (default:0.25).
+    :returns: Boolean.
+    """
+    if device.type != "cuda":
+        return False
+    total_bytes = sum([tensor.nelement() * tensor.element_size() for tensor in tensors])
+    try:
+        max_preload_bytes = int(torch.cuda.get_device_properties(device).total_memory * memory_fraction)
+    except Exception:
+        return False
+    return total_bytes <= max_preload_bytes
+
+def estimate_training_batches_per_epoch(
+    data,
+    batch_sizes):
+    """
+    Estimate the number of training batches processed each epoch.
+
+    :param data: MochiData instance (required).
+    :param batch_sizes: Iterable of batch sizes to consider (required).
+    :returns: Integer estimate or None.
+    """
+    if data is None or not hasattr(data, "k_folds"):
+        return None
+    if len(batch_sizes) == 0:
+        return None
+    training_fraction = 1 - ((1 + data.validation_factor) / data.k_folds)
+    if training_fraction <= 0:
+        return None
+    approx_training_rows = max(1, int(len(data) * training_fraction))
+    return math.ceil(approx_training_rows / max(batch_sizes))
+
+def choose_compute_device(
+    data = None,
+    batch_sizes = None):
+    """
+    Choose compute device for the current task.
+
+    By default this uses CPU for tiny workloads where GPU launch/transfer
+    overhead tends to dominate. Set MOCHI_DEVICE=cpu|cuda|auto to override.
+
+    :param data: Optional MochiData instance (default:None).
+    :param batch_sizes: Optional iterable of batch sizes (default:None).
+    :returns: Tuple of torch.device and human-readable reason.
+    """
+    device_override = os.environ.get("MOCHI_DEVICE", "auto").lower()
+    cuda_available = torch.cuda.is_available()
+    if device_override == "cpu":
+        return (torch.device("cpu"), "forced by MOCHI_DEVICE=cpu")
+    if device_override == "cuda":
+        if cuda_available:
+            return (torch.device("cuda"), "forced by MOCHI_DEVICE=cuda")
+        return (torch.device("cpu"), "MOCHI_DEVICE=cuda requested but CUDA unavailable")
+    if not cuda_available:
+        return (torch.device("cpu"), "CUDA unavailable")
+    if batch_sizes is None:
+        batch_sizes = []
+    approx_batches = estimate_training_batches_per_epoch(
+        data = data,
+        batch_sizes = batch_sizes)
+    if approx_batches is not None and approx_batches <= 2:
+        return (torch.device("cpu"), f"auto-selected CPU for small workload (~{approx_batches} training batch(es)/epoch)")
+    return (torch.device("cuda"), "auto-selected CUDA")
+
+def choose_amp_enabled(
+    device):
+    """
+    Decide whether CUDA automatic mixed precision should be enabled.
+
+    Set MOCHI_AMP=0|1|auto to override.
+
+    :param device: Active torch device (required).
+    :returns: Tuple of boolean and human-readable reason.
+    """
+    amp_override = os.environ.get("MOCHI_AMP", "0").lower()
+    if device.type != "cuda":
+        return (False, "AMP disabled on non-CUDA device")
+    if amp_override in ["1", "true", "yes", "on"]:
+        return (True, "forced by MOCHI_AMP")
+    if amp_override == "auto":
+        return (True, "auto-selected CUDA AMP")
+    return (False, "AMP disabled by default")
 
 class ConstrainedLinear(torch.nn.Linear):
     """
@@ -120,21 +242,23 @@ class MochiModel(torch.nn.Module):
         for i in range(len(self.model_design)):
             self.training_history['residual'+str(i+1)+"_WT"] = []
         #Mask coefficients that are impossible to fit
-        self.mask = mask
+        self.register_buffer("mask", mask)
 
     def forward(
         self, 
         select, 
         X,
-        mask):
+        mask = None):
         """
         Forward pass through the model.
 
         :param select: Select tensor which indicates the corresponding phenotype (required).
         :param X: Feature tensor describing input sequences and interactions (required).
-        :param mask: Mask tensor which sets corresponding features to zero (required).
+        :param mask: Mask tensor which sets corresponding features to zero (default:model mask buffer).
         :returns: Output tensor.
         """  
+        if mask is None:
+            mask = self.mask
         #Split select tesnsor into list
         select_list = [torch.narrow(select, 1, i, 1) for i in range(select.shape[1])]
 
@@ -209,13 +333,24 @@ class MochiModel(torch.nn.Module):
         :param batch_size: Minibatch size (required).
         :returns: Tuple of dataloaders.
         """ 
+        device = self.mask.device
+        split_names = ['training', 'validation', 'test']
+        preload_tensors = [
+            data[k][field]
+            for k in split_names
+            for field in ["select", "X", "y", "y_wt"]]
+        should_preload = tensors_fit_in_device_memory(
+            tensors = preload_tensors,
+            device = device)
         dataloader_list = []
-        for k in ['training', 'validation', 'test']:
+        for k in split_names:
             dataloader_list.append(FastTensorDataLoader(
-                data[k]["select"], 
-                data[k]["X"], 
-                data[k]["y"], 
-                data[k]["y_wt"], batch_size=batch_size, shuffle=True))
+                move_tensor_to_device(data[k]["select"], device) if should_preload else data[k]["select"], 
+                prepare_feature_tensor(data[k]["X"], device) if should_preload else data[k]["X"], 
+                move_tensor_to_device(data[k]["y"], device) if should_preload else data[k]["y"], 
+                move_tensor_to_device(data[k]["y_wt"], device) if should_preload else data[k]["y_wt"],
+                batch_size = batch_size,
+                shuffle = (k == "training")))
         return tuple(dataloader_list)
 
     def calculate_l1l2_norm(self):      
@@ -250,6 +385,8 @@ class MochiModel(torch.nn.Module):
         loss_function, 
         optimizer, 
         device, 
+        scaler = None,
+        use_amp = False,
         l1_lambda = 0, 
         l2_lambda = 0):
         """
@@ -266,25 +403,35 @@ class MochiModel(torch.nn.Module):
         size = dataloader.dataset_len
         self.train()
         batch = 0
-        mask = self.mask.to(device)
+        mask = self.mask
         for select, X, y, y_wt in dataloader:
             batch += 1
-            select, X, y, y_wt = select.to(device), X.to(device), y.to(device), y_wt.to(device)
-            # Regularisation of additive trait parameters (excluding WT)
-            l1_norm, l2_norm = self.calculate_l1l2_norm()
-            # Compute prediction error (weighted by measurement error) + regularization terms
-            pred = self(select, X, mask)
-            loss = sum(loss_function(pred, y, y_wt))/len(y) + l1_lambda * l1_norm + l2_lambda * l2_norm
-            # Backpropagation
+            select = move_tensor_to_device(select, device)
+            X = prepare_feature_tensor(X, device)
+            y = move_tensor_to_device(y, device)
+            y_wt = move_tensor_to_device(y_wt, device)
             optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            with torch.amp.autocast(device_type = device.type, enabled = use_amp):
+                # Regularisation of additive trait parameters (excluding WT)
+                l1_norm, l2_norm = self.calculate_l1l2_norm()
+                # Compute prediction error (weighted by measurement error) + regularization terms
+                pred = self(select, X, mask)
+                loss = sum(loss_function(pred, y, y_wt))/len(y) + l1_lambda * l1_norm + l2_lambda * l2_norm
+            # Backpropagation
+            if use_amp:
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                optimizer.step()
   
     def validate_model(
         self, 
         dataloader, 
         loss_function, 
         device, 
+        use_amp = False,
         l1_lambda = 0, 
         l2_lambda = 0, 
         data_WT = None):
@@ -306,18 +453,25 @@ class MochiModel(torch.nn.Module):
         val_loss = 0
         val_WT_resid = []
         with torch.no_grad():
-            mask = self.mask.to(device)
+            mask = self.mask
             for select, X, y, y_wt in dataloader:
-                select, X, y, y_wt = select.to(device), X.to(device), y.to(device), y_wt.to(device)
-                # Regularisation of additive trait parameters (excluding WT)
-                l1_norm, l2_norm = self.calculate_l1l2_norm()
-                # Compute prediction error (weighted by measurement error) + regularization terms
-                pred = self(select, X, mask)
-                val_loss += (sum(loss_function(pred, y, y_wt))/len(y) + l1_lambda * l1_norm + l2_lambda * l2_norm).item()
+                select = move_tensor_to_device(select, device)
+                X = prepare_feature_tensor(X, device)
+                y = move_tensor_to_device(y, device)
+                y_wt = move_tensor_to_device(y_wt, device)
+                with torch.amp.autocast(device_type = device.type, enabled = use_amp):
+                    # Regularisation of additive trait parameters (excluding WT)
+                    l1_norm, l2_norm = self.calculate_l1l2_norm()
+                    # Compute prediction error (weighted by measurement error) + regularization terms
+                    pred = self(select, X, mask)
+                    val_loss += (sum(loss_function(pred, y, y_wt))/len(y) + l1_lambda * l1_norm + l2_lambda * l2_norm).item()
             #Training history - WT residuals
             if data_WT!=None:
-                select_WT, X_WT, y_WT = data_WT['select'].to(device), data_WT['X'].to(device), data_WT['y'].to(device)
-                pred_WT = self(select_WT, X_WT, mask)
+                select_WT = move_tensor_to_device(data_WT['select'], device)
+                X_WT = prepare_feature_tensor(data_WT['X'], device)
+                y_WT = move_tensor_to_device(data_WT['y'], device)
+                with torch.amp.autocast(device_type = device.type, enabled = use_amp):
+                    pred_WT = self(select_WT, X_WT, mask)
                 val_WT_resid = list(np.asarray((y_WT - pred_WT).detach().cpu()))
         val_loss /= num_batches
         #Save training history - validation loss
@@ -454,9 +608,6 @@ class MochiTask():
         :param sos_outputlinear: boolean indicating whether final sumOfSigmoids should be linear rather than sigmoidal (default:False).
         :returns: MochiTask object.
         """ 
-        #Get CPU or GPU device
-        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        # print(f"Using {self.device} device")
         #initialize remaining attributes
         self.directory = directory
         if data != None:
@@ -470,6 +621,13 @@ class MochiTask():
             self.models = []
             self.data = data
             self.batch_size = [int(i) for i in str(batch_size).split(",")]
+            self.device, self.device_reason = choose_compute_device(
+                data = self.data,
+                batch_sizes = self.batch_size)
+            self.use_amp, self.amp_reason = choose_amp_enabled(self.device)
+            print(f"Using {self.device} device ({self.device_reason})")
+            if self.device.type == "cuda":
+                print(f"AMP {'enabled' if self.use_amp else 'disabled'} ({self.amp_reason})")
             self.learn_rate = [float(i) for i in str(learn_rate).split(",")]
             self.num_epochs = num_epochs
             self.num_epochs_grid = num_epochs_grid
@@ -575,7 +733,11 @@ class MochiTask():
         for i in load_dict.keys():
             exec("self."+i+" = load_dict['"+i+"']")
         #Get CPU or GPU device (to undo loading of this attribute)
-        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        batch_sizes = self.batch_size if isinstance(self.batch_size, list) else [self.batch_size]
+        self.device, self.device_reason = choose_compute_device(
+            data = self.data,
+            batch_sizes = batch_sizes)
+        self.use_amp, self.amp_reason = choose_amp_enabled(self.device)
 
         #Restore custom transformations
         self.data.restore_custom_transformations()
@@ -1456,6 +1618,7 @@ class MochiTask():
         elif loss_function_name == 'GaussianNLL':
             loss_function = MochiGaussianNLLLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=learn_rate)
+        scaler = torch.amp.GradScaler('cuda', enabled = self.use_amp)
 
         #Scheduler
         scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=scheduler_gamma)
@@ -1470,15 +1633,18 @@ class MochiTask():
                 loss_function, 
                 optimizer,
                 self.device, 
-                l1_regularization_factor, 
-                l2_regularization_factor)
+                scaler = scaler,
+                use_amp = self.use_amp,
+                l1_lambda = l1_regularization_factor, 
+                l2_lambda = l2_regularization_factor)
             model.validate_model(
                 valid_dataloader, 
                 loss_function, 
                 self.device, 
-                l1_regularization_factor, 
-                l2_regularization_factor, 
-                model_data_WT)
+                use_amp = self.use_amp,
+                l1_lambda = l1_regularization_factor, 
+                l2_lambda = l2_regularization_factor, 
+                data_WT = model_data_WT)
 
             #Check scheduler and early-stopping criteria
             if epoch >= (2*scheduler_epochs):
@@ -1549,6 +1715,12 @@ class MochiTask():
         if data is None:
             data = self.data
         model_data = data.get_data_index()
+        preload_predictions = tensors_fit_in_device_memory(
+            tensors = [model_data["select"], model_data["X"]],
+            device = self.device)
+        if preload_predictions:
+            model_data["select"] = move_tensor_to_device(model_data["select"], self.device)
+            model_data["X"] = prepare_feature_tensor(model_data["X"], self.device)
         model_data_loader = FastTensorDataLoader(
             model_data["select"], 
             model_data["X"], batch_size=1024, shuffle=False)
@@ -1558,16 +1730,19 @@ class MochiTask():
         at_list = []
         for i in range(len(models_subset)):
             model = models_subset[i]
+            model.eval()
             #Model predictions
             max_at = max([len(j) for j in model.model_design.trait])
-            mask = model.mask.to(self.device)
+            mask = model.mask
             # mask_list = [torch.narrow(mask, 0, j, 1) for j in range(mask.shape[0])]
             y_pred_list = []
             at_pred_list = []
             for select, X in model_data_loader:
-                select, X = select.to(self.device), X.to(self.device)
+                select = move_tensor_to_device(select, self.device)
+                X = prepare_feature_tensor(X, self.device)
                 #Predicted phenotype
-                y_pred_list += [model(select, X, mask).detach().cpu().numpy().flatten()]
+                with torch.amp.autocast(device_type = self.device.type, enabled = self.use_amp):
+                    y_pred_list += [model(select, X, mask).detach().cpu().numpy().flatten()]
 
                 #Additive traits
                 additive_traits = []
