@@ -676,9 +676,9 @@ class MochiData:
         """
         for k in dict2:
             if k in dict1:
-                dict1[k] = list(set(dict1[k] + dict2[k]))
+                dict1[k] = sorted(set(dict1[k] + dict2[k]))
             else:
-                dict1[k] = dict2[k]
+                dict1[k] = sorted(dict2[k])
         return dict1
 
     def get_theoretical_interactions(
@@ -961,6 +961,8 @@ class MochiData:
         print("... Total theoretical features (order:count): "+", ".join([str(i)+":"+str(int_order_dict[i]) for i in sorted(int_order_dict.keys())]))
         #Flatten
         all_features_flat = list(itertools.chain(*list(all_features.values())))
+        xoh_values = self.Xoh.to_numpy(dtype = np.uint8, copy = False)
+        xoh_column_index = {name:i for i,name in enumerate(self.Xoh.columns)}
 
         #Check if all interaction features exist (i.e. with mutation order>1)
         invalid_features = [i for i in features if (i not in all_features_flat) and (len(i.split('_'))>1)]
@@ -970,7 +972,7 @@ class MochiData:
             # raise ValueError
 
         #Select interactions
-        int_list = []
+        int_arrays = []
         int_order_dict_retained = {}
         int_list_names = []
         #No shuffle if not downsampling
@@ -991,10 +993,11 @@ class MochiData:
                 c_split = c.split("_")
                 #Check if feature desired
                 if (c in features) or features==[]:
-                    int_col = (self.Xoh.loc[:,c_split].sum(axis = 1)==len(c_split)).astype(int)
+                    feature_idx = [xoh_column_index[i] for i in c_split]
+                    int_col = np.all(xoh_values[:,feature_idx] == 1, axis = 1).astype(np.uint8, copy = False)
                     #Check if minimum number of observations satisfied
-                    if sum(int_col) >= min_observed:
-                        int_list += [int_col]
+                    if int(np.sum(int_col)) >= min_observed:
+                        int_arrays += [int_col]
                         int_list_names += [c]
                         if len(c_split) not in int_order_dict_retained.keys():
                             int_order_dict_retained[len(c_split)] = 1
@@ -1004,20 +1007,20 @@ class MochiData:
                     #     if len(c_split)==3 and sum(int_col)==1:
                     #         print(c)
                     #Check memory footprint
-                    if len(int_list)*len(self.Xoh) > max_cells:
+                    if len(int_arrays)*len(self.Xoh) > max_cells:
                         print(f"Error: Too many interaction terms: number of feature matrix cells >{max_cells:>.0e}")
                         raise ValueError
                     #Check if sufficient features obtained
                     if type(downsample_interactions) == float:
-                        if len(int_list) == int(len(all_features_flat)*downsample_interactions):
+                        if len(int_arrays) == int(len(all_features_flat)*downsample_interactions):
                             break
                     elif type(downsample_interactions) == int:
-                        if len(int_list) == downsample_interactions:
+                        if len(int_arrays) == downsample_interactions:
                             break
                     elif type(downsample_interactions) == dict:
                         if len(c_split) in int_order_dict_retained.keys():
                             if int_order_dict_retained[len(c_split)] > downsample_interactions[len(c_split)] and downsample_interactions[len(c_split)]!=(-1):
-                                int_list.pop()
+                                int_arrays.pop()
                                 int_list_names.pop()
                                 int_order_dict_retained[len(c_split)] -= 1
                                 break
@@ -1027,9 +1030,11 @@ class MochiData:
         print("... Total retained features (order:count): "+", ".join([str(i)+":"+str(int_order_dict_retained[i])+" ("+str(round(int_order_dict_retained[i]/int_order_dict[i]*100, 1))+"%)" for i in sorted(int_order_dict_retained.keys())]))
 
         #Concatenate into dataframe
-        if len(int_list)>0:
-            self.Xohi = pd.concat(int_list, axis=1)
-            self.Xohi.columns = int_list_names
+        if len(int_arrays)>0:
+            self.Xohi = pd.DataFrame(
+                data = np.column_stack(int_arrays),
+                index = self.Xoh.index,
+                columns = int_list_names)
             #Reorder
             self.Xohi = self.Xohi.loc[:,[i for i in all_features_flat if i in self.Xohi.columns]]
             self.Xohi = pd.concat([self.Xoh, self.Xohi], axis=1)
@@ -1409,44 +1414,45 @@ class MochiData:
         #Loop over training, validation and test sets
         fold_name = "fold_"+str(fold)
         data_dict = {}
+        mask_tensor = torch.tensor(
+            np.asarray(
+                pd.concat(
+                    [self.coefficients["phenotype_"+str(i+1)].loc[:,fold_name] for i in range(len(self.coefficients))],
+                    axis = 1)),
+            dtype = torch.float32)
+        mask_tensor = torch.transpose(mask_tensor, 0, 1)
+        mask_tensor = torch.reshape(mask_tensor, (1, mask_tensor.shape[0], mask_tensor.shape[1]))
+        mask_tensor = mask_tensor.expand(len(self.additive_trait_names), mask_tensor.shape[1], mask_tensor.shape[2])
+        mask_us = torch.transpose(torch.tensor(np.asarray(self.coefficients_userspec), dtype=torch.float32), 0, 1)
+        mask_us = torch.reshape(mask_us, (mask_us.shape[0],1,mask_us.shape[1]))
+        mask_tensor = mask_tensor*mask_us
         for g in list(set(self.cvgroups[fold_name])):
             #Shuffle indices for training data
-            sind = list(range(sum(self.cvgroups[fold_name]==g)))
+            group_mask = np.asarray(self.cvgroups[fold_name]==g)
+            sind = list(range(int(np.sum(group_mask))))
             if g=="training":
                 random.seed(seed+fold*1000000)
                 random.shuffle(sind)
             data_dict[g] = {}
             #Select tensor
-            data_dict[g]['select'] = pd.DataFrame(self.phenotypes.loc[self.cvgroups[fold_name]==g,:])
-            data_dict[g]['select'].reset_index(drop = True, inplace = True)
-            data_dict[g]['select'] = torch.tensor(np.asarray(data_dict[g]['select'].loc[sind,:]), dtype=torch.float32)
-            #Mask tensor (n_pheno x n_coef)
-            data_dict[g]['mask'] = torch.tensor(np.asarray(pd.concat([self.coefficients["phenotype_"+str(i+1)].loc[:,fold_name] for i in range(len(self.coefficients))], axis = 1)), dtype=torch.float32)
-            data_dict[g]['mask'] = torch.transpose(data_dict[g]['mask'], 0, 1)
-            #Mask tensor - expand along trait axis (n_trait x n_pheno x n_coef)
-            data_dict[g]['mask'] = torch.reshape(data_dict[g]['mask'], (1, data_dict[g]['mask'].shape[0], data_dict[g]['mask'].shape[1]))
-            data_dict[g]['mask'] = data_dict[g]['mask'].expand(len(self.additive_trait_names), data_dict[g]['mask'].shape[1], data_dict[g]['mask'].shape[2])
-            #Mask tensor - coefficients specified to be fit (n_trait x n_pheno x n_coef)
-            mask_us = torch.transpose(torch.tensor(np.asarray(self.coefficients_userspec), dtype=torch.float32), 0, 1)
-            mask_us = torch.reshape(mask_us, (mask_us.shape[0],1,mask_us.shape[1]))
-            data_dict[g]['mask'] = data_dict[g]['mask']*mask_us
+            select_values = self.phenotypes.loc[group_mask,:].to_numpy(dtype = np.float32, copy = True)
+            data_dict[g]['select'] = torch.tensor(select_values[sind,:], dtype=torch.float32)
+            data_dict[g]['mask'] = mask_tensor
             #Feature tensor
-            data_dict[g]['X'] = pd.DataFrame(self.Xohi.loc[self.cvgroups[fold_name]==g,:])
-            data_dict[g]['X'].reset_index(drop = True, inplace = True)
-            data_dict[g]['X'] = torch.tensor(np.asarray(data_dict[g]['X'].loc[sind,:]), dtype=torch.float32)
+            feature_values = self.Xohi.loc[group_mask,:].to_numpy(dtype = np.float32, copy = True)
+            data_dict[g]['X'] = torch.tensor(feature_values[sind,:], dtype=torch.float32)
             #Target tensor
-            data_dict[g]['y'] = pd.DataFrame(self.fitness.loc[self.cvgroups[fold_name]==g,'fitness'])
+            y_values = self.fitness.loc[group_mask,'fitness'].to_numpy(dtype = np.float32, copy = True)
             #Add random noise to training target data proportional to target error (if specified)
             if g=="training" and training_resample:
                 np.random.seed(seed+fold*1000000)
-                data_dict[g]['y']['noise'] = [np.random.normal(scale = i) for i in list(self.fitness.loc[self.cvgroups[fold_name]==g,'sigma'])]
-                data_dict[g]['y'] = pd.DataFrame(data_dict[g]['y'].sum(axis = 1))
-            data_dict[g]['y'].reset_index(drop = True, inplace = True)
-            data_dict[g]['y'] = torch.reshape(torch.tensor(np.asarray(data_dict[g]['y'].loc[sind,:]), dtype=torch.float32), (-1, 1))
+                y_values = y_values + np.asarray(
+                    [np.random.normal(scale = i) for i in list(self.fitness.loc[group_mask,'sigma'])],
+                    dtype = np.float32)
+            data_dict[g]['y'] = torch.reshape(torch.tensor(y_values[sind], dtype=torch.float32), (-1, 1))
             #Target weight tensor
-            data_dict[g]['y_wt'] = pd.DataFrame(self.fitness.loc[self.cvgroups[fold_name]==g,'weight'])
-            data_dict[g]['y_wt'].reset_index(drop = True, inplace = True)
-            data_dict[g]['y_wt'] = torch.reshape(torch.tensor(np.asarray(data_dict[g]['y_wt'].loc[sind,:]), dtype=torch.float32), (-1, 1))
+            weight_values = self.fitness.loc[group_mask,'weight'].to_numpy(dtype = np.float32, copy = True)
+            data_dict[g]['y_wt'] = torch.reshape(torch.tensor(weight_values[sind], dtype=torch.float32), (-1, 1))
         return data_dict
 
     def get_data_index(
@@ -1464,17 +1470,19 @@ class MochiData:
 
         data_dict = {}
         #Select tensor
-        data_dict['select'] = pd.DataFrame(self.phenotypes.iloc[indices,:])
-        data_dict['select'].reset_index(drop = True, inplace = True)
-        data_dict['select'] = torch.tensor(np.asarray(data_dict['select']), dtype=torch.float32)
+        data_dict['select'] = torch.tensor(
+            self.phenotypes.iloc[indices,:].to_numpy(dtype = np.float32, copy = True),
+            dtype = torch.float32)
         #Feature tensor
-        data_dict['X'] = pd.DataFrame(self.Xohi.iloc[indices,:])
-        data_dict['X'].reset_index(drop = True, inplace = True)
-        data_dict['X'] = torch.tensor(np.asarray(data_dict['X']), dtype=torch.float32)
+        data_dict['X'] = torch.tensor(
+            self.Xohi.iloc[indices,:].to_numpy(dtype = np.float32, copy = True),
+            dtype = torch.float32)
         #Target tensor
-        data_dict['y'] = pd.DataFrame(self.fitness.iloc[indices,:]['fitness'])
-        data_dict['y'].reset_index(drop = True, inplace = True)
-        data_dict['y'] = torch.reshape(torch.tensor(np.asarray(data_dict['y']), dtype=torch.float32), (-1, 1))
+        data_dict['y'] = torch.reshape(
+            torch.tensor(
+                self.fitness.iloc[indices,:]['fitness'].to_numpy(dtype = np.float32, copy = True),
+                dtype = torch.float32),
+            (-1, 1))
         return data_dict
 
     def __len__(self):
@@ -1599,15 +1607,20 @@ class FastTensorDataLoader:
         self.n_batches = n_batches
     def __iter__(self):
         if self.shuffle:
-            r = torch.randperm(self.dataset_len)
-            self.tensors = [t[r] for t in self.tensors]
+            self.indices = torch.randperm(self.dataset_len)
+        else:
+            self.indices = None
         self.i = 0
         return self
 
     def __next__(self):
         if self.i >= self.dataset_len:
             raise StopIteration
-        batch = tuple(t[self.i:self.i+self.batch_size] for t in self.tensors)
+        if self.indices is None:
+            batch = tuple(t[self.i:self.i+self.batch_size] for t in self.tensors)
+        else:
+            batch_indices = self.indices[self.i:self.i+self.batch_size]
+            batch = tuple(t[batch_indices] for t in self.tensors)
         self.i += self.batch_size
         return batch
 

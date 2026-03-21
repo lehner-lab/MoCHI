@@ -5,6 +5,7 @@ Unit and regression test for the pymochi package.
 # Import package, test suite, and other packages as needed
 import sys
 import os
+from functools import lru_cache
 import pandas as pd
 import numpy as np
 import pathlib
@@ -17,6 +18,33 @@ from pymochi.data import *
 from pymochi.models import *
 from pymochi.project import *
 from pymochi.report import *
+
+
+def make_demo_model_design():
+    """Create a fresh model design pointing at the bundled toy datasets."""
+    model_design = pd.read_csv(
+        Path(__file__).parent.parent / "data/model_design.txt",
+        sep = "\t",
+        index_col = False)
+    model_design['file'] = [
+        str(Path(__file__).parent.parent / "data/fitness_abundance.txt"),
+        str(Path(__file__).parent.parent / "data/fitness_binding.txt")]
+    return model_design
+
+
+@lru_cache(maxsize = None)
+def get_demo_mochi_data(
+    max_interaction_order = 1,
+    downsample_observations = None,
+    downsample_interactions = None,
+    seed = 1):
+    """Build and cache read-only toy MochiData fixtures for regression tests."""
+    return MochiData(
+        model_design = make_demo_model_design(),
+        max_interaction_order = max_interaction_order,
+        downsample_observations = downsample_observations,
+        downsample_interactions = downsample_interactions,
+        seed = seed)
 
 def test_pymochi_imported():
     """Sample test, will always pass so long as import statement worked."""
@@ -146,6 +174,72 @@ def test_MochiData_features_argument_Nonekey(capsys):
     captured = capsys.readouterr()
     print(captured.out)
     assert captured.out.split("\n")[-2] == "Done!" and mochi_data.Xohi.shape[1] == 1
+
+
+def test_MochiData_max_interaction_order_1_preserves_additive_features():
+    """Test max_interaction_order=1 keeps only additive one-hot features."""
+    mochi_data = get_demo_mochi_data(
+        max_interaction_order = 1,
+        downsample_observations = 0.02,
+        seed = 1)
+    assert list(mochi_data.Xohi.columns) == list(mochi_data.Xoh.columns)
+    assert mochi_data.Xohi.shape == mochi_data.Xoh.shape
+    assert [i for i in mochi_data.Xohi.columns if "_" in i] == []
+
+
+def test_MochiData_max_interaction_order_2_adds_expected_pairwise_features():
+    """Test max_interaction_order=2 adds the retained pairwise toy interactions."""
+    mochi_data = get_demo_mochi_data(
+        max_interaction_order = 2,
+        downsample_observations = 0.02,
+        seed = 1)
+    interaction_columns = [i for i in mochi_data.Xohi.columns if "_" in i]
+    assert set(mochi_data.Xoh.columns).issubset(set(mochi_data.Xohi.columns))
+    assert mochi_data.Xohi.shape[1] == mochi_data.Xoh.shape[1] + 2
+    assert set(interaction_columns) == {'G46E_N53R', 'L13R_G54R'}
+
+
+def test_MochiData_downsample_interactions_integer_and_string_match():
+    """Test integer and string interaction limits keep the same single pairwise term."""
+    full_data = get_demo_mochi_data(
+        max_interaction_order = 2,
+        downsample_observations = 0.02,
+        seed = 1)
+    int_limited_data = get_demo_mochi_data(
+        max_interaction_order = 2,
+        downsample_observations = 0.02,
+        downsample_interactions = 1,
+        seed = 1)
+    str_limited_data = get_demo_mochi_data(
+        max_interaction_order = 2,
+        downsample_observations = 0.02,
+        downsample_interactions = "1",
+        seed = 1)
+    full_interactions = [i for i in full_data.Xohi.columns if "_" in i]
+    int_interactions = [i for i in int_limited_data.Xohi.columns if "_" in i]
+    str_interactions = [i for i in str_limited_data.Xohi.columns if "_" in i]
+    assert len(int_interactions) == 1
+    assert int_interactions == str_interactions
+    assert set(int_interactions).issubset(set(full_interactions))
+    assert int_limited_data.Xohi.shape[1] == int_limited_data.Xoh.shape[1] + 1
+
+
+def test_MochiData_downsample_interactions_two_matches_full_retained_terms():
+    """Test retaining two interactions recovers the same pairwise toy terms as the full run."""
+    full_data = get_demo_mochi_data(
+        max_interaction_order = 2,
+        downsample_observations = 0.02,
+        seed = 1)
+    limited_data = get_demo_mochi_data(
+        max_interaction_order = 2,
+        downsample_observations = 0.02,
+        downsample_interactions = 2,
+        seed = 1)
+    full_interactions = [i for i in full_data.Xohi.columns if "_" in i]
+    limited_interactions = [i for i in limited_data.Xohi.columns if "_" in i]
+    assert set(limited_interactions) == set(full_interactions)
+    assert len(limited_interactions) == 2
+    assert limited_data.Xohi.shape[1] == limited_data.Xoh.shape[1] + 2
 
 def test_MochiTask_init_no_MochiData_empty_directory(capsys):
     """Test MochiTask initialization when no MochiData nor saved MochiTask in directory supplied"""
