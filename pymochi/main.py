@@ -4,12 +4,40 @@
 main() module -- MoCHI Command Line tool
 """
 
-import os
 import argparse
+import builtins
+import os
 import pathlib
+import sys
 from pathlib import Path
+
 import pandas as pd
+from loguru import logger
+
 from pymochi.project import MochiProject
+
+ORIGINAL_PRINT = builtins.print
+
+
+def configure_logging():
+    """
+    Route existing CLI print output through loguru with timestamps.
+    """
+    logger.remove()
+    logger.add(
+        sys.stdout,
+        format="{time:YYYY-MM-DD HH:mm:ss} | {message}",
+        colorize = False)
+
+    def timestamped_print(*args, **kwargs):
+        output_file = kwargs.get("file", sys.stdout)
+        if output_file not in (None, sys.stdout, sys.stderr):
+            ORIGINAL_PRINT(*args, **kwargs)
+            return
+        message = kwargs.get("sep", " ").join(str(arg) for arg in args)
+        logger.info(message)
+
+    builtins.print = timestamped_print
 
 def init_argparse(
     demo_mode = False
@@ -74,6 +102,8 @@ def main(
     :param demo_mode: whether to run in demo mode using toy data (default: False).
     :returns: Nothing.
     """
+
+    configure_logging()
 
     #Get command line arguments
     parser = init_argparse(demo_mode = demo_mode)
