@@ -506,25 +506,33 @@ class MochiProject():
 
         #Load mochi data
         mochi_data = MochiData(**mochi_data_args)
+        log_process_memory("run_cv_task: MochiData built")
 
         #Create mochi project
+        print("run_cv_task: Initializing MochiTask")
         mochi_task = MochiTask(
             data = mochi_data,
             **mochi_task_args)
+        log_process_memory("run_cv_task: MochiTask initialized")
 
         #Grid search
+        print("run_cv_task: Starting grid search")
         mochi_task.grid_search(
             seed = mochi_data_args['seed'],
             init_weights = init_weights,
             fix_weights = fix_weights)
+        log_process_memory("run_cv_task: Grid search completed")
 
         #Fit model using best hyperparameters
+        print("run_cv_task: Starting fit_best loop")
         for i in range(mochi_data_args['k_folds']):
+            print(f"run_cv_task: Fitting best model for fold {i+1}/{mochi_data_args['k_folds']}")
             mochi_task.fit_best(
                 fold = i+1, 
                 seed = mochi_data_args['seed'],
                 init_weights = init_weights,
                 fix_weights = fix_weights)
+        log_process_memory("run_cv_task: fit_best loop completed")
             
         #Save all models
         if save_model:
@@ -608,12 +616,12 @@ class MochiProject():
             holdout_minobs = mochi_task.data.holdout_minobs, 
             holdout_orders = mochi_task.data.holdout_orders, 
             holdout_WT = mochi_task.data.holdout_WT,
-            features = {None: list(mochi_task.data.Xohi.columns)},
+            features = {None: list(mochi_task.data.get_feature_names())},
             ensemble = mochi_task.data.ensemble)
 
         #Reorder feature matrix columns
-        mochi_data.Xohi = mochi_data.Xohi.loc[:,list(mochi_task.data.Xohi.columns)]
-        mochi_data.feature_names = mochi_data.Xohi.columns
+        mochi_data.reorder_feature_columns(list(mochi_task.data.get_feature_names()))
+        mochi_data.feature_names = mochi_data.get_feature_names()
         #Split into training, validation and test sets
         mochi_data.define_cross_validation_groups()
         #Define coefficients to fit (for each phenotype and trait)

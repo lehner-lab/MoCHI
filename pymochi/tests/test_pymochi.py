@@ -10,6 +10,7 @@ import pandas as pd
 import numpy as np
 import pathlib
 from pathlib import Path
+from scipy import sparse as sp
 
 import pytest
 
@@ -199,6 +200,29 @@ def test_MochiData_max_interaction_order_2_adds_expected_pairwise_features():
     assert set(interaction_columns) == {'G46E_N53R', 'L13R_G54R'}
 
 
+def test_MochiData_sparse_feature_store_materializes_expected_values():
+    """Test the sparse retained-feature store materializes the same toy interaction values."""
+    mochi_data = get_demo_mochi_data(
+        max_interaction_order = 2,
+        downsample_observations = 0.02,
+        seed = 1)
+    assert mochi_data.feature_matrix_mode == "sparse"
+    assert sp.issparse(mochi_data.get_xohi_values())
+    feature_names = list(mochi_data.get_feature_names())
+    interaction_names = [i for i in feature_names if "_" in i]
+    interaction_indices = [feature_names.index(i) for i in interaction_names]
+    materialized = mochi_data.materialize_feature_matrix(
+        row_indices = np.arange(len(mochi_data)),
+        feature_indices = interaction_indices,
+        dtype = np.uint8)
+    expected = np.column_stack([
+        np.all(
+            mochi_data.Xoh.loc[:, name.split("_")].to_numpy(dtype = np.uint8, copy = True) == 1,
+            axis = 1).astype(np.uint8, copy = False)
+        for name in interaction_names])
+    assert np.array_equal(materialized, expected)
+
+
 def test_MochiData_downsample_interactions_integer_and_string_match():
     """Test integer and string interaction limits keep the same single pairwise term."""
     full_data = get_demo_mochi_data(
@@ -240,6 +264,29 @@ def test_MochiData_downsample_interactions_two_matches_full_retained_terms():
     assert set(limited_interactions) == set(full_interactions)
     assert len(limited_interactions) == 2
     assert limited_data.Xohi.shape[1] == limited_data.Xoh.shape[1] + 2
+
+
+def test_MochiData_sparse_reorder_feature_columns_preserves_selected_values():
+    """Test sparse feature-column reordering keeps the same values and exposed names."""
+    mochi_data = MochiData(
+        model_design = make_demo_model_design(),
+        max_interaction_order = 2,
+        downsample_observations = 0.02,
+        seed = 1)
+    reordered_columns = list(reversed(list(mochi_data.get_feature_names())[-3:]))
+    mochi_data.reorder_feature_columns(reordered_columns)
+    assert mochi_data.feature_matrix_mode == "sparse"
+    assert list(mochi_data.get_feature_names()) == reordered_columns
+    materialized = mochi_data.materialize_feature_matrix(
+        row_indices = np.arange(len(mochi_data)),
+        dtype = np.uint8)
+    expected = np.column_stack([
+        np.all(
+            mochi_data.Xoh.loc[:, name.split("_")].to_numpy(dtype = np.uint8, copy = True) == 1,
+            axis = 1).astype(np.uint8, copy = False)
+        if "_" in name else mochi_data.Xoh.loc[:, name].to_numpy(dtype = np.uint8, copy = True)
+        for name in reordered_columns])
+    assert np.array_equal(materialized, expected)
 
 def test_MochiTask_init_no_MochiData_empty_directory(capsys):
     """Test MochiTask initialization when no MochiData nor saved MochiTask in directory supplied"""

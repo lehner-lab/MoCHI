@@ -759,17 +759,23 @@ class MochiTask():
 
     def new_model(
         self,
-        data):
+        data_or_mask):
         """
         Create a new MochiModel object.
 
-        :param data: Dictionary of dictionaries of tensors as output by MochiData.get_data (required).
+        :param data_or_mask: Either a legacy data dictionary or a fold-specific mask tensor (required).
         :returns: A new MochiModel object.
         """ 
+        if isinstance(data_or_mask, dict):
+            input_shape = data_or_mask['training']['X'].shape[1]
+            mask = data_or_mask['training']['mask']
+        else:
+            input_shape = len(self.data.get_feature_names())
+            mask = data_or_mask
         #Create a new model
         model = MochiModel(
-            input_shape = data['training']['X'].shape[1],
-            mask = data['training']['mask'],
+            input_shape = input_shape,
+            mask = mask,
             model_design = self.data.model_design,
             custom_transformations = self.data.custom_transformations,
             sos_architecture = self.sos_architecture,
@@ -1101,11 +1107,12 @@ class MochiTask():
                 mask = pd.DataFrame(np.asarray(mask.detach().cpu())).iloc[phenotypes_with_trait,:].sum(axis=0)
                 
                 #Weight data frame
+                feature_names = list(self.data.get_feature_names())
                 at_list[-1] += [pd.DataFrame({
-                    "id": np.array(list(self.data.Xohi.columns)),
-                    "id_ref": ['WT']+['_'.join([smi[:1]+str(int(smi[1:-1])+seq_position_offset)+smi[-1:] for smi in mi.split("_")]) for mi in list(self.data.Xohi.columns[1:])],
-                    "Pos": [None]+['_'.join([str(int(smi[1:-1])) for smi in mi.split("_")]) for mi in list(self.data.Xohi.columns[1:])],
-                    "Pos_ref": [None]+['_'.join([str(int(smi[1:-1])+seq_position_offset) for smi in mi.split("_")]) for mi in list(self.data.Xohi.columns[1:])],
+                    "id": np.array(feature_names),
+                    "id_ref": ['WT']+['_'.join([smi[:1]+str(int(smi[1:-1])+seq_position_offset)+smi[-1:] for smi in mi.split("_")]) for mi in feature_names[1:]],
+                    "Pos": [None]+['_'.join([str(int(smi[1:-1])) for smi in mi.split("_")]) for mi in feature_names[1:]],
+                    "Pos_ref": [None]+['_'.join([str(int(smi[1:-1])+seq_position_offset) for smi in mi.split("_")]) for mi in feature_names[1:]],
                     "fold_"+str(models_subset[i].metadata.fold): additivetrait_parameters})]
                 #Remove weights not reported on by a single corresponding phenotype
                 at_list[-1][-1] = at_list[-1][-1].loc[mask!=0,:]
@@ -1366,7 +1373,9 @@ class MochiTask():
             model_addt = model.get_submodule('additivetraits')
             input_addt = input_model.get_submodule('additivetraits')
             shared_traits = [i for i in self.data.additive_trait_names if i in input_task.data.additive_trait_names]
-            shared_weights = [i for i in self.data.Xohi.columns if i in input_task.data.Xohi.columns]
+            current_feature_names = list(self.data.get_feature_names())
+            input_feature_names = list(input_task.data.get_feature_names())
+            shared_weights = [i for i in current_feature_names if i in input_feature_names]
             #Loop over shared traits
             for tname in shared_traits:
                 model_ti = self.data.additive_trait_names.index(tname)
@@ -1380,7 +1389,7 @@ class MochiTask():
                 input_weights = [item for sublist in input_weights for item in sublist]
                 input_weights = np.asarray(input_weights[0].detach().cpu())
                 #Model weight initialization
-                model_weights = [input_weights[list(input_task.data.Xohi.columns).index(i)] if i in shared_weights else model_weights[list(self.data.Xohi.columns).index(i)] for i in self.data.Xohi.columns]
+                model_weights = [input_weights[input_feature_names.index(i)] if i in shared_weights else model_weights[current_feature_names.index(i)] for i in current_feature_names]
                 with torch.no_grad():
                     model_addt[model_ti].weight = torch.nn.Parameter(torch.tensor(np.asarray([model_weights])))
                 n_init_addt += 1
@@ -1549,8 +1558,8 @@ class MochiTask():
             print("Error: Model cannot be fit. Invalid MochiData instance.")
             raise ValueError
 
-        #Load model data
-        model_data = self.data.get_data(
+        #Load split metadata without materializing full fold feature tensors.
+        split_data = self.data.get_split_observation_data(
             fold = fold, 
             seed = seed,
             training_resample = training_resample)
@@ -1567,7 +1576,7 @@ class MochiTask():
         np.random.seed(seed)
 
         #Instantiate model
-        self.models += [self.new_model(model_data)]
+        self.models += [self.new_model(split_data['training']['mask'])]
         model = self.models[-1]
 
         #initialize model weights
@@ -1609,8 +1618,30 @@ class MochiTask():
         print("Fitting model:")
         print(model.metadata)
 
-        #Load model data
-        train_dataloader, valid_dataloader, test_dataloader = model.get_data_loaders(model_data, batch_size)
+        train_dataloader = MaterializingRowDataLoader(
+            data = self.data,
+            row_indices = split_data['training']['row_indices'],
+            select = split_data['training']['select'],
+            y = split_data['training']['y'],
+            y_wt = split_data['training']['y_wt'],
+            batch_size = batch_size,
+            shuffle = True)
+        valid_dataloader = MaterializingRowDataLoader(
+            data = self.data,
+            row_indices = split_data['validation']['row_indices'],
+            select = split_data['validation']['select'],
+            y = split_data['validation']['y'],
+            y_wt = split_data['validation']['y_wt'],
+            batch_size = batch_size,
+            shuffle = False)
+        test_dataloader = MaterializingRowDataLoader(
+            data = self.data,
+            row_indices = split_data['test']['row_indices'],
+            select = split_data['test']['select'],
+            y = split_data['test']['y'],
+            y_wt = split_data['test']['y_wt'],
+            batch_size = batch_size,
+            shuffle = False)
 
         #Construct loss function and Optimizer
         if loss_function_name == 'WeightedL1':

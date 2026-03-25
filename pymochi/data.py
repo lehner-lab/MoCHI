@@ -12,8 +12,11 @@ import random
 import math
 import tempfile
 import time
+import gc
 import csv
 import linecache
+import queue
+import threading
 from os.path import exists
 import pyreadr
 import torch
@@ -24,6 +27,7 @@ from pathlib import Path
 from pymochi.transformation import get_transformation
 import numpy as np
 import pandas as pd
+from scipy import sparse as sp
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.preprocessing import PolynomialFeatures
 import itertools
@@ -31,6 +35,35 @@ import collections, functools, operator
 
 import types
 from inspect import getmembers, isfunction
+
+def current_process_rss_gb():
+    """
+    Return current process resident memory in GiB when available.
+
+    :returns: Float or None.
+    """
+    try:
+        with open("/proc/self/status", "r", encoding = "utf-8") as handle:
+            for line in handle:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) / (1024 ** 2)
+    except OSError:
+        return None
+    return None
+
+def log_process_memory(
+    label):
+    """
+    Print a simple memory checkpoint message.
+
+    :param label: Human-readable stage label (required).
+    :returns: Nothing.
+    """
+    rss_gb = current_process_rss_gb()
+    if rss_gb is None:
+        print(f"{label} | RSS unavailable")
+    else:
+        print(f"{label} | RSS_GiB={rss_gb:.2f}")
 
 def compact_feature_tensors():
     """
@@ -42,6 +75,36 @@ def compact_feature_tensors():
     """
     compact_override = os.environ.get("MOCHI_FEATURES_UINT8", "0").lower()
     return compact_override in ["1", "true", "yes", "on"]
+
+def get_feature_store_backend():
+    """
+    Select the retained-feature storage backend.
+
+    Set MOCHI_FEATURE_STORE to "sparse" or "lazy". Invalid values fall back to
+    the sparse backend.
+
+    :returns: Backend name.
+    """
+    backend = os.environ.get("MOCHI_FEATURE_STORE", "sparse").lower()
+    if backend not in ["sparse", "lazy"]:
+        return "sparse"
+    return backend
+
+class FeatureMatrixMetadata:
+    """
+    Lightweight metadata wrapper for a lazily materialized feature matrix.
+    """
+    def __init__(
+        self,
+        index,
+        columns):
+        self.index = index
+        self.columns = pd.Index(columns)
+        self.shape = (len(index), len(self.columns))
+
+    def __len__(
+        self):
+        return self.shape[0]
 
 class CustomTransformations:
     """
@@ -375,6 +438,10 @@ class MochiData:
         self.Xohi = None
         self.Xohi_memmap = None
         self.Xohi_memmap_path = None
+        self.feature_matrix_mode = "dense"
+        self.feature_sparse_matrix = None
+        self.feature_source_indices = None
+        self.feature_component_indices = None
         self.cvgroups = None
         self.coefficients = None
         self.coefficients_userspec = None
@@ -426,6 +493,11 @@ class MochiData:
             features = self.features,
             downsample_interactions = self.downsample_interactions,
             seed = self.seed)
+        log_process_memory("After interaction features")
+        # Release split sequence tokens before later wide-matrix passes.
+        self.X = None
+        gc.collect()
+        log_process_memory("After releasing sequence token matrix")
         # self.one_hot_encode_interactions_todisk(
         #     max_order = self.max_interaction_order,
         #     min_observed = self.min_observed,
@@ -438,14 +510,17 @@ class MochiData:
         #Split into training, validation and test sets
         print("Defining cross-validation groups")
         self.define_cross_validation_groups()
+        log_process_memory("After defining cross-validation groups")
         #Define coefficients to fit (for each phenotype and trait)
         print("Defining coefficient groups")
         self.define_coefficient_groups(
             k_folds = self.k_folds)
+        log_process_memory("After defining coefficient groups")
         #Ensemble encode features
         if self.ensemble:
             print("Ensemble encoding features")
             self.Xohi = self.ensemble_encode_features()
+            log_process_memory("After ensemble encoding features")
         print("Done!")
 
     def check_custom_transformations(
@@ -627,7 +702,7 @@ class MochiData:
         all_phenotypes = [str(i) for i in list(self.model_design['phenotype'])]
         phenotypes_df = pd.DataFrame()
         for i in all_phenotypes:
-            phenotypes_df['phenotype_'+i] = (self.fdata.vtable['phenotype']==i).astype(int)
+            phenotypes_df['phenotype_'+i] = (self.fdata.vtable['phenotype']==i).astype(np.uint8)
         return phenotypes_df
 
     def one_hot_encode_features(
@@ -642,12 +717,13 @@ class MochiData:
         enc = OneHotEncoder(
             handle_unknown='ignore', 
             drop = np.array(self.fdata.wildtype_split), 
-            dtype = int)
+            dtype = np.uint8)
         enc.fit(self.X)
         one_hot_names = [self.fdata.wildtype_split[int(i[1:-2])]+str(int(i[1:-2])+1)+i[-1] for i in enc.get_feature_names_out()]
         one_hot_df = pd.DataFrame(enc.transform(self.X).toarray(), columns = one_hot_names)
         if include_WT:
-            one_hot_df = pd.concat([pd.DataFrame({'WT': [1]*len(one_hot_df)}), one_hot_df], axis=1)
+            one_hot_df = pd.concat([pd.DataFrame({'WT': np.ones(len(one_hot_df), dtype = np.uint8)}), one_hot_df], axis=1)
+        one_hot_df = one_hot_df.astype(np.uint8)
         return one_hot_df
 
     def get_theoretical_interactions_phenotype(
@@ -768,7 +844,7 @@ class MochiData:
         """
         if metadata_path is None:
             return False
-        if not (os.path.exists(metadata_path) and os.path.exists(memmap_path)):
+        if not os.path.exists(metadata_path):
             return False
         try:
             with open(metadata_path, "r") as handle:
@@ -780,17 +856,22 @@ class MochiData:
         if metadata.get('base_columns') != list(self.Xoh.columns):
             return False
         print("Loading cached interaction features")
-        self.Xohi_memmap_path = memmap_path
-        self.Xohi_memmap = np.memmap(
-            self.Xohi_memmap_path,
-            dtype = np.uint8,
-            mode = "r+",
-            shape = tuple(metadata['shape']))
-        self.Xohi = pd.DataFrame(
-            self.Xohi_memmap,
-            index = self.Xoh.index,
-            columns = metadata['columns'],
-            copy = False)
+        columns = metadata.get('columns', list(self.Xoh.columns))
+        interaction_columns = [i for i in columns if i not in self.Xoh.columns]
+        if len(interaction_columns) == 0:
+            self.Xohi = self.Xoh.loc[:, columns].copy()
+            self.feature_matrix_mode = "dense"
+            self.feature_sparse_matrix = None
+            self.feature_source_indices = None
+            self.feature_component_indices = None
+            self.Xohi_memmap = None
+            self.Xohi_memmap_path = None
+            self.feature_names = self.Xohi.columns
+        else:
+            if get_feature_store_backend() == "sparse":
+                self.build_sparse_feature_matrix_from_columns(columns)
+            else:
+                self.set_lazy_feature_matrix(columns)
         return True
 
     def save_cached_interactions(
@@ -805,12 +886,359 @@ class MochiData:
         if metadata_path is None:
             return
         metadata = {
-            'shape': list(self.Xohi_memmap.shape),
             'rows': len(self.Xoh),
             'base_columns': list(self.Xoh.columns),
             'columns': list(columns)}
+        if self.Xohi_memmap is not None:
+            metadata['shape'] = list(self.Xohi_memmap.shape)
         with open(metadata_path, "w") as handle:
             json.dump(metadata, handle)
+
+    def get_feature_names(
+        self):
+        """
+        Return feature names regardless of whether features are dense or lazy.
+
+        :returns: pandas Index.
+        """
+        if self.feature_names is not None:
+            return pd.Index(self.feature_names)
+        if self.Xohi is not None and hasattr(self.Xohi, "columns"):
+            return pd.Index(self.Xohi.columns)
+        return pd.Index([])
+
+    def is_lazy_feature_matrix(
+        self):
+        """
+        Check whether the feature matrix is materialized on demand.
+
+        :returns: Boolean.
+        """
+        return getattr(self, "feature_matrix_mode", "dense") == "lazy"
+
+    def is_sparse_feature_matrix(
+        self):
+        """
+        Check whether the feature matrix is stored as a sparse matrix.
+
+        :returns: Boolean.
+        """
+        return getattr(self, "feature_matrix_mode", "dense") == "sparse"
+
+    def activate_sparse_feature_matrix(
+        self,
+        columns,
+        sparse_matrix):
+        """
+        Activate a sparse retained-feature matrix backend.
+
+        :param columns: Ordered feature names (required).
+        :param sparse_matrix: Sparse feature matrix (required).
+        :returns: Nothing.
+        """
+        columns = pd.Index(columns)
+        self.feature_matrix_mode = "sparse"
+        self.feature_names = columns
+        self.feature_sparse_matrix = sparse_matrix.tocsr().astype(np.uint8, copy = False)
+        self.feature_source_indices = None
+        self.feature_component_indices = None
+        self.Xohi_memmap = None
+        self.Xohi_memmap_path = None
+        self.Xohi = FeatureMatrixMetadata(
+            index = self.Xoh.index,
+            columns = columns)
+
+    def build_sparse_feature_matrix(
+        self,
+        columns,
+        interaction_names,
+        interaction_row_indices):
+        """
+        Build a sparse retained-feature matrix from base one-hot columns and
+        retained interaction row indices.
+
+        :param columns: Ordered feature names to expose (required).
+        :param interaction_names: Canonical interaction names (required).
+        :param interaction_row_indices: Active-row arrays for interactions (required).
+        :returns: Nothing.
+        """
+        base_sparse = sp.csr_matrix(self.Xoh.to_numpy(dtype = np.uint8, copy = False))
+        if len(interaction_names) == 0:
+            combined = base_sparse
+        else:
+            nnz_per_col = np.asarray([len(i) for i in interaction_row_indices], dtype = np.int64)
+            if int(np.sum(nnz_per_col)) == 0:
+                interaction_sparse = sp.csr_matrix(
+                    (len(self.Xoh), len(interaction_names)),
+                    dtype = np.uint8)
+            else:
+                row_ind = np.concatenate(interaction_row_indices).astype(np.int32, copy = False)
+                col_ind = np.repeat(
+                    np.arange(len(interaction_names), dtype = np.int32),
+                    nnz_per_col)
+                data = np.ones(len(row_ind), dtype = np.uint8)
+                interaction_sparse = sp.csr_matrix(
+                    (data, (row_ind, col_ind)),
+                    shape = (len(self.Xoh), len(interaction_names)),
+                    dtype = np.uint8)
+            combined = sp.hstack([base_sparse, interaction_sparse], format = "csr", dtype = np.uint8)
+        self.activate_sparse_feature_matrix(
+            columns = list(self.Xoh.columns) + list(interaction_names),
+            sparse_matrix = combined)
+        if list(self.get_feature_names()) != list(columns):
+            self.reorder_feature_columns(columns)
+
+    def build_sparse_feature_matrix_from_columns(
+        self,
+        columns):
+        """
+        Build a sparse retained-feature matrix by recomputing only the retained
+        interaction columns named in `columns`.
+
+        :param columns: Ordered feature names (required).
+        :returns: Nothing.
+        """
+        xoh_column_index = {name:i for i, name in enumerate(self.Xoh.columns)}
+        xoh_values = self.Xoh.to_numpy(dtype = np.uint8, copy = False)
+        interaction_names = [i for i in columns if i not in xoh_column_index]
+        interaction_row_indices = []
+        for name in interaction_names:
+            feature_idx = [xoh_column_index[i] for i in name.split("_")]
+            interaction_row_indices.append(
+                np.flatnonzero(
+                    np.all(xoh_values[:, feature_idx] == 1, axis = 1)
+                ).astype(np.int32, copy = False))
+        self.build_sparse_feature_matrix(
+            columns = columns,
+            interaction_names = interaction_names,
+            interaction_row_indices = interaction_row_indices)
+
+    def set_lazy_feature_matrix(
+        self,
+        columns):
+        """
+        Configure retained feature metadata without materializing a dense matrix.
+
+        :param columns: Ordered feature names (required).
+        :returns: Nothing.
+        """
+        xoh_column_index = {name:i for i,name in enumerate(self.Xoh.columns)}
+        columns = pd.Index(columns)
+        source_indices = np.full(len(columns), -1, dtype = np.int32)
+        component_indices = [None] * len(columns)
+        for i, name in enumerate(columns):
+            if name in xoh_column_index:
+                source_indices[i] = xoh_column_index[name]
+            else:
+                component_indices[i] = np.asarray(
+                    [xoh_column_index[j] for j in name.split("_")],
+                    dtype = np.int32)
+        self.feature_matrix_mode = "lazy"
+        self.feature_names = columns
+        self.feature_sparse_matrix = None
+        self.feature_source_indices = source_indices
+        self.feature_component_indices = component_indices
+        self.Xohi_memmap = None
+        self.Xohi_memmap_path = None
+        self.Xohi = FeatureMatrixMetadata(
+            index = self.Xoh.index,
+            columns = columns)
+
+    def reorder_feature_columns(
+        self,
+        columns):
+        """
+        Reorder retained feature columns while preserving the active storage mode.
+
+        :param columns: Ordered feature names (required).
+        :returns: Nothing.
+        """
+        columns = list(columns)
+        missing = [i for i in columns if i not in self.get_feature_names()]
+        if len(missing) != 0:
+            print("Error: Invalid feature names.")
+            raise ValueError
+        if self.is_lazy_feature_matrix():
+            self.set_lazy_feature_matrix(columns)
+        elif self.is_sparse_feature_matrix():
+            feature_index = {name:i for i, name in enumerate(self.get_feature_names())}
+            self.activate_sparse_feature_matrix(
+                columns = columns,
+                sparse_matrix = self.feature_sparse_matrix[:, [feature_index[i] for i in columns]])
+        else:
+            self.Xohi = self.Xohi.loc[:, columns]
+            self.feature_names = self.Xohi.columns
+
+    def get_feature_chunk_size(
+        self):
+        """
+        Return feature chunk size used for on-demand interaction assembly.
+
+        :returns: Integer chunk size.
+        """
+        return int(os.environ.get("MOCHI_FEATURE_CHUNK_SIZE", "256"))
+
+    def check_materialization_memory(
+        self,
+        n_rows,
+        n_features,
+        dtype):
+        """
+        Fail fast when an on-demand dense materialization exceeds a configured cap.
+
+        Set MOCHI_MAX_XOHI_GB to a positive number to enable the guard.
+
+        :returns: Nothing.
+        """
+        max_gb = os.environ.get("MOCHI_MAX_XOHI_GB")
+        if max_gb in [None, ""]:
+            return
+        projected_bytes = int(n_rows) * int(n_features) * np.dtype(dtype).itemsize
+        if projected_bytes > (float(max_gb) * (1024 ** 3)):
+            print("Error: On-demand feature matrix exceeds MOCHI_MAX_XOHI_GB.")
+            raise MemoryError
+
+    def iterate_feature_chunks(
+        self,
+        row_indices,
+        feature_indices = None,
+        dtype = np.uint8,
+        chunk_size = None):
+        """
+        Yield dense feature chunks for a selected row subset.
+
+        :param row_indices: Row indices to materialize (required).
+        :param feature_indices: Feature indices to materialize (default:None i.e. all).
+        :param dtype: Output dtype (default:uint8).
+        :param chunk_size: Feature chunk size (default:env or 256).
+        :returns: iterator of (start, stop, ndarray).
+        """
+        if chunk_size is None:
+            chunk_size = self.get_feature_chunk_size()
+        row_indices = np.asarray(row_indices, dtype = np.int64)
+        if feature_indices is None:
+            feature_indices = np.arange(len(self.get_feature_names()), dtype = np.int64)
+        else:
+            feature_indices = np.asarray(feature_indices, dtype = np.int64)
+        if len(feature_indices) == 0:
+            return
+        if self.is_sparse_feature_matrix():
+            sparse_rows = self.feature_sparse_matrix[row_indices]
+            for start in range(0, len(feature_indices), chunk_size):
+                stop = min(start + chunk_size, len(feature_indices))
+                chunk_feature_indices = feature_indices[start:stop]
+                chunk = sparse_rows[:, chunk_feature_indices].toarray()
+                if dtype != chunk.dtype:
+                    chunk = chunk.astype(dtype, copy = False)
+                yield (start, stop, chunk)
+            return
+        if not self.is_lazy_feature_matrix():
+            feature_values = self.Xohi.iloc[row_indices, feature_indices].to_numpy(
+                dtype = dtype,
+                copy = True)
+            yield (0, len(feature_indices), feature_values)
+            return
+
+        xoh_values = self.Xoh.iloc[row_indices,:].to_numpy(dtype = np.uint8, copy = False)
+        feature_source_indices = self.feature_source_indices
+        feature_component_indices = self.feature_component_indices
+        for start in range(0, len(feature_indices), chunk_size):
+            stop = min(start + chunk_size, len(feature_indices))
+            chunk_feature_indices = feature_indices[start:stop]
+            chunk = np.empty((len(row_indices), len(chunk_feature_indices)), dtype = np.uint8)
+            chunk_sources = feature_source_indices[chunk_feature_indices]
+            base_local_idx = np.flatnonzero(chunk_sources >= 0)
+            if len(base_local_idx) != 0:
+                chunk[:, base_local_idx] = xoh_values[:, chunk_sources[base_local_idx]]
+            interaction_local_idx = np.flatnonzero(chunk_sources < 0)
+            for local_i in interaction_local_idx:
+                feature_i = chunk_feature_indices[local_i]
+                chunk[:, local_i] = np.all(
+                    xoh_values[:, feature_component_indices[feature_i]] == 1,
+                    axis = 1).astype(np.uint8, copy = False)
+            if dtype != np.uint8:
+                chunk = chunk.astype(dtype, copy = False)
+            yield (start, stop, chunk)
+
+    def materialize_feature_matrix(
+        self,
+        row_indices,
+        feature_indices = None,
+        dtype = np.uint8):
+        """
+        Materialize a dense feature matrix for a selected row subset.
+
+        :param row_indices: Row indices to materialize (required).
+        :param feature_indices: Feature indices to materialize (default:None i.e. all).
+        :param dtype: Output dtype (default:uint8).
+        :returns: ndarray.
+        """
+        row_indices = np.asarray(row_indices, dtype = np.int64)
+        if feature_indices is None:
+            feature_indices = np.arange(len(self.get_feature_names()), dtype = np.int64)
+        else:
+            feature_indices = np.asarray(feature_indices, dtype = np.int64)
+        self.check_materialization_memory(
+            n_rows = len(row_indices),
+            n_features = len(feature_indices),
+            dtype = dtype)
+        if len(feature_indices) == 0:
+            return np.empty((len(row_indices), 0), dtype = dtype)
+        if self.is_sparse_feature_matrix():
+            matrix = self.feature_sparse_matrix[row_indices][:, feature_indices].toarray()
+            if matrix.dtype != dtype:
+                matrix = matrix.astype(dtype, copy = False)
+            return matrix
+        matrix = np.empty((len(row_indices), len(feature_indices)), dtype = dtype)
+        for start, stop, chunk in self.iterate_feature_chunks(
+            row_indices = row_indices,
+            feature_indices = feature_indices,
+            dtype = dtype):
+            matrix[:, start:stop] = chunk
+        return matrix
+
+    def sum_features_for_rows(
+        self,
+        row_indices):
+        """
+        Sum feature columns across a selected row subset.
+
+        :param row_indices: Row indices to aggregate (required).
+        :returns: ndarray of per-feature sums.
+        """
+        if self.is_sparse_feature_matrix():
+            return np.asarray(
+                self.feature_sparse_matrix[np.asarray(row_indices, dtype = np.int64)].sum(axis = 0),
+                dtype = np.int64).ravel()
+        feature_sums = np.zeros(len(self.get_feature_names()), dtype = np.int64)
+        for start, stop, chunk in self.iterate_feature_chunks(row_indices = row_indices):
+            feature_sums[start:stop] = np.sum(chunk, axis = 0, dtype = np.int64)
+        return feature_sums
+
+    def sum_selected_features_per_row(
+        self,
+        row_indices,
+        feature_indices):
+        """
+        Sum a selected feature subset across each requested row.
+
+        :param row_indices: Row indices to aggregate (required).
+        :param feature_indices: Feature indices to include (required).
+        :returns: ndarray of per-row sums.
+        """
+        row_sums = np.zeros(len(row_indices), dtype = np.int64)
+        feature_indices = np.asarray(feature_indices, dtype = np.int64)
+        if len(feature_indices) == 0:
+            return row_sums
+        if self.is_sparse_feature_matrix():
+            return np.asarray(
+                self.feature_sparse_matrix[np.asarray(row_indices, dtype = np.int64)][:, feature_indices].sum(axis = 1),
+                dtype = np.int64).ravel()
+        for _, _, chunk in self.iterate_feature_chunks(
+            row_indices = row_indices,
+            feature_indices = feature_indices):
+            row_sums += np.sum(chunk, axis = 1, dtype = np.int64)
+        return row_sums
 
     # def write_features(
     #     self,
@@ -1079,10 +1507,14 @@ class MochiData:
             memmap_path = memmap_path):
             if features!=[]:
                 print("Filtering features")
-                self.Xohi = self.filter_features(
-                    input_df = self.Xohi,
-                    features = features)
-            self.feature_names = self.Xohi.columns
+                if self.is_lazy_feature_matrix() or self.is_sparse_feature_matrix():
+                    self.reorder_feature_columns(
+                        [i for i in self.get_feature_names() if i in features])
+                else:
+                    self.Xohi = self.filter_features(
+                        input_df = self.Xohi,
+                        features = features)
+            self.feature_names = self.get_feature_names()
             return
 
         #Get all theoretical interactions
@@ -1104,6 +1536,7 @@ class MochiData:
         int_set = set()
         int_order_dict_retained = {}
         int_list_names = []
+        interaction_row_index_map = {}
         #No shuffle if not downsampling
         if downsample_interactions is None:
             all_features_loop = {0: all_features_flat}
@@ -1128,6 +1561,7 @@ class MochiData:
                     if int(np.sum(int_col)) >= min_observed:
                         int_list_names += [c]
                         int_set.add(c)
+                        interaction_row_index_map[c] = np.flatnonzero(int_col).astype(np.int32, copy = False)
                         if len(c_split) not in int_order_dict_retained.keys():
                             int_order_dict_retained[len(c_split)] = 1
                         else:
@@ -1151,6 +1585,7 @@ class MochiData:
                             if int_order_dict_retained[len(c_split)] > downsample_interactions[len(c_split)] and downsample_interactions[len(c_split)]!=(-1):
                                 removed_name = int_list_names.pop()
                                 int_set.remove(removed_name)
+                                del interaction_row_index_map[removed_name]
                                 int_order_dict_retained[len(c_split)] -= 1
                                 break
                             elif int_order_dict_retained == downsample_interactions:
@@ -1161,53 +1596,64 @@ class MochiData:
         #Concatenate into dataframe
         if len(int_list_names)>0:
             ordered_interactions = [i for i in all_features_flat if i in int_set]
-            total_columns = xoh_values.shape[1] + len(ordered_interactions)
-            if memmap_path is None:
-                self.Xohi_memmap_path = tempfile.NamedTemporaryFile(
-                    prefix = "mochi_xohi_",
-                    suffix = ".dat",
-                    dir = "/tmp",
-                    delete = False).name
+            if get_feature_store_backend() == "sparse":
+                self.build_sparse_feature_matrix(
+                    columns = list(self.Xoh.columns) + ordered_interactions,
+                    interaction_names = ordered_interactions,
+                    interaction_row_indices = [interaction_row_index_map[i] for i in ordered_interactions])
             else:
-                self.Xohi_memmap_path = memmap_path
-            self.Xohi_memmap = np.memmap(
-                self.Xohi_memmap_path,
-                dtype = np.uint8,
-                mode = "w+",
-                shape = (xoh_values.shape[0], total_columns))
-            self.Xohi_memmap[:, :xoh_values.shape[1]] = xoh_values
-            chunk_size = 256
-            for chunk_start in range(0, len(ordered_interactions), chunk_size):
-                chunk_names = ordered_interactions[chunk_start:chunk_start+chunk_size]
-                chunk_arrays = np.column_stack([
-                    np.all(
-                        xoh_values[:, [xoh_column_index[j] for j in name.split("_")]] == 1,
-                        axis = 1).astype(np.uint8, copy = False)
-                    for name in chunk_names])
-                dest_start = xoh_values.shape[1] + chunk_start
-                dest_end = dest_start + len(chunk_names)
-                self.Xohi_memmap[:, dest_start:dest_end] = chunk_arrays
-            self.Xohi_memmap.flush()
-            self.Xohi = pd.DataFrame(
-                self.Xohi_memmap,
-                index = self.Xoh.index,
-                columns = list(self.Xoh.columns) + ordered_interactions,
-                copy = False)
+                self.set_lazy_feature_matrix(list(self.Xoh.columns) + ordered_interactions)
             self.save_cached_interactions(
                 metadata_path = metadata_path,
-                columns = list(self.Xoh.columns) + ordered_interactions)
+                columns = list(self.get_feature_names()))
         else:
             self.Xohi = copy.deepcopy(self.Xoh)
+            self.feature_matrix_mode = "dense"
+            self.feature_sparse_matrix = None
+            self.feature_source_indices = None
+            self.feature_component_indices = None
 
         #Filter features
         if features!=[]:
             print("Filtering features")
-            self.Xohi = self.filter_features(
-                input_df = self.Xohi,
-                features = features)
+            if self.is_lazy_feature_matrix() or self.is_sparse_feature_matrix():
+                self.reorder_feature_columns(
+                    [i for i in self.get_feature_names() if i in features])
+            else:
+                self.Xohi = self.filter_features(
+                    input_df = self.Xohi,
+                    features = features)
 
         #Save interaction feature names
-        self.feature_names = self.Xohi.columns
+        self.feature_names = self.get_feature_names()
+
+        # Drop temporary builders before later preprocessing stages allocate
+        # additional wide matrices over the same feature set.
+        del all_features
+        del all_features_flat
+        del int_set
+        del int_list_names
+        del interaction_row_index_map
+        del xoh_values
+        if 'ordered_interactions' in locals():
+            del ordered_interactions
+        gc.collect()
+
+    def get_xohi_values(
+        self):
+        """
+        Return an array-like feature matrix view without forcing DataFrame copies.
+
+        :returns: numpy-compatible 2D array.
+        """
+        if self.is_lazy_feature_matrix():
+            print("Error: Lazy feature matrix cannot be returned as one dense array.")
+            raise RuntimeError
+        if self.is_sparse_feature_matrix():
+            return self.feature_sparse_matrix
+        if self.Xohi_memmap is not None:
+            return self.Xohi_memmap
+        return self.Xohi.to_numpy(copy = False)
 
     def filter_features(
         self, 
@@ -1377,7 +1823,7 @@ class MochiData:
         geno_list = list(self.fdata.vtable.apply(lambda row : "".join(x if x!=y else '0' for x,y in zip(str(row[self.fdata.variantCol]),self.fdata.wildtype)),
             axis = 1))
         #Sequence representation of 1-hot encoded coefficients/features
-        ceof_list = [self.coefficient_to_sequence(coef, len(self.fdata.wildtype)) for coef in self.Xohi.columns]
+        ceof_list = [self.coefficient_to_sequence(coef, len(self.fdata.wildtype)) for coef in self.get_feature_names()]
         #Number of states per position
         state_list = (self.X.apply(lambda column: column.value_counts(), axis = 0)>0).apply(lambda column: column.value_counts(), axis = 0)
         state_list = list(np.asarray(state_list)[0])
@@ -1394,7 +1840,7 @@ class MochiData:
             str_coef = ceof_list, 
             num_states = state_list, 
             invert = True)
-        return pd.DataFrame(np.matmul(hmat_inv, vmat_inv), columns = self.Xohi.columns)
+        return pd.DataFrame(np.matmul(hmat_inv, vmat_inv), columns = self.get_feature_names())
 
     def update_holdout_observations(
         self, 
@@ -1458,31 +1904,35 @@ class MochiData:
             all_traits_unique = list(set([item for sublist in list(self.model_design['trait']) for item in sublist]))
             #Initialize holdout status (all variants can be held out)
             self.cvgroups = pd.DataFrame({
-                "holdout" : np.array([1]*len(self.Xohi))
+                "holdout" : np.array([1]*len(self))
                 })
             #Consider each additive trait separately
             for t in all_traits_unique:
                 #Phenotypes reporting on this trait
                 relevant_phenotype_columns = ["phenotype_"+str(self.model_design.loc[i,'phenotype']) for i in range(len(self.model_design)) if t in self.model_design.loc[i,'trait']]
+                phenotype_mask = np.asarray(self.phenotypes.loc[:,relevant_phenotype_columns].sum(axis=1)==1)
+                phenotype_indices = np.flatnonzero(phenotype_mask)
                 #Number of observations per coefficient
-                Xohp_colsum = pd.DataFrame(self.Xohi.loc[self.phenotypes.loc[:,relevant_phenotype_columns].sum(axis=1)==1,:].sum(axis=0))
+                Xohp_colsum = self.sum_features_for_rows(phenotype_indices)
                 #Indices of coefficients that do not meet required threshold
-                Xohp_noholdout = list(Xohp_colsum.loc[Xohp_colsum.iloc[:,0]<self.holdout_minobs,:].index)
+                Xohp_noholdout = np.flatnonzero(Xohp_colsum < self.holdout_minobs)
                 #Observations of coefficients that do not meet the required threshold
-                Xohp_noholdout_rowsum = np.array(self.Xohi.loc[self.phenotypes.loc[:,relevant_phenotype_columns].sum(axis=1)==1,Xohp_noholdout].sum(axis=1))
+                Xohp_noholdout_rowsum = self.sum_selected_features_per_row(
+                    row_indices = phenotype_indices,
+                    feature_indices = Xohp_noholdout)
                 #WT variants for these phenotypes
-                Xohp_WT = np.array(self.fdata.vtable.loc[self.phenotypes.loc[:,relevant_phenotype_columns].sum(axis=1)==1,'WT'])
+                Xohp_WT = np.array(self.fdata.vtable.loc[phenotype_mask,'WT'])
                 #Mutation orders for these phenotypes
-                Xohp_mutationOrder = np.array(self.fdata.vtable.loc[self.phenotypes.loc[:,relevant_phenotype_columns].sum(axis=1)==1,self.fdata.mutationOrderCol])
+                Xohp_mutationOrder = np.array(self.fdata.vtable.loc[phenotype_mask,self.fdata.mutationOrderCol])
                 #Current holdout status
-                current_status = list(self.cvgroups.loc[self.phenotypes.loc[:,relevant_phenotype_columns].sum(axis=1)==1,'holdout'])
+                current_status = list(self.cvgroups.loc[phenotype_mask,'holdout'])
                 #Holdout status for this additive trait
                 noholdout_minobs = [Xohp_noholdout_rowsum[i]!=0 for i in range(len(Xohp_noholdout_rowsum))]
                 noholdout_orders = [Xohp_mutationOrder[i] not in self.holdout_orders for i in range(len(Xohp_noholdout_rowsum))]
                 noholdout_WT = [((Xohp_WT[i]==True) & (self.holdout_WT==False)) for i in range(len(Xohp_noholdout_rowsum))]
                 noholdout = [(noholdout_minobs[i] | noholdout_orders[i] | noholdout_WT[i]) for i in range(len(Xohp_noholdout_rowsum))]
                 #New holdout status
-                self.cvgroups.loc[self.phenotypes.loc[:,relevant_phenotype_columns].sum(axis=1)==1,'holdout'] = np.asarray([int((current_status[i]==1) & (noholdout[i]==False)) for i in range(len(Xohp_noholdout_rowsum))])
+                self.cvgroups.loc[phenotype_mask,'holdout'] = np.asarray([int((current_status[i]==1) & (noholdout[i]==False)) for i in range(len(Xohp_noholdout_rowsum))])
         
         #Total number of variants that can be held out
         n_holdout = sum(self.cvgroups.holdout)
@@ -1513,23 +1963,40 @@ class MochiData:
         :param k_folds: Number of cross-validation folds (default:10).
         :returns: Nothing.
         """
-        #Cefficients that can be fit (for each phenotype and fold)
+        # Coefficients that can be fit (for each phenotype and fold). Work in
+        # manageable column chunks to avoid creating another full-width pandas
+        # temporary over the memmap-backed feature matrix.
+        n_features = len(self.get_feature_names())
+        phenotype_values = self.phenotypes.to_numpy(dtype = np.uint8, copy = False)
+        fold_values = {
+            'fold_'+str(i+1): self.cvgroups['fold_'+str(i+1)].to_numpy(copy = False)
+            for i in range(k_folds)}
+        coefficient_chunk_size = int(os.environ.get("MOCHI_COEFFICIENT_CHUNK_SIZE", "1024"))
         self.coefficients = {}
-        for p in self.phenotypes.columns:
-            # self.coefficients[p] = pd.DataFrame({'id': list(self.Xohi.columns)})
-            self.coefficients[p] = pd.DataFrame()
+        for p_index, p in enumerate(self.phenotypes.columns):
+            self.coefficients[p] = np.empty((n_features, k_folds), dtype = np.uint8)
+            phenotype_mask = phenotype_values[:, p_index] == 1
             for i in range(k_folds):
-                Xohp_colsum = pd.DataFrame(self.Xohi.loc[(self.phenotypes[p]==1) & (self.cvgroups['fold_'+str(i+1)]=="training"),:].sum(axis=0))
-                self.coefficients[p]['fold_'+str(i+1)] = np.asarray([int(j!=0) for j in list(Xohp_colsum.iloc[:,0])])
+                row_indices = np.flatnonzero(np.logical_and(phenotype_mask, fold_values['fold_'+str(i+1)] == "training"))
+                for chunk_start, chunk_end, chunk in self.iterate_feature_chunks(
+                    row_indices = row_indices,
+                    chunk_size = coefficient_chunk_size):
+                    self.coefficients[p][chunk_start:chunk_end, i] = np.any(
+                        chunk != 0,
+                        axis = 0).astype(np.uint8, copy = False)
 
-        #Coefficients specified to be fit (for each additive trait)
-        self.coefficients_userspec = pd.DataFrame()
+        # Coefficients specified to be fit (for each additive trait)
+        self.coefficients_userspec = np.ones(
+            (n_features, len(self.additive_trait_names)),
+            dtype = np.uint8)
+        xohi_columns = np.asarray(self.get_feature_names())
         for t in range(len(self.additive_trait_names)):
-            tcol = "additive_trait_"+str(t+1)
             if self.additive_trait_names[t] in self.features_trait.keys():
-                self.coefficients_userspec[tcol] = np.asarray([int(i in self.features_trait[self.additive_trait_names[t]]) for i in self.Xohi.columns])
-            else:
-                self.coefficients_userspec[tcol] = np.asarray([1 for i in self.Xohi.columns])
+                allowed_features = set(self.features_trait[self.additive_trait_names[t]])
+                self.coefficients_userspec[:, t] = np.asarray(
+                    [int(i in allowed_features) for i in xohi_columns],
+                    dtype = np.uint8)
+        gc.collect()
 
     def is_valid_instance(
         self):
@@ -1544,13 +2011,75 @@ class MochiData:
             self.phenotype_names,
             self.fitness,
             self.phenotypes,
-            self.X,
             self.Xoh,
             self.Xohi,
             self.cvgroups,
             self.coefficients,
             self.coefficients_userspec]
         return sum([1 for i in not_none if i is None]) == 0
+
+    def get_mask_tensor(
+        self,
+        fold = 1):
+        """
+        Build the fold-specific coefficient mask tensor used by the model.
+
+        :param fold: Cross-validation fold (default:1).
+        :returns: Torch tensor.
+        """
+        mask_tensor = torch.tensor(
+            np.stack(
+                [self.coefficients["phenotype_"+str(i+1)][:, fold-1] for i in range(len(self.coefficients))],
+                axis = 1),
+            dtype = torch.float32)
+        mask_tensor = torch.transpose(mask_tensor, 0, 1)
+        mask_tensor = torch.reshape(mask_tensor, (1, mask_tensor.shape[0], mask_tensor.shape[1]))
+        mask_tensor = mask_tensor.expand(len(self.additive_trait_names), mask_tensor.shape[1], mask_tensor.shape[2])
+        mask_us = torch.transpose(torch.tensor(self.coefficients_userspec, dtype=torch.float32), 0, 1)
+        mask_us = torch.reshape(mask_us, (mask_us.shape[0],1,mask_us.shape[1]))
+        return mask_tensor * mask_us
+
+    def get_split_observation_data(
+        self,
+        fold = 1,
+        seed = 1,
+        training_resample = True):
+        """
+        Get fold split metadata without materializing the full feature matrix.
+
+        :param fold: Cross-validation fold (default:1).
+        :param seed: Random seed for training target resampling (default:1).
+        :param training_resample: Whether or not to add noise to training targets (default:True).
+        :returns: Dictionary keyed by split name.
+        """
+        if not self.is_valid_instance():
+            print("Error: Invalid MochiData instance.")
+            raise ValueError
+        fold_name = "fold_"+str(fold)
+        data_dict = {}
+        mask_tensor = self.get_mask_tensor(fold = fold)
+        for g in list(set(self.cvgroups[fold_name])):
+            group_mask = np.asarray(self.cvgroups[fold_name] == g)
+            row_indices = np.flatnonzero(group_mask)
+            data_dict[g] = {
+                'row_indices': row_indices,
+                'mask': mask_tensor,
+                'select': torch.tensor(
+                    self.phenotypes.loc[group_mask,:].to_numpy(dtype = np.float32, copy = True),
+                    dtype = torch.float32)}
+            y_values = self.fitness.loc[group_mask,'fitness'].to_numpy(dtype = np.float32, copy = True)
+            if g == "training" and training_resample:
+                np.random.seed(seed+fold*1000000)
+                y_values = y_values + np.asarray(
+                    [np.random.normal(scale = i) for i in list(self.fitness.loc[group_mask,'sigma'])],
+                    dtype = np.float32)
+            data_dict[g]['y'] = torch.reshape(torch.tensor(y_values, dtype = torch.float32), (-1, 1))
+            data_dict[g]['y_wt'] = torch.reshape(
+                torch.tensor(
+                    self.fitness.loc[group_mask,'weight'].to_numpy(dtype = np.float32, copy = True),
+                    dtype = torch.float32),
+                (-1, 1))
+        return data_dict
 
     def get_data(
         self, 
@@ -1569,50 +2098,30 @@ class MochiData:
         if not self.is_valid_instance():
             print("Error: Invalid MochiData instance.")
             raise ValueError
-        #Loop over training, validation and test sets
         fold_name = "fold_"+str(fold)
+        split_data = self.get_split_observation_data(
+            fold = fold,
+            seed = seed,
+            training_resample = training_resample)
         data_dict = {}
-        mask_tensor = torch.tensor(
-            np.asarray(
-                pd.concat(
-                    [self.coefficients["phenotype_"+str(i+1)].loc[:,fold_name] for i in range(len(self.coefficients))],
-                    axis = 1)),
-            dtype = torch.float32)
-        mask_tensor = torch.transpose(mask_tensor, 0, 1)
-        mask_tensor = torch.reshape(mask_tensor, (1, mask_tensor.shape[0], mask_tensor.shape[1]))
-        mask_tensor = mask_tensor.expand(len(self.additive_trait_names), mask_tensor.shape[1], mask_tensor.shape[2])
-        mask_us = torch.transpose(torch.tensor(np.asarray(self.coefficients_userspec), dtype=torch.float32), 0, 1)
-        mask_us = torch.reshape(mask_us, (mask_us.shape[0],1,mask_us.shape[1]))
-        mask_tensor = mask_tensor*mask_us
         feature_numpy_dtype = np.uint8 if compact_feature_tensors() else np.float32
         feature_tensor_dtype = torch.uint8 if compact_feature_tensors() else torch.float32
         for g in list(set(self.cvgroups[fold_name])):
-            #Shuffle indices for training data
-            group_mask = np.asarray(self.cvgroups[fold_name]==g)
-            sind = list(range(int(np.sum(group_mask))))
+            row_indices = split_data[g]['row_indices']
+            sind = list(range(len(row_indices)))
             if g=="training":
                 random.seed(seed+fold*1000000)
                 random.shuffle(sind)
             data_dict[g] = {}
-            #Select tensor
-            select_values = self.phenotypes.loc[group_mask,:].to_numpy(dtype = np.float32, copy = True)
-            data_dict[g]['select'] = torch.tensor(select_values[sind,:], dtype=torch.float32)
-            data_dict[g]['mask'] = mask_tensor
+            data_dict[g]['select'] = split_data[g]['select'][sind,:]
+            data_dict[g]['mask'] = split_data[g]['mask']
             #Feature tensor
-            feature_values = self.Xohi.loc[group_mask,:].to_numpy(dtype = feature_numpy_dtype, copy = True)
+            feature_values = self.materialize_feature_matrix(
+                row_indices = row_indices,
+                dtype = feature_numpy_dtype)
             data_dict[g]['X'] = torch.tensor(feature_values[sind,:], dtype = feature_tensor_dtype)
-            #Target tensor
-            y_values = self.fitness.loc[group_mask,'fitness'].to_numpy(dtype = np.float32, copy = True)
-            #Add random noise to training target data proportional to target error (if specified)
-            if g=="training" and training_resample:
-                np.random.seed(seed+fold*1000000)
-                y_values = y_values + np.asarray(
-                    [np.random.normal(scale = i) for i in list(self.fitness.loc[group_mask,'sigma'])],
-                    dtype = np.float32)
-            data_dict[g]['y'] = torch.reshape(torch.tensor(y_values[sind], dtype=torch.float32), (-1, 1))
-            #Target weight tensor
-            weight_values = self.fitness.loc[group_mask,'weight'].to_numpy(dtype = np.float32, copy = True)
-            data_dict[g]['y_wt'] = torch.reshape(torch.tensor(weight_values[sind], dtype=torch.float32), (-1, 1))
+            data_dict[g]['y'] = split_data[g]['y'][sind,:]
+            data_dict[g]['y_wt'] = split_data[g]['y_wt'][sind,:]
         return data_dict
 
     def get_data_index(
@@ -1637,7 +2146,9 @@ class MochiData:
             dtype = torch.float32)
         #Feature tensor
         data_dict['X'] = torch.tensor(
-            self.Xohi.iloc[indices,:].to_numpy(dtype = feature_numpy_dtype, copy = True),
+            self.materialize_feature_matrix(
+                row_indices = indices,
+                dtype = feature_numpy_dtype),
             dtype = feature_tensor_dtype)
         #Target tensor
         data_dict['y'] = torch.reshape(
@@ -1785,6 +2296,165 @@ class FastTensorDataLoader:
             batch = tuple(t[batch_indices] for t in self.tensors)
         self.i += self.batch_size
         return batch
+
+    def __len__(self):
+        return self.n_batches
+
+class MaterializingRowDataLoader:
+    """
+    A DataLoader-like object with cached, prefetched feature blocks.
+    """
+    def __init__(
+        self,
+        data,
+        row_indices,
+        select,
+        y,
+        y_wt,
+        batch_size = 32,
+        shuffle = False):
+        """
+        Initialize an on-demand row loader.
+
+        :param data: MochiData instance (required).
+        :param row_indices: Row indices for this split (required).
+        :param select: Select tensor (required).
+        :param y: Target tensor (required).
+        :param y_wt: Target-weight tensor (required).
+        :param batch_size: Batch size to load (default:32).
+        :param shuffle: Whether to shuffle batches each epoch (default:False).
+        :returns: MaterializingRowDataLoader object.
+        """
+        self.data = data
+        self.row_indices = np.asarray(row_indices, dtype = np.int64)
+        self.select = select
+        self.y = y
+        self.y_wt = y_wt
+        assert self.select.shape[0] == len(self.row_indices)
+        assert self.y.shape[0] == len(self.row_indices)
+        assert self.y_wt.shape[0] == len(self.row_indices)
+        self.dataset_len = len(self.row_indices)
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+        self.feature_numpy_dtype = np.uint8 if compact_feature_tensors() else np.float32
+        self.feature_tensor_dtype = torch.uint8 if compact_feature_tensors() else torch.float32
+        self.prefetch_blocks = max(1, int(os.environ.get("MOCHI_PREFETCH_BLOCKS", "2")))
+        self.prefetch_batches = max(1, int(os.environ.get("MOCHI_PREFETCH_BATCHES", "8")))
+        self.block_rows = max(
+            self.batch_size,
+            int(os.environ.get("MOCHI_FEATURE_BLOCK_ROWS", str(self.batch_size * self.prefetch_batches))))
+        self.max_cached_blocks = max(1, int(os.environ.get("MOCHI_MAX_CACHED_BLOCKS", "3")))
+        self.pin_memory = torch.cuda.is_available()
+        self.block_slices = [
+            (start, min(start + self.block_rows, self.dataset_len))
+            for start in range(0, self.dataset_len, self.block_rows)]
+        self.block_cache = collections.OrderedDict()
+        self._prefetch_thread = None
+        self._prefetch_queue = None
+        self._current_block = None
+        self._current_block_pos = 0
+        n_batches, remainder = divmod(self.dataset_len, self.batch_size)
+        if remainder > 0:
+            n_batches += 1
+        self.n_batches = n_batches
+
+    def _maybe_pin(
+        self,
+        tensor):
+        """
+        Pin CPU tensor memory when CUDA is available.
+
+        :param tensor: Tensor to pin (required).
+        :returns: Tensor.
+        """
+        if self.pin_memory and tensor.device.type == "cpu":
+            return tensor.pin_memory()
+        return tensor
+
+    def _get_cached_block(
+        self,
+        block_id):
+        """
+        Get or materialize a canonical split-local feature block.
+
+        :param block_id: Canonical block identifier (required).
+        :returns: Tuple of tensors.
+        """
+        if block_id in self.block_cache:
+            self.block_cache.move_to_end(block_id)
+            return self.block_cache[block_id]
+        start, stop = self.block_slices[block_id]
+        block = (
+            self._maybe_pin(self.select[start:stop].contiguous()),
+            self._maybe_pin(torch.tensor(
+                self.data.materialize_feature_matrix(
+                    row_indices = self.row_indices[start:stop],
+                    dtype = self.feature_numpy_dtype),
+                dtype = self.feature_tensor_dtype)),
+            self._maybe_pin(self.y[start:stop].contiguous()),
+            self._maybe_pin(self.y_wt[start:stop].contiguous()))
+        self.block_cache[block_id] = block
+        self.block_cache.move_to_end(block_id)
+        while len(self.block_cache) > self.max_cached_blocks:
+            self.block_cache.popitem(last = False)
+        return block
+
+    def _prefetch_worker(
+        self):
+        """
+        Materialize upcoming blocks in the background.
+
+        :returns: Nothing.
+        """
+        for block_id, block_order in self._epoch_blocks:
+            block = self._get_cached_block(block_id)
+            self._prefetch_queue.put((block, block_order))
+        self._prefetch_queue.put(None)
+
+    def __iter__(self):
+        block_ids = list(range(len(self.block_slices)))
+        if self.shuffle:
+            block_ids = torch.randperm(len(block_ids)).tolist()
+        self._epoch_blocks = []
+        for block_id in block_ids:
+            start, stop = self.block_slices[block_id]
+            block_len = stop - start
+            if self.shuffle:
+                block_order = torch.randperm(block_len)
+            else:
+                block_order = None
+            self._epoch_blocks.append((block_id, block_order))
+        self._prefetch_queue = queue.Queue(maxsize = self.prefetch_blocks)
+        self._prefetch_thread = threading.Thread(
+            target = self._prefetch_worker,
+            daemon = True)
+        self._prefetch_thread.start()
+        self._current_block = None
+        self._current_block_pos = 0
+        self._batches_yielded = 0
+        return self
+
+    def __next__(self):
+        while True:
+            if self._current_block is None or self._current_block_pos >= self._current_block[0].shape[0]:
+                next_item = self._prefetch_queue.get()
+                if next_item is None:
+                    raise StopIteration
+                self._current_block, self._current_order = next_item
+                self._current_block_pos = 0
+            select_block, X_block, y_block, y_wt_block = self._current_block
+            stop = min(self._current_block_pos + self.batch_size, select_block.shape[0])
+            if self._current_order is None:
+                batch_index = slice(self._current_block_pos, stop)
+            else:
+                batch_index = self._current_order[self._current_block_pos:stop]
+            self._current_block_pos = stop
+            self._batches_yielded += 1
+            return (
+                select_block[batch_index],
+                X_block[batch_index],
+                y_block[batch_index],
+                y_wt_block[batch_index])
 
     def __len__(self):
         return self.n_batches
