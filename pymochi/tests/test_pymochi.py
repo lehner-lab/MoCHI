@@ -288,6 +288,72 @@ def test_MochiData_sparse_reorder_feature_columns_preserves_selected_values():
         for name in reordered_columns])
     assert np.array_equal(materialized, expected)
 
+
+def test_MaterializingRowDataLoader_cpu_batches_match_materialized_split():
+    """Test row loader matches the expected CPU split tensors without shuffling."""
+    mochi_data = get_demo_mochi_data(
+        max_interaction_order = 2,
+        downsample_observations = 0.02,
+        seed = 1)
+    split_data = mochi_data.get_split_observation_data(
+        fold = 1,
+        seed = 1,
+        training_resample = False)
+    validation = split_data['validation']
+    loader = MaterializingRowDataLoader(
+        data = mochi_data,
+        row_indices = validation['row_indices'],
+        select = validation['select'],
+        y = validation['y'],
+        y_wt = validation['y_wt'],
+        device = torch.device("cpu"),
+        batch_size = 4,
+        shuffle = False)
+    batches = list(loader)
+    select = torch.cat([batch[0] for batch in batches], dim = 0)
+    X = torch.cat([batch[1] for batch in batches], dim = 0)
+    y = torch.cat([batch[2] for batch in batches], dim = 0)
+    y_wt = torch.cat([batch[3] for batch in batches], dim = 0)
+    expected_X = torch.tensor(
+        mochi_data.materialize_feature_matrix(
+            row_indices = validation['row_indices'],
+            dtype = loader.feature_numpy_dtype),
+        dtype = loader.feature_tensor_dtype)
+    assert torch.equal(select, validation['select'])
+    assert torch.equal(X, expected_X)
+    assert torch.equal(y, validation['y'])
+    assert torch.equal(y_wt, validation['y_wt'])
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason = "CUDA required")
+def test_DevicePrefetchLoader_cuda_prefetch_yields_device_batches(monkeypatch):
+    """Test device prefetcher stages row-loader batches onto CUDA memory."""
+    monkeypatch.setenv("MOCHI_GPU_PREFETCH", "1")
+    mochi_data = get_demo_mochi_data(
+        max_interaction_order = 2,
+        downsample_observations = 0.02,
+        seed = 1)
+    split_data = mochi_data.get_split_observation_data(
+        fold = 1,
+        seed = 1,
+        training_resample = False)
+    validation = split_data['validation']
+    loader = MaterializingRowDataLoader(
+        data = mochi_data,
+        row_indices = validation['row_indices'],
+        select = validation['select'],
+        y = validation['y'],
+        y_wt = validation['y_wt'],
+        batch_size = 4,
+        shuffle = False)
+    batch = next(iter(DevicePrefetchLoader(loader, torch.device("cuda"))))
+    torch.cuda.synchronize()
+    assert batch[0].device.type == "cuda"
+    assert batch[1].device.type == "cuda"
+    assert batch[1].dtype == torch.float32
+    assert batch[2].device.type == "cuda"
+    assert batch[3].device.type == "cuda"
+
 def test_MochiTask_init_no_MochiData_empty_directory(capsys):
     """Test MochiTask initialization when no MochiData nor saved MochiTask in directory supplied"""
     with pytest.raises(ValueError) as e_info:

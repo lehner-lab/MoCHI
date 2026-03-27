@@ -47,6 +47,69 @@ def prepare_feature_tensor(
         tensor = tensor.to(torch.float32)
     return tensor
 
+class DevicePrefetchLoader:
+    """
+    Overlap host-to-device copies of the next batch with current compute.
+    """
+    def __init__(
+        self,
+        dataloader,
+        device):
+        self.dataloader = dataloader
+        self.device = device
+        prefetch_override = os.environ.get("MOCHI_GPU_PREFETCH", "1").lower()
+        self.enabled = (
+            self.device.type == "cuda" and
+            torch.cuda.is_available() and
+            prefetch_override not in ["0", "false", "no", "off"])
+        self.stream = torch.cuda.Stream(device = self.device) if self.enabled else None
+        self.loader_iter = None
+        self.next_batch = None
+
+    def _move_batch_to_device(
+        self,
+        batch):
+        select, X, y, y_wt = batch
+        return (
+            move_tensor_to_device(select, self.device),
+            prepare_feature_tensor(X, self.device),
+            move_tensor_to_device(y, self.device),
+            move_tensor_to_device(y_wt, self.device))
+
+    def _preload(self):
+        try:
+            batch = next(self.loader_iter)
+        except StopIteration:
+            self.next_batch = None
+            return
+        if not self.enabled:
+            self.next_batch = self._move_batch_to_device(batch)
+            return
+        with torch.cuda.stream(self.stream):
+            self.next_batch = self._move_batch_to_device(batch)
+
+    def __iter__(self):
+        self.loader_iter = iter(self.dataloader)
+        self.next_batch = None
+        self._preload()
+        return self
+
+    def __next__(self):
+        if self.next_batch is None:
+            raise StopIteration
+        if self.enabled:
+            current_stream = torch.cuda.current_stream(device = self.device)
+            current_stream.wait_stream(self.stream)
+        batch = self.next_batch
+        if self.enabled:
+            for tensor in batch:
+                tensor.record_stream(current_stream)
+        self._preload()
+        return batch
+
+    def __len__(self):
+        return len(self.dataloader)
+
 def tensors_fit_in_device_memory(
     tensors,
     device,
@@ -404,12 +467,8 @@ class MochiModel(torch.nn.Module):
         self.train()
         batch = 0
         mask = self.mask
-        for select, X, y, y_wt in dataloader:
+        for select, X, y, y_wt in DevicePrefetchLoader(dataloader, device):
             batch += 1
-            select = move_tensor_to_device(select, device)
-            X = prepare_feature_tensor(X, device)
-            y = move_tensor_to_device(y, device)
-            y_wt = move_tensor_to_device(y_wt, device)
             optimizer.zero_grad()
             with torch.amp.autocast(device_type = device.type, enabled = use_amp):
                 # Regularisation of additive trait parameters (excluding WT)
@@ -454,11 +513,7 @@ class MochiModel(torch.nn.Module):
         val_WT_resid = []
         with torch.no_grad():
             mask = self.mask
-            for select, X, y, y_wt in dataloader:
-                select = move_tensor_to_device(select, device)
-                X = prepare_feature_tensor(X, device)
-                y = move_tensor_to_device(y, device)
-                y_wt = move_tensor_to_device(y_wt, device)
+            for select, X, y, y_wt in DevicePrefetchLoader(dataloader, device):
                 with torch.amp.autocast(device_type = device.type, enabled = use_amp):
                     # Regularisation of additive trait parameters (excluding WT)
                     l1_norm, l2_norm = self.calculate_l1l2_norm()
@@ -1624,6 +1679,7 @@ class MochiTask():
             select = split_data['training']['select'],
             y = split_data['training']['y'],
             y_wt = split_data['training']['y_wt'],
+            device = self.device,
             batch_size = batch_size,
             shuffle = True)
         valid_dataloader = MaterializingRowDataLoader(
@@ -1632,6 +1688,7 @@ class MochiTask():
             select = split_data['validation']['select'],
             y = split_data['validation']['y'],
             y_wt = split_data['validation']['y_wt'],
+            device = self.device,
             batch_size = batch_size,
             shuffle = False)
         test_dataloader = MaterializingRowDataLoader(
@@ -1640,6 +1697,7 @@ class MochiTask():
             select = split_data['test']['select'],
             y = split_data['test']['y'],
             y_wt = split_data['test']['y_wt'],
+            device = self.device,
             batch_size = batch_size,
             shuffle = False)
 

@@ -2311,6 +2311,7 @@ class MaterializingRowDataLoader:
         select,
         y,
         y_wt,
+        device = None,
         batch_size = 32,
         shuffle = False):
         """
@@ -2411,6 +2412,35 @@ class MaterializingRowDataLoader:
             self._prefetch_queue.put((block, block_order))
         self._prefetch_queue.put(None)
 
+    def _next_cpu_batch(
+        self):
+        """
+        Get the next CPU batch from the current prefetched block stream.
+
+        :returns: Tuple of tensors or None when exhausted.
+        """
+        while True:
+            if self._current_block is None or self._current_block_pos >= self._current_block[0].shape[0]:
+                next_item = self._prefetch_queue.get()
+                if next_item is None:
+                    return None
+                self._current_block, self._current_order = next_item
+                self._current_block_pos = 0
+            select_block, X_block, y_block, y_wt_block = self._current_block
+            stop = min(self._current_block_pos + self.batch_size, select_block.shape[0])
+            if self._current_order is None:
+                batch_index = slice(self._current_block_pos, stop)
+            else:
+                batch_index = self._current_order[self._current_block_pos:stop]
+            self._current_block_pos = stop
+            batch = tuple(self._maybe_pin(tensor.contiguous()) for tensor in (
+                select_block[batch_index],
+                X_block[batch_index],
+                y_block[batch_index],
+                y_wt_block[batch_index]))
+            self._batches_yielded += 1
+            return batch
+
     def __iter__(self):
         block_ids = list(range(len(self.block_slices)))
         if self.shuffle:
@@ -2435,26 +2465,10 @@ class MaterializingRowDataLoader:
         return self
 
     def __next__(self):
-        while True:
-            if self._current_block is None or self._current_block_pos >= self._current_block[0].shape[0]:
-                next_item = self._prefetch_queue.get()
-                if next_item is None:
-                    raise StopIteration
-                self._current_block, self._current_order = next_item
-                self._current_block_pos = 0
-            select_block, X_block, y_block, y_wt_block = self._current_block
-            stop = min(self._current_block_pos + self.batch_size, select_block.shape[0])
-            if self._current_order is None:
-                batch_index = slice(self._current_block_pos, stop)
-            else:
-                batch_index = self._current_order[self._current_block_pos:stop]
-            self._current_block_pos = stop
-            self._batches_yielded += 1
-            return (
-                select_block[batch_index],
-                X_block[batch_index],
-                y_block[batch_index],
-                y_wt_block[batch_index])
+        batch = self._next_cpu_batch()
+        if batch is None:
+            raise StopIteration
+        return batch
 
     def __len__(self):
         return self.n_batches
