@@ -1745,16 +1745,15 @@ class MochiTask():
         #Model data
         if data is None:
             data = self.data
-        model_data = data.get_data_index()
-        preload_predictions = tensors_fit_in_device_memory(
-            tensors = [model_data["select"], model_data["X"]],
-            device = self.device)
-        if preload_predictions:
-            model_data["select"] = move_tensor_to_device(model_data["select"], self.device)
-            model_data["X"] = prepare_feature_tensor(model_data["X"], self.device)
-        model_data_loader = FastTensorDataLoader(
-            model_data["select"], 
-            model_data["X"], batch_size=1024, shuffle=False)
+        row_indices_all = np.asarray(list(data.phenotypes.index), dtype = np.int64)
+        block_rows = max(
+            1,
+            int(os.environ.get(
+                "MOCHI_PREDICT_BLOCK_ROWS",
+                os.environ.get("MOCHI_FEATURE_BLOCK_ROWS", "8192"))))
+        batch_size = 1024
+        feature_numpy_dtype = np.uint8 if compact_feature_tensors() else np.float32
+        feature_tensor_dtype = torch.uint8 if compact_feature_tensors() else torch.float32
 
         #Predictions on all data
         pred_list = []
@@ -1766,36 +1765,54 @@ class MochiTask():
             max_at = max([len(j) for j in model.model_design.trait])
             mask = model.mask
             # mask_list = [torch.narrow(mask, 0, j, 1) for j in range(mask.shape[0])]
-            y_pred_list = []
-            at_pred_list = []
-            for select, X in model_data_loader:
-                select = move_tensor_to_device(select, self.device)
-                X = prepare_feature_tensor(X, self.device)
-                #Predicted phenotype
-                with torch.amp.autocast(device_type = self.device.type, enabled = self.use_amp):
-                    y_pred_list += [model(select, X, mask).detach().cpu().numpy().flatten()]
+            y_pred = np.empty(len(row_indices_all), dtype = np.float32)
+            at_pred = np.empty((len(row_indices_all), max_at), dtype = np.float32)
+            for block_start in range(0, len(row_indices_all), block_rows):
+                block_stop = min(block_start + block_rows, len(row_indices_all))
+                block_row_indices = row_indices_all[block_start:block_stop]
+                select_block = torch.tensor(
+                    data.phenotypes.iloc[block_row_indices,:].to_numpy(dtype = np.float32, copy = True),
+                    dtype = torch.float32)
+                X_block = torch.tensor(
+                    data.materialize_feature_matrix(
+                        row_indices = block_row_indices,
+                        dtype = feature_numpy_dtype),
+                    dtype = feature_tensor_dtype)
+                block_loader = FastTensorDataLoader(
+                    select_block,
+                    X_block,
+                    batch_size = batch_size,
+                    shuffle = False)
+                block_offset = block_start
+                for select, X in block_loader:
+                    select = move_tensor_to_device(select, self.device)
+                    X = prepare_feature_tensor(X, self.device)
+                    #Predicted phenotype
+                    with torch.amp.autocast(device_type = self.device.type, enabled = self.use_amp):
+                        y_pred_batch = model(select, X, mask).detach().cpu().numpy().flatten()
 
-                #Additive traits
-                additive_traits = []
-                select_list = [torch.narrow(select, 1, j, 1) for j in range(select.shape[1])]
-                #Loop over phenotypes
-                for pi in range(len(model.model_design)):
-                    #Additive traits for this phenotype
-                    additive_traits_p = []
-                    for at_pi in range(max_at):
-                        if at_pi<len(model.model_design.loc[pi,'trait']):
-                            # additive_traits_p += [model.additivetraits[model.model_design.loc[pi,'trait'][at_pi]-1](torch.mul(X, mask_list[pi]))]
-                            additive_traits_p += [model.additivetraits[model.model_design.loc[pi,'trait'][at_pi]-1](torch.mul(
-                                X, 
-                                torch.reshape(torch.narrow(torch.narrow(mask, 0, model.model_design.loc[pi,'trait'][at_pi]-1, 1), 1, pi, 1), (1, -1))))]
-                        else:
-                            additive_traits_p += [torch.mul(torch.clone(additive_traits_p[0]),0)]
-                    #Select
-                    additive_traits += [torch.concat([torch.mul(j, select_list[pi]) for j in additive_traits_p], dim=1)]
-                at_pred_list += [sum(additive_traits).detach().cpu().numpy()]
-            #Concatenate
-            y_pred = np.concatenate(y_pred_list)
-            at_pred = np.concatenate(at_pred_list)
+                    #Additive traits
+                    additive_traits = []
+                    select_list = [torch.narrow(select, 1, j, 1) for j in range(select.shape[1])]
+                    #Loop over phenotypes
+                    for pi in range(len(model.model_design)):
+                        #Additive traits for this phenotype
+                        additive_traits_p = []
+                        for at_pi in range(max_at):
+                            if at_pi<len(model.model_design.loc[pi,'trait']):
+                                # additive_traits_p += [model.additivetraits[model.model_design.loc[pi,'trait'][at_pi]-1](torch.mul(X, mask_list[pi]))]
+                                additive_traits_p += [model.additivetraits[model.model_design.loc[pi,'trait'][at_pi]-1](torch.mul(
+                                    X, 
+                                    torch.reshape(torch.narrow(torch.narrow(mask, 0, model.model_design.loc[pi,'trait'][at_pi]-1, 1), 1, pi, 1), (1, -1))))]
+                            else:
+                                additive_traits_p += [torch.mul(torch.clone(additive_traits_p[0]),0)]
+                        #Select
+                        additive_traits += [torch.concat([torch.mul(j, select_list[pi]) for j in additive_traits_p], dim=1)]
+                    at_pred_batch = sum(additive_traits).detach().cpu().numpy()
+                    batch_stop = block_offset + len(y_pred_batch)
+                    y_pred[block_offset:batch_stop] = y_pred_batch
+                    at_pred[block_offset:batch_stop,:] = at_pred_batch
+                    block_offset = batch_stop
             #Target data frame
             y_df = pd.DataFrame({
                 'fold_'+str(model.metadata.fold): y_pred})
@@ -1815,7 +1832,7 @@ class MochiTask():
         pred_df['ci95'] = pred_df['std']*1.96*2
         #Select data frame
         select_df = pd.DataFrame(
-            model_data["select"].detach().cpu().numpy(), 
+            data.phenotypes.iloc[row_indices_all,:].to_numpy(dtype = np.float32, copy = True),
             columns = data.phenotype_names)
         #Fold data frame
         fold_df = pd.DataFrame({
