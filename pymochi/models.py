@@ -307,6 +307,50 @@ class MochiModel(torch.nn.Module):
         #Mask coefficients that are impossible to fit
         self.register_buffer("mask", mask)
 
+    def _ensure_forward_metadata(self):
+        """
+        Cache phenotype metadata used repeatedly in forward passes.
+
+        :returns: Nothing.
+        """
+        if hasattr(self, "_forward_trait_indices"):
+            return
+        self._forward_trait_indices = [
+            tuple([trait_index - 1 for trait_index in trait_list])
+            for trait_list in self.model_design['trait']]
+        self._forward_transformations = list(self.model_design['transformation'])
+        self._forward_sos_indices = []
+        has_sos_index = 'sos_index' in self.model_design.columns
+        for phenotype_index in range(len(self.model_design)):
+            if (
+                has_sos_index and
+                self._forward_transformations[phenotype_index] == "SumOfSigmoids"):
+                self._forward_sos_indices.append(
+                    int(self.model_design.loc[phenotype_index, 'sos_index']))
+            else:
+                self._forward_sos_indices.append(None)
+
+    def _compute_additive_trait_matrix(
+        self,
+        X,
+        mask,
+        phenotype_index,
+        stacked_trait_weights):
+        """
+        Evaluate all additive traits for one phenotype in a single linear call.
+
+        :param X: Feature tensor describing input sequences and interactions (required).
+        :param mask: Mask tensor which sets corresponding features to zero (required).
+        :param phenotype_index: Phenotype index (required).
+        :param stacked_trait_weights: Stacked additive-trait weights (required).
+        :returns: Tensor of additive trait outputs for the phenotype.
+        """
+        trait_indices = self._forward_trait_indices[phenotype_index]
+        effective_weights = (
+            stacked_trait_weights[list(trait_indices)] *
+            mask[list(trait_indices), phenotype_index, :])
+        return F.linear(X, effective_weights)
+
     def forward(
         self, 
         select, 
@@ -322,40 +366,41 @@ class MochiModel(torch.nn.Module):
         """  
         if mask is None:
             mask = self.mask
-        #Split select tesnsor into list
-        select_list = [torch.narrow(select, 1, i, 1) for i in range(select.shape[1])]
-
-        # #Split mask tensor into list
-        # mask_list = [torch.narrow(mask, 0, i, 1) for i in range(mask.shape[0])]
+        self._ensure_forward_metadata()
+        stacked_trait_weights = torch.cat(
+            [layer.weight for layer in self.additivetraits],
+            dim = 0)
 
         #Loop over all phenotypes
         observed_phenotypes = []
         for i in range(len(self.model_design)):
-            #Additive traits
-            # additive_traits = [self.additivetraits[j-1](torch.mul(X, mask_list[i])) for j in self.model_design.loc[i,'trait']]
-            additive_traits = [self.additivetraits[j-1](torch.mul(
-                X, 
-                torch.reshape(torch.narrow(torch.narrow(mask, 0, j-1, 1), 1, i, 1), (1, -1)))) for j in self.model_design.loc[i,'trait']]
+            additive_trait_matrix = self._compute_additive_trait_matrix(
+                X = X,
+                mask = mask,
+                phenotype_index = i,
+                stacked_trait_weights = stacked_trait_weights)
+            additive_traits = [
+                torch.narrow(additive_trait_matrix, 1, j, 1)
+                for j in range(additive_trait_matrix.shape[1])]
             #Molecular phenotypes
-            if self.model_design.loc[i,'transformation'] not in ["SumOfSigmoids"]:
+            if self._forward_transformations[i] not in ["SumOfSigmoids"]:
                 globalparams = self.globalparams[i]
-                transformed_trait = get_transformation(self.model_design.loc[i,'transformation'], custom = self.custom_transformations)(additive_traits, globalparams)           
-            elif self.model_design.loc[i,'transformation'] == "SumOfSigmoids":
+                transformed_trait = get_transformation(
+                    self._forward_transformations[i],
+                    custom = self.custom_transformations)(additive_traits, globalparams)
+            elif self._forward_transformations[i] == "SumOfSigmoids":
                 #SumOfSigmoids layers
-                transformed_trait = None
+                transformed_trait = additive_trait_matrix
+                sos_index = self._forward_sos_indices[i]
                 for j in range(len(self.sumofsigmoids_list)):
-                    if j == 0:
-                        transformed_trait = torch.sigmoid(self.sumofsigmoids_list[j][int(self.model_design.loc[i,'sos_index'])](torch.cat(additive_traits, 1)))
-                    elif j != (len(self.sumofsigmoids_list)-1):
-                        transformed_trait = torch.sigmoid(self.sumofsigmoids_list[j][int(self.model_design.loc[i,'sos_index'])](transformed_trait))
-                    else:
-                        if self.sos_outputlinear:
-                            transformed_trait = self.sumofsigmoids_list[j][int(self.model_design.loc[i,'sos_index'])](transformed_trait)
-                        else:
-                            transformed_trait = torch.sigmoid(self.sumofsigmoids_list[j][int(self.model_design.loc[i,'sos_index'])](transformed_trait))
+                    transformed_trait = self.sumofsigmoids_list[j][sos_index](transformed_trait)
+                    if j != (len(self.sumofsigmoids_list)-1) or not self.sos_outputlinear:
+                        transformed_trait = torch.sigmoid(transformed_trait)
 
             #Observed phenotypes
-            observed_phenotypes += [torch.mul(self.linears[i](transformed_trait), select_list[i])]
+            observed_phenotypes += [torch.mul(
+                self.linears[i](transformed_trait),
+                torch.narrow(select, 1, i, 1))]
         #Sum observed phenotypes
         return torch.stack(observed_phenotypes, dim=0).sum(dim=0)
 

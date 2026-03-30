@@ -354,6 +354,99 @@ def test_DevicePrefetchLoader_cuda_prefetch_yields_device_batches(monkeypatch):
     assert batch[2].device.type == "cuda"
     assert batch[3].device.type == "cuda"
 
+
+def forward_reference_loop(
+    model,
+    select,
+    X,
+    mask):
+    """Reference the original forward-loop implementation for regression checks."""
+    select_list = [torch.narrow(select, 1, i, 1) for i in range(select.shape[1])]
+    observed_phenotypes = []
+    for i in range(len(model.model_design)):
+        additive_traits = [
+            model.additivetraits[j-1](torch.mul(
+                X,
+                torch.reshape(
+                    torch.narrow(torch.narrow(mask, 0, j-1, 1), 1, i, 1),
+                    (1, -1))))
+            for j in model.model_design.loc[i, 'trait']]
+        if model.model_design.loc[i, 'transformation'] != "SumOfSigmoids":
+            transformed_trait = get_transformation(
+                model.model_design.loc[i, 'transformation'],
+                custom = model.custom_transformations)(
+                    additive_traits,
+                    model.globalparams[i])
+        else:
+            transformed_trait = None
+            for j in range(len(model.sumofsigmoids_list)):
+                if j == 0:
+                    transformed_trait = torch.sigmoid(
+                        model.sumofsigmoids_list[j][int(model.model_design.loc[i, 'sos_index'])](
+                            torch.cat(additive_traits, 1)))
+                elif j != (len(model.sumofsigmoids_list)-1):
+                    transformed_trait = torch.sigmoid(
+                        model.sumofsigmoids_list[j][int(model.model_design.loc[i, 'sos_index'])](
+                            transformed_trait))
+                else:
+                    if model.sos_outputlinear:
+                        transformed_trait = model.sumofsigmoids_list[j][int(model.model_design.loc[i, 'sos_index'])](
+                            transformed_trait)
+                    else:
+                        transformed_trait = torch.sigmoid(
+                            model.sumofsigmoids_list[j][int(model.model_design.loc[i, 'sos_index'])](
+                                transformed_trait))
+        observed_phenotypes += [
+            torch.mul(model.linears[i](transformed_trait), select_list[i])]
+    return torch.stack(observed_phenotypes, dim = 0).sum(dim = 0)
+
+
+def test_MochiModel_forward_matches_reference_loop():
+    """Test forward refactor preserves the original masked additive-trait math."""
+    mochi_data = get_demo_mochi_data(
+        max_interaction_order = 2,
+        downsample_observations = 0.02,
+        seed = 1)
+    split_data = mochi_data.get_split_observation_data(
+        fold = 1,
+        seed = 1,
+        training_resample = False)
+    validation = split_data['validation']
+    X = torch.tensor(
+        mochi_data.materialize_feature_matrix(
+            row_indices = validation['row_indices'],
+            dtype = np.uint8),
+        dtype = torch.float32)
+    model = MochiModel(
+        input_shape = X.shape[1],
+        mask = validation['mask'].clone(),
+        model_design = mochi_data.model_design.copy(),
+        custom_transformations = mochi_data.custom_transformations,
+        sos_architecture = [20],
+        sos_outputlinear = False)
+    custom_mask = validation['mask'].clone()
+    custom_mask[0, 0, 0] = 0
+    with torch.no_grad():
+        expected_default = forward_reference_loop(
+            model = model,
+            select = validation['select'],
+            X = X,
+            mask = model.mask)
+        actual_default = model(
+            select = validation['select'],
+            X = X)
+        expected_override = forward_reference_loop(
+            model = model,
+            select = validation['select'],
+            X = X,
+            mask = custom_mask)
+        actual_override = model(
+            select = validation['select'],
+            X = X,
+            mask = custom_mask)
+    assert torch.allclose(actual_default, expected_default)
+    assert torch.allclose(actual_override, expected_override)
+
 def test_MochiTask_init_no_MochiData_empty_directory(capsys):
     """Test MochiTask initialization when no MochiData nor saved MochiTask in directory supplied"""
     with pytest.raises(ValueError) as e_info:
