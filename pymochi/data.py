@@ -792,6 +792,41 @@ class MochiData:
         int_order_dict = {k:len(all_features[k]) for k in all_features}
         return (all_features, int_order_dict)
 
+    def collect_observed_interaction_rows(
+        self,
+        xoh_values,
+        max_order,
+        allowed_interaction_keys = None):
+        """
+        Collect observed interaction row indices by walking active mutations per row.
+
+        :param xoh_values: Dense uint8 base feature matrix (required).
+        :param max_order: Maximum interaction order to collect (required).
+        :param allowed_interaction_keys: Optional set of allowed feature-index tuples.
+        :returns: Dictionary mapping canonical interaction names to active-row arrays.
+        """
+        xoh_columns = np.asarray(self.Xoh.columns)
+        mutation_feature_indices = np.flatnonzero(xoh_columns != "WT")
+        interaction_rows = collections.defaultdict(list)
+        for row_index in range(xoh_values.shape[0]):
+            active_feature_indices = mutation_feature_indices[
+                np.flatnonzero(xoh_values[row_index, mutation_feature_indices])]
+            if len(active_feature_indices) < 2:
+                continue
+            active_feature_indices = active_feature_indices.tolist()
+            for order in range(2, min(max_order, len(active_feature_indices)) + 1):
+                for interaction_key in itertools.combinations(active_feature_indices, order):
+                    if (
+                        allowed_interaction_keys is not None and
+                        interaction_key not in allowed_interaction_keys
+                    ):
+                        continue
+                    interaction_rows[interaction_key].append(row_index)
+        return {
+            "_".join(xoh_columns[list(interaction_key)]): np.asarray(row_indices, dtype = np.int32)
+            for interaction_key, row_indices in interaction_rows.items()
+        }
+
     def get_xohi_cache_paths(
         self,
         max_order,
@@ -1532,64 +1567,62 @@ class MochiData:
             print("Warning: Invalid feature names: "+",".join(invalid_features))
             # raise ValueError
 
-        #Select interactions
-        int_set = set()
-        int_order_dict_retained = {}
-        int_list_names = []
-        interaction_row_index_map = {}
-        #No shuffle if not downsampling
-        if downsample_interactions is None:
-            all_features_loop = {0: all_features_flat}
-        #Shuffle flattened features
-        elif type(downsample_interactions) in [float, int]:
-            random.seed(seed)
-            all_features_loop = {0: random.sample(all_features_flat, len(all_features_flat))}
-        #Shuffle features separately per order
-        else:
-            all_features_loop = {k:random.sample(all_features[k], len(all_features[k])) for k in all_features}
+        allowed_interaction_names = None
+        allowed_interaction_keys = None
+        if features != []:
+            allowed_interaction_names = {
+                name for name in features
+                if len(name.split("_")) > 1 and name in all_features_flat}
+            allowed_interaction_keys = {
+                tuple(sorted([xoh_column_index[i] for i in name.split("_")]))
+                for name in allowed_interaction_names}
 
-        #Loop over all orders
-        for n in all_features_loop.keys():
-            #Loop over all features of this order
-            for c in all_features_loop[n]:
-                c_split = c.split("_")
-                #Check if feature desired
-                if (c in features) or features==[]:
-                    feature_idx = [xoh_column_index[i] for i in c_split]
-                    int_col = np.all(xoh_values[:,feature_idx] == 1, axis = 1).astype(np.uint8, copy = False)
-                    #Check if minimum number of observations satisfied
-                    if int(np.sum(int_col)) >= min_observed:
-                        int_list_names += [c]
-                        int_set.add(c)
-                        interaction_row_index_map[c] = np.flatnonzero(int_col).astype(np.int32, copy = False)
-                        if len(c_split) not in int_order_dict_retained.keys():
-                            int_order_dict_retained[len(c_split)] = 1
-                        else:
-                            int_order_dict_retained[len(c_split)] += 1
-                    # else:
-                    #     if len(c_split)==3 and sum(int_col)==1:
-                    #         print(c)
-                    #Check memory footprint
-                    if len(int_list_names)*len(self.Xoh) > max_cells:
-                        print(f"Error: Too many interaction terms: number of feature matrix cells >{max_cells:>.0e}")
-                        raise ValueError
-                    #Check if sufficient features obtained
-                    if type(downsample_interactions) == float:
-                        if len(int_list_names) == int(len(all_features_flat)*downsample_interactions):
-                            break
-                    elif type(downsample_interactions) == int:
-                        if len(int_list_names) == downsample_interactions:
-                            break
-                    elif type(downsample_interactions) == dict:
-                        if len(c_split) in int_order_dict_retained.keys():
-                            if int_order_dict_retained[len(c_split)] > downsample_interactions[len(c_split)] and downsample_interactions[len(c_split)]!=(-1):
-                                removed_name = int_list_names.pop()
-                                int_set.remove(removed_name)
-                                del interaction_row_index_map[removed_name]
-                                int_order_dict_retained[len(c_split)] -= 1
-                                break
-                            elif int_order_dict_retained == downsample_interactions:
-                                break
+        interaction_row_index_map = {
+            name: row_indices
+            for name, row_indices in self.collect_observed_interaction_rows(
+                xoh_values = xoh_values,
+                max_order = max_order,
+                allowed_interaction_keys = allowed_interaction_keys).items()
+            if len(row_indices) >= min_observed
+        }
+
+        retained_names = list(interaction_row_index_map.keys())
+        if len(retained_names) * len(self.Xoh) > max_cells:
+            print(f"Error: Too many interaction terms: number of feature matrix cells >{max_cells:>.0e}")
+            raise ValueError
+
+        if downsample_interactions is None:
+            int_set = set(retained_names)
+        elif type(downsample_interactions) in [float, int]:
+            target_count = (
+                int(len(all_features_flat) * downsample_interactions)
+                if type(downsample_interactions) == float else
+                downsample_interactions)
+            if target_count <= 0:
+                int_set = set(retained_names)
+            else:
+                random.seed(seed)
+                sampled_names = random.sample(retained_names, min(target_count, len(retained_names)))
+                int_set = set(sampled_names)
+        else:
+            int_set = set()
+            random.seed(seed)
+            for order, feature_names in all_features.items():
+                retained_for_order = [name for name in feature_names if name in interaction_row_index_map]
+                order_limit = downsample_interactions.get(order, -1)
+                if order_limit == -1 or order_limit >= len(retained_for_order):
+                    int_set.update(retained_for_order)
+                else:
+                    int_set.update(random.sample(retained_for_order, order_limit))
+
+        interaction_row_index_map = {
+            name: row_indices
+            for name, row_indices in interaction_row_index_map.items()
+            if name in int_set
+        }
+        int_list_names = [name for name in all_features_flat if name in int_set]
+        int_order_dict_retained = collections.Counter(
+            [len(name.split("_")) for name in int_list_names])
 
         print("... Total retained features (order:count): "+", ".join([str(i)+":"+str(int_order_dict_retained[i])+" ("+str(round(int_order_dict_retained[i]/int_order_dict[i]*100, 1))+"%)" for i in sorted(int_order_dict_retained.keys())]))
 
@@ -1978,12 +2011,22 @@ class MochiData:
             phenotype_mask = phenotype_values[:, p_index] == 1
             for i in range(k_folds):
                 row_indices = np.flatnonzero(np.logical_and(phenotype_mask, fold_values['fold_'+str(i+1)] == "training"))
-                for chunk_start, chunk_end, chunk in self.iterate_feature_chunks(
-                    row_indices = row_indices,
-                    chunk_size = coefficient_chunk_size):
-                    self.coefficients[p][chunk_start:chunk_end, i] = np.any(
-                        chunk != 0,
-                        axis = 0).astype(np.uint8, copy = False)
+                if len(row_indices) == 0:
+                    self.coefficients[p][:, i] = 0
+                elif self.is_sparse_feature_matrix():
+                    # The sparse backend already stores retained features as CSR,
+                    # so per-column activity can be read directly without
+                    # re-materializing dense feature chunks.
+                    self.coefficients[p][:, i] = np.asarray(
+                        self.feature_sparse_matrix[row_indices].getnnz(axis = 0) > 0,
+                        dtype = np.uint8).ravel()
+                else:
+                    for chunk_start, chunk_end, chunk in self.iterate_feature_chunks(
+                        row_indices = row_indices,
+                        chunk_size = coefficient_chunk_size):
+                        self.coefficients[p][chunk_start:chunk_end, i] = np.any(
+                            chunk != 0,
+                            axis = 0).astype(np.uint8, copy = False)
 
         # Coefficients specified to be fit (for each additive trait)
         self.coefficients_userspec = np.ones(

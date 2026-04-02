@@ -223,6 +223,29 @@ def test_MochiData_sparse_feature_store_materializes_expected_values():
     assert np.array_equal(materialized, expected)
 
 
+def test_MochiData_define_coefficient_groups_matches_materialized_training_activity():
+    """Test sparse coefficient groups match direct training-row feature activity."""
+    mochi_data = get_demo_mochi_data(
+        max_interaction_order = 2,
+        downsample_observations = 0.02,
+        seed = 1)
+    feature_count = len(mochi_data.get_feature_names())
+    phenotype_values = mochi_data.phenotypes.to_numpy(dtype = np.uint8, copy = False)
+    for phenotype_index, phenotype_name in enumerate(mochi_data.phenotypes.columns):
+        phenotype_mask = phenotype_values[:, phenotype_index] == 1
+        coefficient_matrix = mochi_data.coefficients[phenotype_name]
+        assert coefficient_matrix.shape == (feature_count, mochi_data.k_folds)
+        for fold in range(1, mochi_data.k_folds + 1):
+            fold_column = mochi_data.cvgroups[f"fold_{fold}"].to_numpy(copy = False)
+            training_rows = np.flatnonzero(np.logical_and(phenotype_mask, fold_column == "training"))
+            expected = np.any(
+                mochi_data.materialize_feature_matrix(
+                    row_indices = training_rows,
+                    dtype = np.uint8) != 0,
+                axis = 0).astype(np.uint8, copy = False)
+            assert np.array_equal(coefficient_matrix[:, fold - 1], expected)
+
+
 def test_MochiData_downsample_interactions_integer_and_string_match():
     """Test integer and string interaction limits keep the same single pairwise term."""
     full_data = get_demo_mochi_data(
