@@ -1446,7 +1446,7 @@ class MochiData:
     def one_hot_encode_interactions(
         self, 
         max_order = 2,
-        max_cells = 1e12,
+        max_cells = 1e13,
         min_observed = 2,
         features = [],
         downsample_interactions = None,
@@ -1455,7 +1455,7 @@ class MochiData:
         Add interaction terms to 1-hot encoding DataFrame.
 
         :param max_order: Maximum interaction order (default:2).
-        :param max_cells: Maximum matrix cells permitted (default:1trillion).
+        :param max_cells: Maximum matrix cells permitted (default:10trillion).
         :param min_observed: Minimum number of observations required to include interaction term (default:2).
         :param features: list of feature names to filter (default:[] i.e. all  features retained).
         :param downsample_interactions: number (if integer) or proportion (if float) or list of integer numbers (if string) of interaction terms to retain (optional).
