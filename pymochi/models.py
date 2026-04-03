@@ -32,6 +32,33 @@ def move_tensor_to_device(
         return tensor
     return tensor.to(device, non_blocking = (device.type == "cuda"))
 
+def feature_tensor_is_sparse_native(
+    tensor):
+    """
+    Check whether a feature payload uses sparse-native CSR indices.
+
+    :param tensor: Feature payload (required).
+    :returns: Boolean.
+    """
+    return isinstance(tensor, dict) and tensor.get("layout") == "csr_indices"
+
+def record_feature_tensor_stream(
+    tensor,
+    stream):
+    """
+    Record a CUDA stream on dense or sparse-native feature payloads.
+
+    :param tensor: Feature payload (required).
+    :param stream: CUDA stream (required).
+    :returns: Nothing.
+    """
+    if feature_tensor_is_sparse_native(tensor):
+        for key in ["indices", "offsets", "values"]:
+            if key in tensor:
+                tensor[key].record_stream(stream)
+        return
+    tensor.record_stream(stream)
+
 def prepare_feature_tensor(
     tensor,
     device):
@@ -42,6 +69,18 @@ def prepare_feature_tensor(
     :param device: Target torch device (required).
     :returns: Float32 tensor on target device.
     """
+    if feature_tensor_is_sparse_native(tensor):
+        prepared = {
+            "layout": tensor["layout"],
+            "shape": tensor["shape"],
+            "indices": move_tensor_to_device(tensor["indices"], device),
+            "offsets": move_tensor_to_device(tensor["offsets"], device)}
+        if "values" in tensor:
+            values = move_tensor_to_device(tensor["values"], device)
+            if values.dtype != torch.float32:
+                values = values.to(torch.float32)
+            prepared["values"] = values
+        return prepared
     tensor = move_tensor_to_device(tensor, device)
     if tensor.dtype != torch.float32:
         tensor = tensor.to(torch.float32)
@@ -103,7 +142,10 @@ class DevicePrefetchLoader:
         batch = self.next_batch
         if self.enabled:
             for tensor in batch:
-                tensor.record_stream(current_stream)
+                if feature_tensor_is_sparse_native(tensor):
+                    record_feature_tensor_stream(tensor, current_stream)
+                else:
+                    tensor.record_stream(current_stream)
         self._preload()
         return batch
 
@@ -124,7 +166,15 @@ def tensors_fit_in_device_memory(
     """
     if device.type != "cuda":
         return False
-    total_bytes = sum([tensor.nelement() * tensor.element_size() for tensor in tensors])
+    total_bytes = 0
+    for tensor in tensors:
+        if feature_tensor_is_sparse_native(tensor):
+            total_bytes += sum([
+                tensor[key].nelement() * tensor[key].element_size()
+                for key in ["indices", "offsets", "values"]
+                if key in tensor])
+        else:
+            total_bytes += tensor.nelement() * tensor.element_size()
     try:
         max_preload_bytes = int(torch.cuda.get_device_properties(device).total_memory * memory_fraction)
     except Exception:
@@ -349,6 +399,25 @@ class MochiModel(torch.nn.Module):
         effective_weights = (
             stacked_trait_weights[list(trait_indices)] *
             mask[list(trait_indices), phenotype_index, :])
+        if feature_tensor_is_sparse_native(X):
+            if X["indices"].numel() == 0:
+                return torch.zeros(
+                    (len(X["offsets"]), effective_weights.shape[0]),
+                    dtype = effective_weights.dtype,
+                    device = effective_weights.device)
+            embedding_weights = torch.transpose(effective_weights, 0, 1).contiguous()
+            if "values" in X:
+                return F.embedding_bag(
+                    input = X["indices"],
+                    weight = embedding_weights,
+                    offsets = X["offsets"],
+                    mode = "sum",
+                    per_sample_weights = X["values"])
+            return F.embedding_bag(
+                input = X["indices"],
+                weight = embedding_weights,
+                offsets = X["offsets"],
+                mode = "sum")
         return F.linear(X, effective_weights)
 
     def forward(
@@ -1857,6 +1926,7 @@ class MochiTask():
         batch_size = 1024
         feature_numpy_dtype = np.uint8 if compact_feature_tensors() else np.float32
         feature_tensor_dtype = torch.uint8 if compact_feature_tensors() else torch.float32
+        sparse_native = sparse_native_feature_batches() and data.is_sparse_feature_matrix()
 
         #Predictions on all data
         pred_list = []
@@ -1864,10 +1934,13 @@ class MochiTask():
         for i in range(len(models_subset)):
             model = models_subset[i]
             model.eval()
+            model._ensure_forward_metadata()
             #Model predictions
             max_at = max([len(j) for j in model.model_design.trait])
             mask = model.mask
-            # mask_list = [torch.narrow(mask, 0, j, 1) for j in range(mask.shape[0])]
+            stacked_trait_weights = torch.cat(
+                [layer.weight for layer in model.additivetraits],
+                dim = 0)
             y_pred = np.empty(len(row_indices_all), dtype = np.float32)
             at_pred = np.empty((len(row_indices_all), max_at), dtype = np.float32)
             for block_start in range(0, len(row_indices_all), block_rows):
@@ -1876,20 +1949,32 @@ class MochiTask():
                 select_block = torch.tensor(
                     data.phenotypes.iloc[block_row_indices,:].to_numpy(dtype = np.float32, copy = True),
                     dtype = torch.float32)
-                X_block = torch.tensor(
-                    data.materialize_feature_matrix(
-                        row_indices = block_row_indices,
-                        dtype = feature_numpy_dtype),
-                    dtype = feature_tensor_dtype)
-                block_loader = FastTensorDataLoader(
-                    select_block,
-                    X_block,
-                    batch_size = batch_size,
-                    shuffle = False)
                 block_offset = block_start
-                for select, X in block_loader:
+                if sparse_native:
+                    X_block = data.feature_sparse_matrix[block_row_indices]
+                    block_iter = (
+                        (
+                            select_block[batch_start:min(batch_start + batch_size, len(block_row_indices))],
+                            prepare_feature_tensor(
+                                build_sparse_feature_batch(
+                                    X_block[batch_start:min(batch_start + batch_size, len(block_row_indices))]),
+                                self.device))
+                        for batch_start in range(0, len(block_row_indices), batch_size))
+                else:
+                    X_block = torch.tensor(
+                        data.materialize_feature_matrix(
+                            row_indices = block_row_indices,
+                            dtype = feature_numpy_dtype),
+                        dtype = feature_tensor_dtype)
+                    block_iter = FastTensorDataLoader(
+                        select_block,
+                        X_block,
+                        batch_size = batch_size,
+                        shuffle = False)
+                for select, X in block_iter:
                     select = move_tensor_to_device(select, self.device)
-                    X = prepare_feature_tensor(X, self.device)
+                    if not sparse_native:
+                        X = prepare_feature_tensor(X, self.device)
                     #Predicted phenotype
                     with torch.amp.autocast(device_type = self.device.type, enabled = self.use_amp):
                         y_pred_batch = model(select, X, mask).detach().cpu().numpy().flatten()
@@ -1899,16 +1984,20 @@ class MochiTask():
                     select_list = [torch.narrow(select, 1, j, 1) for j in range(select.shape[1])]
                     #Loop over phenotypes
                     for pi in range(len(model.model_design)):
-                        #Additive traits for this phenotype
+                        additive_trait_matrix = model._compute_additive_trait_matrix(
+                            X = X,
+                            mask = mask,
+                            phenotype_index = pi,
+                            stacked_trait_weights = stacked_trait_weights)
                         additive_traits_p = []
                         for at_pi in range(max_at):
-                            if at_pi<len(model.model_design.loc[pi,'trait']):
-                                # additive_traits_p += [model.additivetraits[model.model_design.loc[pi,'trait'][at_pi]-1](torch.mul(X, mask_list[pi]))]
-                                additive_traits_p += [model.additivetraits[model.model_design.loc[pi,'trait'][at_pi]-1](torch.mul(
-                                    X, 
-                                    torch.reshape(torch.narrow(torch.narrow(mask, 0, model.model_design.loc[pi,'trait'][at_pi]-1, 1), 1, pi, 1), (1, -1))))]
+                            if at_pi < additive_trait_matrix.shape[1]:
+                                additive_traits_p += [torch.narrow(additive_trait_matrix, 1, at_pi, 1)]
                             else:
-                                additive_traits_p += [torch.mul(torch.clone(additive_traits_p[0]),0)]
+                                additive_traits_p += [torch.zeros(
+                                    (select.shape[0], 1),
+                                    dtype = additive_trait_matrix.dtype,
+                                    device = additive_trait_matrix.device)]
                         #Select
                         additive_traits += [torch.concat([torch.mul(j, select_list[pi]) for j in additive_traits_p], dim=1)]
                     at_pred_batch = sum(additive_traits).detach().cpu().numpy()

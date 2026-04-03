@@ -347,6 +347,58 @@ def test_MaterializingRowDataLoader_cpu_batches_match_materialized_split():
     assert torch.equal(y, validation['y'])
     assert torch.equal(y_wt, validation['y_wt'])
 
+def dense_from_sparse_feature_payload(
+    payload):
+    """Reconstruct a dense float32 matrix from a sparse-native batch payload."""
+    n_rows, n_features = payload['shape']
+    dense = torch.zeros((n_rows, n_features), dtype = torch.float32)
+    offsets = payload['offsets'].tolist()
+    indices = payload['indices']
+    values = payload.get(
+        'values',
+        torch.ones(indices.shape[0], dtype = torch.float32))
+    for row_index, start in enumerate(offsets):
+        stop = offsets[row_index + 1] if row_index + 1 < len(offsets) else len(indices)
+        dense[row_index, indices[start:stop]] = values[start:stop]
+    return dense
+
+def test_MaterializingRowDataLoader_sparse_native_batches_match_materialized_split(monkeypatch):
+    """Test sparse-native row loader batches preserve the materialized split values."""
+    monkeypatch.setenv("MOCHI_SPARSE_NATIVE", "1")
+    mochi_data = get_demo_mochi_data(
+        max_interaction_order = 2,
+        downsample_observations = 0.02,
+        seed = 1)
+    split_data = mochi_data.get_split_observation_data(
+        fold = 1,
+        seed = 1,
+        training_resample = False)
+    validation = split_data['validation']
+    loader = MaterializingRowDataLoader(
+        data = mochi_data,
+        row_indices = validation['row_indices'],
+        select = validation['select'],
+        y = validation['y'],
+        y_wt = validation['y_wt'],
+        device = torch.device("cpu"),
+        batch_size = 4,
+        shuffle = False)
+    batches = list(loader)
+    assert feature_tensor_is_sparse_native(batches[0][1])
+    select = torch.cat([batch[0] for batch in batches], dim = 0)
+    X = torch.cat([dense_from_sparse_feature_payload(batch[1]) for batch in batches], dim = 0)
+    y = torch.cat([batch[2] for batch in batches], dim = 0)
+    y_wt = torch.cat([batch[3] for batch in batches], dim = 0)
+    expected_X = torch.tensor(
+        mochi_data.materialize_feature_matrix(
+            row_indices = validation['row_indices'],
+            dtype = np.uint8),
+        dtype = torch.float32)
+    assert torch.equal(select, validation['select'])
+    assert torch.equal(X, expected_X)
+    assert torch.equal(y, validation['y'])
+    assert torch.equal(y_wt, validation['y_wt'])
+
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason = "CUDA required")
 def test_DevicePrefetchLoader_cuda_prefetch_yields_device_batches(monkeypatch):
@@ -469,6 +521,51 @@ def test_MochiModel_forward_matches_reference_loop():
             mask = custom_mask)
     assert torch.allclose(actual_default, expected_default)
     assert torch.allclose(actual_override, expected_override)
+
+def test_MochiModel_sparse_native_forward_matches_dense():
+    """Test sparse-native additive accumulation matches the dense forward path."""
+    mochi_data = get_demo_mochi_data(
+        max_interaction_order = 2,
+        downsample_observations = 0.02,
+        seed = 1)
+    split_data = mochi_data.get_split_observation_data(
+        fold = 1,
+        seed = 1,
+        training_resample = False)
+    validation = split_data['validation']
+    dense_X = torch.tensor(
+        mochi_data.materialize_feature_matrix(
+            row_indices = validation['row_indices'],
+            dtype = np.uint8),
+        dtype = torch.float32)
+    sparse_X = build_sparse_feature_batch(
+        mochi_data.feature_sparse_matrix[validation['row_indices']])
+    model = MochiModel(
+        input_shape = dense_X.shape[1],
+        mask = validation['mask'].clone(),
+        model_design = mochi_data.model_design.copy(),
+        custom_transformations = mochi_data.custom_transformations,
+        sos_architecture = [20],
+        sos_outputlinear = False)
+    custom_mask = validation['mask'].clone()
+    custom_mask[0, 0, 0] = 0
+    with torch.no_grad():
+        dense_default = model(
+            select = validation['select'],
+            X = dense_X)
+        sparse_default = model(
+            select = validation['select'],
+            X = sparse_X)
+        dense_override = model(
+            select = validation['select'],
+            X = dense_X,
+            mask = custom_mask)
+        sparse_override = model(
+            select = validation['select'],
+            X = sparse_X,
+            mask = custom_mask)
+    assert torch.allclose(sparse_default, dense_default)
+    assert torch.allclose(sparse_override, dense_override)
 
 def test_MochiTask_init_no_MochiData_empty_directory(capsys):
     """Test MochiTask initialization when no MochiData nor saved MochiTask in directory supplied"""

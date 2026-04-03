@@ -90,6 +90,41 @@ def get_feature_store_backend():
         return "sparse"
     return backend
 
+def sparse_native_feature_batches():
+    """
+    Decide whether sparse CSR feature batches should be used end-to-end.
+
+    Set MOCHI_SPARSE_NATIVE=0|1 to override.
+
+    :returns: Boolean.
+    """
+    sparse_override = os.environ.get("MOCHI_SPARSE_NATIVE", "0").lower()
+    return sparse_override in ["1", "true", "yes", "on"]
+
+def build_sparse_feature_batch(
+    csr_rows):
+    """
+    Convert CSR rows into a compact batch payload of indices and offsets.
+
+    :param csr_rows: CSR matrix containing one batch of feature rows (required).
+    :returns: Dictionary payload for sparse-native model paths.
+    """
+    csr_rows = csr_rows.tocsr()
+    payload = {
+        "layout": "csr_indices",
+        "indices": torch.tensor(
+            csr_rows.indices.astype(np.int64, copy = False),
+            dtype = torch.int64),
+        "offsets": torch.tensor(
+            csr_rows.indptr[:-1].astype(np.int64, copy = False),
+            dtype = torch.int64),
+        "shape": csr_rows.shape}
+    if csr_rows.nnz != 0 and not np.all(csr_rows.data == 1):
+        payload["values"] = torch.tensor(
+            csr_rows.data.astype(np.float32, copy = False),
+            dtype = torch.float32)
+    return payload
+
 class FeatureMatrixMetadata:
     """
     Lightweight metadata wrapper for a lazily materialized feature matrix.
@@ -2380,6 +2415,7 @@ class MaterializingRowDataLoader:
         self.dataset_len = len(self.row_indices)
         self.batch_size = batch_size
         self.shuffle = shuffle
+        self.sparse_native = sparse_native_feature_batches() and self.data.is_sparse_feature_matrix()
         self.feature_numpy_dtype = np.uint8 if compact_feature_tensors() else np.float32
         self.feature_tensor_dtype = torch.uint8 if compact_feature_tensors() else torch.float32
         self.prefetch_blocks = max(1, int(os.environ.get("MOCHI_PREFETCH_BLOCKS", "2")))
@@ -2428,13 +2464,17 @@ class MaterializingRowDataLoader:
             self.block_cache.move_to_end(block_id)
             return self.block_cache[block_id]
         start, stop = self.block_slices[block_id]
-        block = (
-            self._maybe_pin(self.select[start:stop].contiguous()),
-            self._maybe_pin(torch.tensor(
+        if self.sparse_native:
+            feature_block = self.data.feature_sparse_matrix[self.row_indices[start:stop]]
+        else:
+            feature_block = self._maybe_pin(torch.tensor(
                 self.data.materialize_feature_matrix(
                     row_indices = self.row_indices[start:stop],
                     dtype = self.feature_numpy_dtype),
-                dtype = self.feature_tensor_dtype)),
+                dtype = self.feature_tensor_dtype))
+        block = (
+            self._maybe_pin(self.select[start:stop].contiguous()),
+            feature_block,
             self._maybe_pin(self.y[start:stop].contiguous()),
             self._maybe_pin(self.y_wt[start:stop].contiguous()))
         self.block_cache[block_id] = block
@@ -2442,6 +2482,26 @@ class MaterializingRowDataLoader:
         while len(self.block_cache) > self.max_cached_blocks:
             self.block_cache.popitem(last = False)
         return block
+
+    def _build_sparse_batch(
+        self,
+        csr_block,
+        batch_index):
+        """
+        Convert a cached CSR block slice into one sparse-native batch payload.
+
+        :param csr_block: Cached CSR block (required).
+        :param batch_index: Batch row selector (required).
+        :returns: Dictionary payload.
+        """
+        if torch.is_tensor(batch_index):
+            batch_index = batch_index.detach().cpu().numpy().astype(np.int64, copy = False)
+        batch_csr = csr_block[batch_index]
+        sparse_batch = build_sparse_feature_batch(batch_csr)
+        for key in ["indices", "offsets", "values"]:
+            if key in sparse_batch:
+                sparse_batch[key] = self._maybe_pin(sparse_batch[key])
+        return sparse_batch
 
     def _prefetch_worker(
         self):
@@ -2476,11 +2536,18 @@ class MaterializingRowDataLoader:
             else:
                 batch_index = self._current_order[self._current_block_pos:stop]
             self._current_block_pos = stop
-            batch = tuple(self._maybe_pin(tensor.contiguous()) for tensor in (
-                select_block[batch_index],
-                X_block[batch_index],
-                y_block[batch_index],
-                y_wt_block[batch_index]))
+            if self.sparse_native:
+                batch = (
+                    self._maybe_pin(select_block[batch_index].contiguous()),
+                    self._build_sparse_batch(X_block, batch_index),
+                    self._maybe_pin(y_block[batch_index].contiguous()),
+                    self._maybe_pin(y_wt_block[batch_index].contiguous()))
+            else:
+                batch = tuple(self._maybe_pin(tensor.contiguous()) for tensor in (
+                    select_block[batch_index],
+                    X_block[batch_index],
+                    y_block[batch_index],
+                    y_wt_block[batch_index]))
             self._batches_yielded += 1
             return batch
 
