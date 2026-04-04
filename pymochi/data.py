@@ -69,11 +69,11 @@ def compact_feature_tensors():
     """
     Decide whether binary feature tensors should be kept as uint8 on host.
 
-    Set MOCHI_FEATURES_UINT8=0|1 to override.
+    Set MOCHI_FEATURES_UINT8=0|1 to override. Defaults to enabled.
 
     :returns: Boolean.
     """
-    compact_override = os.environ.get("MOCHI_FEATURES_UINT8", "0").lower()
+    compact_override = os.environ.get("MOCHI_FEATURES_UINT8", "1").lower()
     return compact_override in ["1", "true", "yes", "on"]
 
 def get_feature_store_backend():
@@ -94,11 +94,11 @@ def sparse_native_feature_batches():
     """
     Decide whether sparse CSR feature batches should be used end-to-end.
 
-    Set MOCHI_SPARSE_NATIVE=0|1 to override.
+    Set MOCHI_SPARSE_NATIVE=0|1 to override. Defaults to enabled.
 
     :returns: Boolean.
     """
-    sparse_override = os.environ.get("MOCHI_SPARSE_NATIVE", "0").lower()
+    sparse_override = os.environ.get("MOCHI_SPARSE_NATIVE", "1").lower()
     return sparse_override in ["1", "true", "yes", "on"]
 
 def build_sparse_feature_batch(
