@@ -641,7 +641,7 @@ class MochiModel(torch.nn.Module):
                 y_WT = move_tensor_to_device(data_WT['y'], device)
                 with torch.amp.autocast(device_type = device.type, enabled = use_amp):
                     pred_WT = self(select_WT, X_WT, mask)
-                val_WT_resid = list(np.asarray((y_WT - pred_WT).detach().cpu()))
+                val_WT_resid = np.asarray((y_WT - pred_WT).detach().cpu()).reshape(-1).tolist()
         val_loss /= num_batches
         #Save training history - validation loss
         self.training_history["val_loss"].append(val_loss)

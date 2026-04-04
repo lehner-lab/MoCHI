@@ -574,6 +574,62 @@ def test_MochiTask_init_no_MochiData_empty_directory(capsys):
     captured = capsys.readouterr()
     assert captured.out == "Error: Saved models directory does not exist.\n" and e_info
 
+def test_validate_model_flattens_wt_residual_arrays(monkeypatch):
+    """Regression test for WT residual tracking with 2D prediction tensors."""
+    class DummyModel:
+        def __init__(self):
+            self.mask = None
+            self.training_history = {
+                "val_loss": [],
+                "additivetrait1_WT": [],
+                "residual1_WT": [],
+                "residual2_WT": []}
+            self.additivetraits = [type("Trait", (), {"weight": torch.nn.Parameter(torch.tensor([[1.5]]))})()]
+            self.model_design = pd.DataFrame({"phenotype": ["p1", "p2"]})
+            self._call_count = 0
+
+        def eval(self):
+            return self
+
+        def calculate_l1l2_norm(self):
+            return torch.tensor(0.0), torch.tensor(0.0)
+
+        def __call__(self, select, X, mask):
+            self._call_count += 1
+            if self._call_count == 1:
+                return torch.zeros((1, 1), dtype = torch.float32)
+            return torch.tensor([[0.4, 1.2]], dtype = torch.float32)
+
+    class DummyLoader:
+        dataset_len = 1
+
+        def __len__(self):
+            return 1
+
+    monkeypatch.setattr(
+        "pymochi.models.DevicePrefetchLoader",
+        lambda dataloader, device: [(
+            torch.zeros((1, 1), dtype = torch.long),
+            torch.zeros((1, 1), dtype = torch.float32),
+            torch.zeros((1, 1), dtype = torch.float32),
+            torch.ones((1, 1), dtype = torch.float32))])
+
+    model = DummyModel()
+    MochiModel.validate_model(
+        model,
+        dataloader = DummyLoader(),
+        loss_function = lambda pred, y, y_wt: torch.zeros((len(y),), dtype = torch.float32),
+        device = torch.device("cpu"),
+        data_WT = {
+            "select": torch.zeros((1, 1), dtype = torch.long),
+            "X": torch.zeros((1, 1), dtype = torch.float32),
+            "y": torch.tensor([[1.0, 2.0]], dtype = torch.float32)}})
+
+    assert model.training_history["val_loss"] == [pytest.approx(0.0)]
+    assert model.training_history["additivetrait1_WT"] == [pytest.approx(1.5)]
+    assert model.training_history["residual1_WT"] == [pytest.approx(0.6)]
+    assert model.training_history["residual2_WT"] == [pytest.approx(0.8)]
+
 def create_dummy_task():
     #Delete entire directory contents
     shutil.rmtree(str(Path(__file__).parent / "temp"), ignore_errors=True)
