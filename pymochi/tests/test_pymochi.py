@@ -623,7 +623,7 @@ def test_validate_model_flattens_wt_residual_arrays(monkeypatch):
         data_WT = {
             "select": torch.zeros((1, 1), dtype = torch.long),
             "X": torch.zeros((1, 1), dtype = torch.float32),
-            "y": torch.tensor([[1.0, 2.0]], dtype = torch.float32)}})
+            "y": torch.tensor([[1.0, 2.0]], dtype = torch.float32)})
 
     assert model.training_history["val_loss"] == [pytest.approx(0.0)]
     assert model.training_history["additivetrait1_WT"] == [pytest.approx(1.5)]
