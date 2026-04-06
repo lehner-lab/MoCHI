@@ -1,9 +1,7 @@
 nextflow.enable.dsl=2
 
 params.nextflow_root = params.containsKey("nextflow_root") ? params["nextflow_root"] : workflow.projectDir.toString()
-params.mochi_repo = params.containsKey("mochi_repo") ? params["mochi_repo"] : new File(params.nextflow_root.toString()).getCanonicalFile().getParent()
-params.repo_root = params.containsKey("repo_root") ? params["repo_root"] : params.mochi_repo
-params.runner_script = params.containsKey("runner_script") ? params["runner_script"] : "${params.nextflow_root}/scripts/run_mochi_lsf_gpu.sh"
+params.repo_root = params.containsKey("repo_root") ? params["repo_root"] : new File(params.nextflow_root.toString()).getCanonicalFile().getParent()
 params.model_design = params.containsKey("model_design") ? params["model_design"] : "/nfs/users/nfs_e/eh19/work/data/mochi-dev/dataset_for_order2_model_benchmarks/model_design_mochi_pool2_abs.txt"
 params.expected_dataset = params.containsKey("expected_dataset") ? params["expected_dataset"] : "/nfs/users/nfs_e/eh19/work/data/mochi-dev/dataset_for_order2_model_benchmarks/FYN_BIBD_4sG2_mochi_pool2.txt"
 params.output_root = params.containsKey("output_root") ? params["output_root"] : "/lustre/scratch124/humgen/teams_v2/hgi/eh19/work-data/mochi-dev"
@@ -11,7 +9,7 @@ params.cache_root = params.containsKey("cache_root") ? params["cache_root"] : "$
 params.run_name = params.containsKey("run_name") ? params["run_name"] : "mochi-benchmark"
 params.project_name = params.containsKey("project_name") ? params["project_name"] : "mochi_project"
 params.max_interaction_order = params.containsKey("max_interaction_order") ? params["max_interaction_order"] : 2
-params.mochi_venv = params.containsKey("mochi_venv") ? params["mochi_venv"] : "${params.mochi_repo}/.venv"
+params.mochi_venv = params.containsKey("mochi_venv") ? params["mochi_venv"] : "${params.repo_root}/.venv"
 params.seed = params.containsKey("seed") ? params["seed"] : 1
 params.k_folds = params.containsKey("k_folds") ? params["k_folds"] : 10
 params.parallel_folds = params.containsKey("parallel_folds") ? params["parallel_folds"] : params.k_folds
@@ -63,7 +61,7 @@ process RUN_MOCHI {
     def cacheDir = "${params.cache_root}/${params.run_name}"
     """
     export REPO_ROOT="${params.repo_root}"
-    export MOCHI_REPO="${params.mochi_repo}"
+    export MOCHI_REPO="${params.repo_root}"
     export MOCHI_VENV="${params.mochi_venv}"
     export MODEL_DESIGN="${params.model_design}"
     export EXPECTED_DATASET="${params.expected_dataset}"
@@ -82,7 +80,7 @@ process RUN_MOCHI {
     export BATCH_SIZE="${params.batch_size}"
     export LEARN_RATE="${params.learn_rate}"
 
-    "${params.runner_script}"
+    "${params.nextflow_root}/scripts/run_mochi_lsf_gpu.sh"
     cp "${outputDir}/benchmark_manifest.env" "benchmark_manifest.env"
     """
 }

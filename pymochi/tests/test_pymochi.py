@@ -15,6 +15,8 @@ from scipy import sparse as sp
 import pytest
 
 import pymochi
+import pymochi.main as mochi_main
+import pymochi.project as mochi_project_module
 from pymochi.data import *
 from pymochi.models import *
 from pymochi.project import *
@@ -691,6 +693,76 @@ def test_fit_best_exploded_grid_search_models(capsys):
     captured = capsys.readouterr()
     assert captured.out.split("\n")[-2] == "Error: No valid grid search models available." and e_info
 
+def test_fit_best_handles_small_num_epochs_grid(monkeypatch):
+    """Test fit_best still selects a model when grid-search epochs are very small."""
+    create_dummy_task()
+    mochi_task = MochiTask(directory = str(Path(__file__).parent / "temp"))
+    model_data = mochi_task.data.get_data()
+    recorded_fit = {}
+
+    for batch_size, learn_rate, val_loss in [
+        (64, 0.05, [2.0, 1.8, 1.6, 1.4, 1.2]),
+        (128, 0.01, [2.0, 1.7, 1.5, 1.2, 0.2])]:
+        mochi_task.models += [mochi_task.new_model(model_data)]
+        model = mochi_task.models[-1]
+        model.metadata = MochiModelMetadata(
+            fold = 1,
+            seed = 1,
+            grid_search = True,
+            batch_size = batch_size,
+            learn_rate = learn_rate,
+            num_epochs = mochi_task.num_epochs,
+            num_epochs_grid = 5,
+            l1_regularization_factor = mochi_task.l1_regularization_factor,
+            l2_regularization_factor = mochi_task.l2_regularization_factor,
+            training_resample = True,
+            early_stopping = True,
+            scheduler_gamma = mochi_task.scheduler_gamma,
+            scheduler_epochs = 10,
+            loss_function_name = 'WeightedL1',
+            sos_architecture = [20],
+            sos_outputlinear = False)
+        model.training_history['val_loss'] = val_loss
+
+    def fake_fit(self, **kwargs):
+        recorded_fit.update(kwargs)
+
+    monkeypatch.setattr(MochiTask, "fit", fake_fit)
+
+    mochi_task.fit_best(fold = 2, seed = 1)
+
+    assert recorded_fit["fold"] == 2
+    assert recorded_fit["seed"] == 1
+    assert recorded_fit["batch_size"] == 128
+    assert recorded_fit["learn_rate"] == 0.01
+
+def test_parallel_mode_suppresses_project_directory_warning(tmp_path, monkeypatch, capsys):
+    """Test phase-split parallel runs do not warn when reusing the project directory."""
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    monkeypatch.setenv("MOCHI_PARALLEL_MODE", "1")
+
+    MochiProject(
+        directory = str(project_dir),
+        model_design = make_demo_model_design(),
+        auto_run = False)
+
+    captured = capsys.readouterr()
+    assert "Warning: Project directory already exists." not in captured.out
+
+def test_parallel_mode_suppresses_saved_models_overwrite_warning(monkeypatch, capsys):
+    """Test phase-split parallel runs do not warn when overwriting saved_models."""
+    create_dummy_task()
+    capsys.readouterr()
+    mochi_task = MochiTask(directory = str(Path(__file__).parent / "temp"))
+    capsys.readouterr()
+    monkeypatch.setenv("MOCHI_PARALLEL_MODE", "1")
+
+    mochi_task.save(overwrite = True)
+
+    captured = capsys.readouterr()
+    assert "Warning: Saved models directory already exists." not in captured.out
+
 def test_MochiProject_model_design_invalid_string_path(capsys):
     """Test MochiProject initialization when invalid model design string path supplied"""
     #Create invalid project
@@ -728,3 +800,180 @@ def test_MochiProject_features_invalid_type(capsys):
         features = 1)
     captured = capsys.readouterr()
     assert captured.out.split("\n")[-2] == "Error: Invalid features file path: does not exist."
+
+
+def test_main_grid_search_phase_dispatches_project_method(tmp_path, monkeypatch):
+    """Test CLI grid_search phase dispatches to the project helper without auto-running."""
+    calls = []
+
+    class FakeProject:
+        def __init__(self, **kwargs):
+            calls.append(("init", kwargs["auto_run"], kwargs["directory"]))
+            self.fix_weights = kwargs["fix_weights"]
+            self.RT = kwargs["RT"]
+            self.seq_position_offset = kwargs["seq_position_offset"]
+
+        def run_grid_search_task(self, seed, fix_weights):
+            calls.append(("grid_search", seed, fix_weights))
+
+    monkeypatch.setattr(mochi_main, "configure_logging", lambda: None)
+    monkeypatch.setattr(mochi_main, "MochiProject", FakeProject)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_mochi.py",
+            "--model_design", str(Path(__file__).parent.parent / "data/model_design.txt"),
+            "--output_directory", str(tmp_path),
+            "--project_name", "phase_test",
+            "--phase", "grid_search",
+        ])
+
+    mochi_main.main()
+
+    assert calls == [
+        ("init", False, str(tmp_path / "phase_test")),
+        ("grid_search", 1, {}),
+    ]
+
+
+def test_main_fit_best_phase_requires_fold(tmp_path, monkeypatch):
+    """Test CLI fit_best phase requires an explicit fold argument."""
+    monkeypatch.setattr(mochi_main, "configure_logging", lambda: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_mochi.py",
+            "--model_design", str(Path(__file__).parent.parent / "data/model_design.txt"),
+            "--output_directory", str(tmp_path),
+            "--project_name", "phase_test",
+            "--phase", "fit_best",
+        ])
+
+    with pytest.raises(ValueError, match = "--fold is required when --phase fit_best"):
+        mochi_main.main()
+
+
+def test_main_requires_at_least_three_folds(tmp_path, monkeypatch):
+    """Test CLI rejects cross-validation runs with fewer than three folds."""
+    monkeypatch.setattr(mochi_main, "configure_logging", lambda: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_mochi.py",
+            "--model_design", str(Path(__file__).parent.parent / "data/model_design.txt"),
+            "--output_directory", str(tmp_path),
+            "--project_name", "phase_test",
+            "--k_folds", "2",
+        ])
+
+    with pytest.raises(ValueError, match = "--k_folds must be at least 3"):
+        mochi_main.main()
+
+
+def test_MochiTask_fit_grid_search_without_explicit_test_split(tmp_path, monkeypatch):
+    """Test grid-search fitting works when validation consumes all non-training folds."""
+    monkeypatch.setenv("MOCHI_DEVICE", "cpu")
+    mochi_data = MochiData(
+        model_design = make_demo_model_design(),
+        max_interaction_order = 1,
+        k_folds = 2,
+        validation_factor = 2,
+        downsample_observations = 0.05,
+        seed = 1)
+    split_data = mochi_data.get_split_observation_data(
+        fold = 1,
+        seed = 1,
+        training_resample = False)
+    assert "test" not in split_data
+
+    mochi_task = MochiTask(
+        directory = str(tmp_path / "task_1"),
+        data = mochi_data,
+        batch_size = "32",
+        learn_rate = "0.05",
+        num_epochs = 1,
+        num_epochs_grid = 1)
+    mochi_task.fit(
+        fold = 1,
+        seed = 1,
+        grid_search = True,
+        batch_size = 32,
+        learn_rate = 0.05,
+        num_epochs = 1,
+        num_epochs_grid = 1,
+        epoch_status = 1)
+    assert len(mochi_task.models) == 1
+
+
+def test_run_grid_search_task_reuses_existing_saved_models(tmp_path, monkeypatch):
+    """Test rerunning grid_search phase reuses saved task artifacts."""
+    calls = []
+
+    class FakeTask:
+        def __init__(self, directory = None, **kwargs):
+            calls.append(("init", directory, "data" in kwargs))
+            self.directory = directory
+            self.models = [type("ModelInfo", (), {
+                "metadata": type("Metadata", (), {"grid_search": True, "fold": 1})()
+            })()]
+
+    monkeypatch.setattr(mochi_project_module, "MochiTask", FakeTask)
+    project = MochiProject(
+        directory = str(tmp_path / "project"),
+        model_design = make_demo_model_design(),
+        auto_run = False)
+    task_directory = Path(project.get_task_directory(1)) / "saved_models"
+    task_directory.mkdir(parents = True)
+
+    def fail_build(*args, **kwargs):
+        raise AssertionError("build_task should not be called when reusing artifacts")
+
+    monkeypatch.setattr(project, "build_task", fail_build)
+
+    reused_task = project.run_grid_search_task(seed = 1)
+
+    assert reused_task.models[0].metadata.grid_search is True
+    assert calls == [("init", project.get_task_directory(1), False)]
+
+
+def test_run_fit_fold_task_reuses_existing_fold_models(tmp_path, monkeypatch):
+    """Test rerunning fit_best phase reuses saved fold artifacts."""
+    calls = []
+
+    class FakeTask:
+        def __init__(self, directory = None, **kwargs):
+            calls.append(directory)
+            self.directory = directory
+            if str(directory).endswith("fold_2"):
+                self.models = [type("ModelInfo", (), {
+                    "metadata": type("Metadata", (), {"grid_search": False, "fold": 2})()
+                })()]
+            else:
+                self.models = []
+
+    monkeypatch.setattr(mochi_project_module, "MochiTask", FakeTask)
+    project = MochiProject(
+        directory = str(tmp_path / "project"),
+        model_design = make_demo_model_design(),
+        auto_run = False)
+    fold_directory = Path(project.get_fold_directory(1, 2)) / "saved_models"
+    fold_directory.mkdir(parents = True)
+
+    reused_task = project.run_fit_fold_task(seed = 1, fold = 2)
+
+    assert reused_task.models[0].metadata.fold == 2
+    assert calls == [project.get_fold_directory(1, 2)]
+
+
+def test_mochi_task_save_creates_missing_parent_directories(tmp_path):
+    """Test saving a loaded task succeeds after retargeting to a nested new directory."""
+    create_dummy_task()
+    mochi_task = MochiTask(directory = str(Path(__file__).parent / "temp"))
+    mochi_task.directory = str(tmp_path / "nested" / "fold_7")
+
+    mochi_task.save(overwrite = True)
+
+    assert (tmp_path / "nested" / "fold_7" / "saved_models").is_dir()

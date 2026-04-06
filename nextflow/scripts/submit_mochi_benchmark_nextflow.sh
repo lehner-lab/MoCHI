@@ -67,8 +67,6 @@ nextflow_args=(
     -work-dir "${WORK_DIR}"
     --repo_root "${REPO_ROOT}"
     --nextflow_root "${NEXTFLOW_ROOT}"
-    --mochi_repo "${REPO_ROOT}"
-    --runner_script "${NEXTFLOW_ROOT}/scripts/run_mochi_lsf_gpu.sh"
     --mochi_venv "${MOCHI_VENV}"
     --model_design "${MODEL_DESIGN}"
     --expected_dataset "${EXPECTED_DATASET}"

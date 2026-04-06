@@ -18,6 +18,10 @@ import functools
 import math
 from sklearn.cluster import KMeans
 
+def running_in_parallel_mode():
+    """Return True when invoked from the phase-split Nextflow workflow."""
+    return os.environ.get("MOCHI_PARALLEL_MODE", "").lower() in {"1", "true", "yes"}
+
 def move_tensor_to_device(
     tensor,
     device):
@@ -830,20 +834,22 @@ class MochiTask():
 
         #Output models directory
         directory = os.path.join(self.directory, 'saved_models')
+        os.makedirs(self.directory, exist_ok = True)
 
         #Create output model directory
         try:
             os.mkdir(directory)
         except FileExistsError:
             if overwrite==True:
-                print("Warning: Saved models directory already exists. Previous models will be overwritten.")
+                if not running_in_parallel_mode():
+                    print("Warning: Saved models directory already exists. Previous models will be overwritten.")
             else:
                 print("Error: Saved models directory already exists. Set 'overwrite'=True to overwrite previous models.")
                 raise ValueError
 
         #Delete entire directory contents and create fresh directory
         shutil.rmtree(directory)
-        os.mkdir(directory)
+        os.makedirs(directory, exist_ok = True)
 
         #Save unpickleable objects
         temp_custom_transformations = copy.deepcopy(self.data.custom_transformations)
@@ -919,7 +925,10 @@ class MochiTask():
                 if model_index >= len(self.models) or model_index < 0:
                     print("Error: Saved models index format incorrect.")
                     raise ValueError
-                self.models[model_index] = torch.load(os.path.join(directory, i), map_location=self.device)
+                self.models[model_index] = torch.load(
+                    os.path.join(directory, i),
+                    map_location = self.device,
+                    weights_only = False)
                 #Restore custom transformations
                 self.models[model_index].custom_transformations = self.data.custom_transformations
                 #Add globalparams if legacy model
@@ -1421,7 +1430,7 @@ class MochiTask():
         if len(self.models)>0 and (model_id in range(len(self.models)) or model_id == -1):
             print("Adjusting WT using model: "+str(model_id))
             for i in range(len(self.data.model_design)):
-                num_epochs_avg = int(self.models[model_id].metadata.num_epochs*epoch_proportion)
+                num_epochs_avg = max(1, int(self.models[model_id].metadata.num_epochs*epoch_proportion))
                 WT_correct = sum(self.models[model_id].training_history['residual'+str(i+1)+'_WT'][-num_epochs_avg:])/num_epochs_avg
                 self.data.fitness.loc[(self.data.fdata.vtable['WT']==True) & self.data.phenotypes['phenotype_'+str(i+1)]==True,'fitness'] += (-WT_correct)
         else:
@@ -1467,7 +1476,10 @@ class MochiTask():
             raise ValueError
 
         #Grid search model with best performance
-        perf_list = np.asarray([sum(i.training_history['val_loss'][-int(i.metadata.num_epochs_grid*epoch_proportion):])/int(i.metadata.num_epochs_grid*epoch_proportion) for i in grid_search_models])
+        perf_list = np.asarray([
+            sum(i.training_history['val_loss'][-max(1, int(i.metadata.num_epochs_grid*epoch_proportion)):]) /
+            max(1, int(i.metadata.num_epochs_grid*epoch_proportion))
+            for i in grid_search_models])
         #Check that at least one grid search model validation loss isn't NA
         if len(perf_list[~np.isnan(perf_list)])!=0:
             best_model_index = [i for i in range(len(perf_list)) if perf_list[i]==np.nanmin(perf_list)][0]
@@ -1805,16 +1817,6 @@ class MochiTask():
             device = self.device,
             batch_size = batch_size,
             shuffle = False)
-        test_dataloader = MaterializingRowDataLoader(
-            data = self.data,
-            row_indices = split_data['test']['row_indices'],
-            select = split_data['test']['select'],
-            y = split_data['test']['y'],
-            y_wt = split_data['test']['y_wt'],
-            device = self.device,
-            batch_size = batch_size,
-            shuffle = False)
-
         #Construct loss function and Optimizer
         if loss_function_name == 'WeightedL1':
             loss_function = MochiWeightedL1Loss()

@@ -13,6 +13,10 @@ from pymochi.data import *
 from pymochi.models import *
 from pymochi.report import *
 
+def running_in_parallel_mode():
+    """Return True when invoked from the phase-split Nextflow workflow."""
+    return os.environ.get("MOCHI_PARALLEL_MODE", "").lower() in {"1", "true", "yes"}
+
 class MochiProject():
     """
     A class for the management of an inference project/campaign (one or more inference tasks).
@@ -54,7 +58,8 @@ class MochiProject():
         init_weights_directory = None,
         init_weights_task_id = 1,
         fix_weights = {},
-        sparse_method = None):
+        sparse_method = None,
+        auto_run = True):
         """
         Initialize a MochiProject object.
 
@@ -92,6 +97,7 @@ class MochiProject():
         :param init_weights_task_id: Task identifier to use for model weight initialization (default:1).
         :param fix_weights: Dictionary (or path to file) of layer names to fix weights (default:empty dict i.e. no layers fixed).
         :param sparse_method: Sparse model inference method: one of 'sig_highestorder_step' (optional).
+        :param auto_run: Whether to immediately execute training when model_design is supplied (default:True).
         :returns: MochiProject object.
         """ 
 
@@ -132,6 +138,7 @@ class MochiProject():
         self.init_weights_task_id = init_weights_task_id
         self.fix_weights = fix_weights
         self.sparse_method = sparse_method
+        self.auto_run = auto_run
 
         #Load model_design from file if necessary
         self.model_design = self.load_model_design(self.model_design)
@@ -163,8 +170,11 @@ class MochiProject():
             try:
                 os.mkdir(self.directory)
             except FileExistsError:
-                print("Warning: Project directory already exists.")
+                if not running_in_parallel_mode():
+                    print("Warning: Project directory already exists.")
 
+            if not self.auto_run:
+                return
             if sparse_method is None:
                 #Run CV tasks for all seeds
                 self.run_cv_tasks(init_weights = init_weights)
@@ -216,6 +226,135 @@ class MochiProject():
                     print("Error: Task directory does not exist.")
                 else:                
                     self.tasks[seedi] = MochiTask(directory = task_directory)
+
+    def get_task_directory(
+        self,
+        seed):
+        """
+        Return the canonical task directory for a seed.
+
+        :param seed: Task seed identifier (required).
+        :returns: Task directory path string.
+        """
+        return os.path.join(self.directory, "task_"+str(seed))
+
+    def get_fold_directory(
+        self,
+        seed,
+        fold):
+        """
+        Return the per-fold task directory for a seed/fold pair.
+
+        :param seed: Task seed identifier (required).
+        :param fold: Cross-validation fold identifier (required).
+        :returns: Fold directory path string.
+        """
+        return os.path.join(self.get_task_directory(seed), "fold_"+str(fold))
+
+    def build_cv_task_inputs(
+        self,
+        seed):
+        """
+        Build MochiData and MochiTask constructor arguments for one seed.
+
+        :param seed: Task seed identifier (required).
+        :returns: Tuple of MochiData args dict and MochiTask args dict.
+        """
+        mochi_data_args = copy.deepcopy({
+            'model_design' : self.model_design,
+            'order_subset' : self.order_subset,
+            'max_interaction_order' : self.max_interaction_order,
+            'downsample_observations' : self.downsample_observations,
+            'downsample_interactions' : self.downsample_interactions,
+            'k_folds' : self.k_folds,
+            'seed' : seed,
+            'validation_factor' : self.validation_factor,
+            'holdout_minobs' : self.holdout_minobs,
+            'holdout_orders' : self.holdout_orders,
+            'holdout_WT' : self.holdout_WT,
+            'features' : self.features,
+            'ensemble' : self.ensemble,
+            'custom_transformations' : self.custom_transformations})
+        mochi_task_args = copy.deepcopy({
+            'directory' : self.get_task_directory(seed),
+            'batch_size' : self.batch_size,
+            'learn_rate' : self.learn_rate,
+            'num_epochs' : self.num_epochs,
+            'num_epochs_grid' : self.num_epochs_grid,
+            'l1_regularization_factor' : self.l1_regularization_factor,
+            'l2_regularization_factor' : self.l2_regularization_factor,
+            'training_resample' : self.training_resample,
+            'early_stopping' : self.early_stopping,
+            'scheduler_gamma' : self.scheduler_gamma,
+            'loss_function_name' : self.loss_function_name,
+            'sos_architecture' : self.sos_architecture,
+            'sos_outputlinear' : self.sos_outputlinear})
+        return mochi_data_args, mochi_task_args
+
+    def build_task(
+        self,
+        mochi_data_args,
+        mochi_task_args):
+        """
+        Build MochiData and MochiTask instances for one execution phase.
+
+        :param mochi_data_args: Dictionary of arguments for MochiData constructor (required).
+        :param mochi_task_args: Dictionary of arguments for MochiTask constructor (required).
+        :returns: Tuple of MochiData object and MochiTask object.
+        """
+        mochi_data = MochiData(**mochi_data_args)
+        log_process_memory("build_task: MochiData built")
+
+        print("build_task: Initializing MochiTask")
+        mochi_task = MochiTask(
+            data = mochi_data,
+            **mochi_task_args)
+        log_process_memory("build_task: MochiTask initialized")
+        return mochi_data, mochi_task
+
+    def finalize_task_outputs(
+        self,
+        mochi_task,
+        RT = None,
+        seq_position_offset = 0,
+        save_model = True,
+        save_report = True,
+        save_weights = True):
+        """
+        Persist saved models, reports, and weight summaries for a task.
+
+        :param mochi_task: MochiTask object (required).
+        :param RT: R=gas constant (in kcal/K/mol) * T=Temperature (in K) (optional).
+        :param seq_position_offset: Sequence position offset (default:0).
+        :param save_model: Whether or not to save all models (default:True).
+        :param save_report: Whether or not to save task report (default:True).
+        :param save_weights: Whether or not to save model weights (default:True).
+        :returns: MochiTask object.
+        """
+        if save_model:
+            mochi_task.save(overwrite = True)
+
+        if save_report:
+            MochiReport(
+                task = mochi_task,
+                RT = RT)
+
+        if save_weights:
+            mochi_task.get_additive_trait_weights(
+                seq_position_offset = seq_position_offset,
+                RT = RT)
+            mochi_task.get_additive_trait_weights(
+                seq_position_offset = seq_position_offset,
+                RT = RT,
+                aggregate = True,
+                aggregate_absolute_value = False)
+            mochi_task.get_additive_trait_weights(
+                seq_position_offset = seq_position_offset,
+                RT = RT,
+                aggregate = True,
+                aggregate_absolute_value = True)
+
+        return mochi_task
 
     def load_model_design(
         self,
@@ -435,48 +574,194 @@ class MochiProject():
         #Run CV tasks for all seeds
         for seedi in [int(i) for i in str(self.seed).split(",")]:
             #Check if task directory exists
-            if os.path.exists(os.path.join(self.directory, 'task_'+str(seedi))):
+            if os.path.exists(self.get_task_directory(seedi)):
                 print("Error: Task directory already exists.")
                 break
             #Run
             try:
-                self.tasks[seedi] = self.run_cv_task(
-                    mochi_data_args = copy.deepcopy({
-                        'model_design' : self.model_design,
-                        'order_subset' : self.order_subset,
-                        'max_interaction_order' : self.max_interaction_order,
-                        'downsample_observations' : self.downsample_observations,
-                        'downsample_interactions' : self.downsample_interactions,
-                        'k_folds' : self.k_folds,
-                        'seed' : seedi,
-                        'validation_factor' : self.validation_factor, 
-                        'holdout_minobs' : self.holdout_minobs, 
-                        'holdout_orders' : self.holdout_orders, 
-                        'holdout_WT' : self.holdout_WT,
-                        'features' : self.features,
-                        'ensemble' : self.ensemble,
-                        'custom_transformations' : self.custom_transformations}),
-                    mochi_task_args = copy.deepcopy({
-                        'directory' : os.path.join(self.directory, 'task_'+str(seedi)),
-                        'batch_size' : self.batch_size,
-                        'learn_rate' : self.learn_rate,
-                        'num_epochs' : self.num_epochs,
-                        'num_epochs_grid' : self.num_epochs_grid,
-                        'l1_regularization_factor' : self.l1_regularization_factor,
-                        'l2_regularization_factor' : self.l2_regularization_factor,
-                        'training_resample' : self.training_resample,
-                        'early_stopping' : self.early_stopping,
-                        'scheduler_gamma' : self.scheduler_gamma,
-                        'loss_function_name' : self.loss_function_name,
-                        'sos_architecture' : self.sos_architecture,
-                        'sos_outputlinear' : self.sos_outputlinear}),
-                    RT = self.RT,
-                    seq_position_offset = self.seq_position_offset,
+                self.tasks[seedi] = self.run_full_task(
+                    seed = seedi,
                     init_weights = init_weights,
                     fix_weights = self.fix_weights)
             except ValueError:
                 print("Error: Failed to create MochiTask.")
                 break
+
+    def run_full_task(
+        self,
+        seed,
+        init_weights = None,
+        fix_weights = {},
+        save_model = True,
+        save_report = True,
+        save_weights = True):
+        """
+        Run the legacy grid-search-plus-all-folds execution for one seed.
+
+        :param seed: Random seed for task execution (required).
+        :param init_weights: Task to use for model weight initialization (optional).
+        :param fix_weights: Dictionary of layer names to fix weights (required).
+        :param save_model: Whether or not to save all models (default:True).
+        :param save_report: Whether or not to save task report (default:True).
+        :param save_weights: Whether or not to save model weights (default:True).
+        :returns: MochiTask object.
+        """
+        mochi_data_args, mochi_task_args = self.build_cv_task_inputs(seed)
+        mochi_task = self.run_cv_task(
+            mochi_data_args = mochi_data_args,
+            mochi_task_args = mochi_task_args,
+            RT = self.RT,
+            seq_position_offset = self.seq_position_offset,
+            init_weights = init_weights,
+            fix_weights = fix_weights,
+            save_model = save_model,
+            save_report = save_report,
+            save_weights = save_weights)
+        self.tasks[seed] = mochi_task
+        return mochi_task
+
+    def run_grid_search_task(
+        self,
+        seed,
+        init_weights = None,
+        fix_weights = {},
+        overwrite = False):
+        """
+        Build a task for one seed, run grid search only, and persist the result.
+
+        :param seed: Random seed for task execution (required).
+        :param init_weights: Task to use for model weight initialization (optional).
+        :param fix_weights: Dictionary of layer names to fix weights (required).
+        :param overwrite: Whether or not to overwrite an existing saved task (default:False).
+        :returns: MochiTask object.
+        """
+        task_directory = self.get_task_directory(seed)
+        if os.path.exists(os.path.join(task_directory, "saved_models")) and not overwrite:
+            mochi_task = MochiTask(directory = task_directory)
+            grid_search_models = [i for i in mochi_task.models if i.metadata.grid_search == True]
+            if len(grid_search_models) == 0:
+                print("Error: Saved task directory does not contain grid search models.")
+                raise ValueError
+            print("run_grid_search_task: Reusing existing grid search artifacts")
+            self.tasks[seed] = mochi_task
+            return mochi_task
+
+        mochi_data_args, mochi_task_args = self.build_cv_task_inputs(seed)
+        _, mochi_task = self.build_task(
+            mochi_data_args = mochi_data_args,
+            mochi_task_args = mochi_task_args)
+
+        print("run_grid_search_task: Starting grid search")
+        mochi_task.grid_search(
+            seed = seed,
+            init_weights = init_weights,
+            fix_weights = fix_weights)
+        log_process_memory("run_grid_search_task: Grid search completed")
+        self.finalize_task_outputs(
+            mochi_task = mochi_task,
+            save_model = True,
+            save_report = False,
+            save_weights = False)
+        self.tasks[seed] = mochi_task
+        return mochi_task
+
+    def run_fit_fold_task(
+        self,
+        seed,
+        fold,
+        grid_search_fold = 1,
+        init_weights = None,
+        fix_weights = {},
+        overwrite = False):
+        """
+        Load saved grid-search artifacts and fit one fold in an isolated directory.
+
+        :param seed: Random seed for task execution (required).
+        :param fold: Cross-validation fold to fit (required).
+        :param grid_search_fold: Cross-validation fold of grid search models (default:1).
+        :param init_weights: Task to use for model weight initialization (optional).
+        :param fix_weights: Dictionary of layer names to fix weights (required).
+        :param overwrite: Whether or not to overwrite an existing fold directory (default:False).
+        :returns: MochiTask object.
+        """
+        task_directory = self.get_task_directory(seed)
+        fold_directory = self.get_fold_directory(seed, fold)
+        if os.path.exists(os.path.join(fold_directory, "saved_models")) and not overwrite:
+            mochi_task = MochiTask(directory = fold_directory)
+            fold_models = [
+                i for i in mochi_task.models
+                if (i.metadata.grid_search == False) and (i.metadata.fold == fold)]
+            if len(fold_models) == 0:
+                print("Error: Saved fold directory does not contain fit_best models.")
+                raise ValueError
+            print("run_fit_fold_task: Reusing existing fold artifacts")
+            return mochi_task
+
+        mochi_task = MochiTask(directory = task_directory)
+        os.makedirs(fold_directory, exist_ok = True)
+        mochi_task.directory = fold_directory
+        print("run_fit_fold_task: Starting fit_best")
+        mochi_task.fit_best(
+            fold = fold,
+            grid_search_fold = grid_search_fold,
+            seed = seed,
+            init_weights = init_weights,
+            fix_weights = fix_weights)
+        log_process_memory("run_fit_fold_task: fit_best completed")
+        self.finalize_task_outputs(
+            mochi_task = mochi_task,
+            save_model = True,
+            save_report = False,
+            save_weights = False)
+        return mochi_task
+
+    def merge_parallel_task(
+        self,
+        seed,
+        RT = None,
+        seq_position_offset = 0,
+        save_model = True,
+        save_report = True,
+        save_weights = True):
+        """
+        Merge per-fold task directories back into the canonical task directory.
+
+        :param seed: Random seed for task execution (required).
+        :param RT: R=gas constant (in kcal/K/mol) * T=Temperature (in K) (optional).
+        :param seq_position_offset: Sequence position offset (default:0).
+        :param save_model: Whether or not to save all models (default:True).
+        :param save_report: Whether or not to save task report (default:True).
+        :param save_weights: Whether or not to save model weights (default:True).
+        :returns: MochiTask object.
+        """
+        task_directory = self.get_task_directory(seed)
+        mochi_task = MochiTask(directory = task_directory)
+        mochi_task.models = [i for i in mochi_task.models if i.metadata.grid_search == True]
+
+        for fold in range(1, self.k_folds+1):
+            fold_directory = self.get_fold_directory(seed, fold)
+            if not os.path.exists(os.path.join(fold_directory, "saved_models")):
+                print("Error: Fold directory does not exist.")
+                raise ValueError
+            fold_task = MochiTask(directory = fold_directory)
+            fold_models = [
+                i for i in fold_task.models
+                if (i.metadata.grid_search == False) and (i.metadata.fold == fold)]
+            if len(fold_models) == 0:
+                print("Error: Fold directory does not contain fit_best models.")
+                raise ValueError
+            mochi_task.models.extend(fold_models)
+
+        mochi_task.directory = task_directory
+        self.finalize_task_outputs(
+            mochi_task = mochi_task,
+            RT = RT,
+            seq_position_offset = seq_position_offset,
+            save_model = save_model,
+            save_report = save_report,
+            save_weights = save_weights)
+        self.tasks[seed] = mochi_task
+        return mochi_task
 
     def run_cv_task(
         self,
@@ -504,16 +789,9 @@ class MochiProject():
         :returns: MochiTask object.
         """ 
 
-        #Load mochi data
-        mochi_data = MochiData(**mochi_data_args)
-        log_process_memory("run_cv_task: MochiData built")
-
-        #Create mochi project
-        print("run_cv_task: Initializing MochiTask")
-        mochi_task = MochiTask(
-            data = mochi_data,
-            **mochi_task_args)
-        log_process_memory("run_cv_task: MochiTask initialized")
+        _, mochi_task = self.build_task(
+            mochi_data_args = mochi_data_args,
+            mochi_task_args = mochi_task_args)
 
         #Grid search
         print("run_cv_task: Starting grid search")
@@ -533,39 +811,14 @@ class MochiProject():
                 init_weights = init_weights,
                 fix_weights = fix_weights)
         log_process_memory("run_cv_task: fit_best loop completed")
-            
-        #Save all models
-        if save_model:
-            mochi_task.save(overwrite = True)
-
-        #Save task report
-        if save_report:
-            mochi_report = MochiReport(
-                task = mochi_task,
-                RT = RT)
-
-        #Save model weights
-        if save_weights:
-            #Get model weights
-            energies = mochi_task.get_additive_trait_weights(
-                seq_position_offset = seq_position_offset,
-                RT = RT)
-
-            #Aggregate energies per sequence position
-            energies_agg = mochi_task.get_additive_trait_weights(
-                seq_position_offset = seq_position_offset,
-                RT = RT,
-                aggregate = True,
-                aggregate_absolute_value = False)
-
-            #Aggregate absolute value of energies per sequence position
-            energies_agg_abs = mochi_task.get_additive_trait_weights(
-                seq_position_offset = seq_position_offset,
-                RT = RT,
-                aggregate = True,
-                aggregate_absolute_value = True)
-
-        return mochi_task
+        
+        return self.finalize_task_outputs(
+            mochi_task = mochi_task,
+            RT = RT,
+            seq_position_offset = seq_position_offset,
+            save_model = save_model,
+            save_report = save_report,
+            save_weights = save_weights)
 
     def predict(
         self, 
