@@ -5,7 +5,32 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MOCHI_REPO="${REPO_ROOT}"
 MOCHI_VENV="${MOCHI_VENV:-${MOCHI_REPO}/.venv}"
 PYTHON_SPEC="${PYTHON_SPEC:-3.11}"
-TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}"
+UV_INSTALL_DIR="${UV_INSTALL_DIR:-${HOME}/.local/bin}"
+
+ensure_uv() {
+    if command -v uv >/dev/null 2>&1; then
+        return
+    fi
+
+    echo "uv not found; installing it into ${UV_INSTALL_DIR}"
+
+    if ! command -v curl >/dev/null 2>&1; then
+        echo "curl is required to install uv automatically" >&2
+        exit 1
+    fi
+
+    installer="$(mktemp)"
+    trap 'rm -f "${installer}"' EXIT
+
+    curl -LsSf https://astral.sh/uv/install.sh -o "${installer}"
+    env UV_INSTALL_DIR="${UV_INSTALL_DIR}" sh "${installer}"
+    export PATH="${UV_INSTALL_DIR}:${PATH}"
+
+    if ! command -v uv >/dev/null 2>&1; then
+        echo "uv installation completed but uv is still not on PATH" >&2
+        exit 1
+    fi
+}
 
 if [ ! -d "${MOCHI_REPO}" ]; then
     echo "MoCHI repository not found at ${MOCHI_REPO}" >&2
@@ -14,27 +39,10 @@ fi
 
 cd "${MOCHI_REPO}"
 
-echo "Creating virtual environment at ${MOCHI_VENV}"
-uv venv "${MOCHI_VENV}" --python "${PYTHON_SPEC}"
+ensure_uv
 
-echo "Installing MoCHI runtime dependencies with uv"
-uv pip install --python "${MOCHI_VENV}/bin/python" \
-    loguru \
-    numpy \
-    pandas \
-    scipy \
-    scikit-learn \
-    matplotlib \
-    seaborn \
-    pyreadr \
-    setuptools \
-    wheel
-
-echo "Installing PyTorch from ${TORCH_INDEX_URL}"
-uv pip install --python "${MOCHI_VENV}/bin/python" --index-url "${TORCH_INDEX_URL}" torch
-
-echo "Installing MoCHI package in editable mode"
-uv pip install --python "${MOCHI_VENV}/bin/python" -e .
+echo "Syncing MoCHI runtime dependencies from uv.lock into ${MOCHI_VENV}"
+UV_PROJECT_ENVIRONMENT="${MOCHI_VENV}" uv sync --frozen --python "${PYTHON_SPEC}"
 
 echo "Verifying environment"
 "${MOCHI_VENV}/bin/python" - <<'PY'
