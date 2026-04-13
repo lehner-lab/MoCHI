@@ -251,6 +251,109 @@ class MochiProject():
         """
         return os.path.join(self.get_task_directory(seed), "fold_"+str(fold))
 
+    def get_sparse_stage_count(self):
+        """
+        Return the number of sparse stages for the configured interaction order.
+
+        :returns: Integer sparse stage count.
+        """
+        return self.max_interaction_order + 2
+
+    def get_sparse_stage_order(
+        self,
+        stage_index):
+        """
+        Return the pruning order represented by a sparse stage.
+
+        :param stage_index: One-based sparse stage index (required).
+        :returns: Integer interaction order for the stage.
+        """
+        return self.max_interaction_order - (stage_index - 1)
+
+    def get_sparse_stage_settings(
+        self,
+        stage_index):
+        """
+        Return persistence and regularization settings for one sparse stage.
+
+        :param stage_index: One-based sparse stage index (required).
+        :returns: Dictionary of sparse stage settings.
+        """
+        orderi = self.get_sparse_stage_order(stage_index)
+        return {
+            'order' : orderi,
+            'l1_regularization_factor' : 0 if orderi <= -1 else self.l1_regularization_factor,
+            'save_model' : True,
+            'save_report' : orderi <= -1,
+            'save_weights' : stage_index == 1 or orderi <= -1}
+
+    def build_sparse_stage_inputs(
+        self,
+        stage_index):
+        """
+        Build MochiData and MochiTask constructor arguments for one sparse stage.
+
+        :param stage_index: One-based sparse stage index (required).
+        :returns: Tuple of MochiData args dict, MochiTask args dict and stage settings dict.
+        """
+        stage_count = self.get_sparse_stage_count()
+        if stage_index < 1 or stage_index > stage_count:
+            print("Error: Invalid sparse stage index.")
+            raise ValueError
+
+        stage_settings = self.get_sparse_stage_settings(stage_index)
+        features = self.features
+        if stage_index > 1:
+            prev_task = MochiTask(directory = self.get_task_directory(stage_index - 1))
+            at_list = prev_task.get_additive_trait_weights(save = False)
+            features = {}
+            for i in range(len(at_list)):
+                at_list[i]['mut_order'] = [len(str(j).split('_')) for j in list(at_list[i]['Pos'])]
+                at_list[i].loc[at_list[i]['id']=='WT','mut_order'] = 0
+                at_name = prev_task.data.additive_trait_names[i]
+                if stage_settings['order'] > -1:
+                    features[at_name] = list(at_list[i].loc[
+                        (at_list[i]['mut_order'] <= stage_settings['order']) |
+                        ((np.abs(at_list[i]['mean']) - at_list[i]['ci95']/2)>0),
+                        'id'])
+                else:
+                    features[at_name] = list(at_list[i]['id'])
+            features = self.load_features(features)
+            if type(features) != dict:
+                print("Error: Invalid features file path: does not exist.")
+                raise ValueError
+
+        mochi_data_args = copy.deepcopy({
+            'model_design' : self.model_design,
+            'order_subset' : self.order_subset,
+            'max_interaction_order' : self.max_interaction_order,
+            'downsample_observations' : self.downsample_observations,
+            'downsample_interactions' : self.downsample_interactions,
+            'k_folds' : self.k_folds,
+            'seed' : self.seed,
+            'validation_factor' : self.validation_factor,
+            'holdout_minobs' : self.holdout_minobs,
+            'holdout_orders' : self.holdout_orders,
+            'holdout_WT' : self.holdout_WT,
+            'features' : features,
+            'ensemble' : self.ensemble,
+            'custom_transformations' : self.custom_transformations})
+        mochi_task_args = copy.deepcopy({
+            'directory' : self.get_task_directory(stage_index),
+            'batch_size' : self.batch_size,
+            'learn_rate' : self.learn_rate,
+            'num_epochs' : self.num_epochs,
+            'num_epochs_grid' : self.num_epochs_grid,
+            'l1_regularization_factor' : stage_settings['l1_regularization_factor'],
+            'l2_regularization_factor' : self.l2_regularization_factor,
+            'training_resample' : self.training_resample,
+            'early_stopping' : self.early_stopping,
+            'scheduler_gamma' : self.scheduler_gamma,
+            'loss_function_name' : self.loss_function_name,
+            'sos_architecture' : self.sos_architecture,
+            'sos_outputlinear' : self.sos_outputlinear})
+        return mochi_data_args, mochi_task_args, stage_settings
+
     def build_cv_task_inputs(
         self,
         seed):
@@ -475,91 +578,25 @@ class MochiProject():
         :returns: nothing.
         """
 
-        #Run sparse model inference method 'sig_highestorder_step'
-        taski = 1
-        save_task_data = False
-        l1_regularization_factori = self.l1_regularization_factor
-        for orderi in range(self.max_interaction_order, -2, -1):
-            #Check if task directory exists
-            if os.path.exists(os.path.join(self.directory, 'task_'+str(taski))):
+        for stage_index in range(1, self.get_sparse_stage_count() + 1):
+            if os.path.exists(self.get_task_directory(stage_index)):
                 print("Error: Task directory already exists.")
                 break
-            #First model features
-            features = self.features
-            #Restrict features based on previous task in the path
-            if orderi < self.max_interaction_order:
-                #Get additive trait weights from previous model
-                at_list = self.tasks[taski-1].get_additive_trait_weights(save = False)
-                #Restrict features
-                features = {}
-                for i in range(len(at_list)):
-                    #Add mutant order
-                    at_list[i]['mut_order'] = [len(str(j).split('_')) for j in list(at_list[i]['Pos'])]
-                    at_list[i].loc[at_list[i]['id']=='WT','mut_order'] = 0
-                    #Additive trait name
-                    at_name = self.tasks[taski-1].data.additive_trait_names[i]
-                    if orderi > -1:
-                        features[at_name] = list(at_list[i].loc[(at_list[i]['mut_order'] <= orderi) | ((np.abs(at_list[i]['mean']) - at_list[i]['ci95']/2)>0),'id'])
-                    else:
-                        #Final model
-                        features[at_name] = list(at_list[i]['id'])
-                #Reformat features
-                features = self.load_features(features)
-                if type(features) != dict:
-                    print("Error: Invalid features file path: does not exist.")
-                    return
-            #Fit final models without regularization
-            if orderi <= -1:
-                l1_regularization_factori = 0
-                save_task_data = True
-            #Run
             try:
-                self.tasks[taski] = self.run_cv_task(
-                    mochi_data_args = copy.deepcopy({
-                        'model_design' : self.model_design,
-                        'order_subset' : self.order_subset,
-                        'max_interaction_order' : self.max_interaction_order,
-                        'downsample_observations' : self.downsample_observations,
-                        'downsample_interactions' : self.downsample_interactions,
-                        'k_folds' : self.k_folds,
-                        'seed' : self.seed,
-                        'validation_factor' : self.validation_factor, 
-                        'holdout_minobs' : self.holdout_minobs, 
-                        'holdout_orders' : self.holdout_orders, 
-                        'holdout_WT' : self.holdout_WT,
-                        'features' : features,
-                        'ensemble' : self.ensemble,
-                        'custom_transformations' : self.custom_transformations}),
-                    mochi_task_args = copy.deepcopy({
-                        'directory' : os.path.join(self.directory, 'task_'+str(taski)),
-                        'batch_size' : self.batch_size,
-                        'learn_rate' : self.learn_rate,
-                        'num_epochs' : self.num_epochs,
-                        'num_epochs_grid' : self.num_epochs_grid,
-                        'l1_regularization_factor' : l1_regularization_factori,
-                        'l2_regularization_factor' : self.l2_regularization_factor,
-                        'training_resample' : self.training_resample,
-                        'early_stopping' : self.early_stopping,
-                        'scheduler_gamma' : self.scheduler_gamma,
-                        'loss_function_name' : self.loss_function_name,
-                        'sos_architecture' : self.sos_architecture,
-                        'sos_outputlinear' : self.sos_outputlinear}),
+                mochi_data_args, mochi_task_args, stage_settings = self.build_sparse_stage_inputs(stage_index)
+                self.tasks[stage_index] = self.run_cv_task(
+                    mochi_data_args = mochi_data_args,
+                    mochi_task_args = mochi_task_args,
                     RT = self.RT,
                     seq_position_offset = self.seq_position_offset,
                     init_weights = init_weights,
                     fix_weights = self.fix_weights,
-                    save_model = save_task_data,
-                    save_report = save_task_data,
-                    save_weights = save_task_data)
+                    save_model = stage_settings['save_model'],
+                    save_report = stage_settings['save_report'],
+                    save_weights = stage_settings['save_weights'])
             except ValueError:
                 print("Error: Failed to create MochiTask.")
                 break
-            #Save additive trait weights for starting model
-            if orderi == self.max_interaction_order:
-                #Get additive trait weights
-                at_list = self.tasks[taski].get_additive_trait_weights(save = True)
-            #Increment seed
-            taski += 1
 
     def run_cv_tasks(
         self,
@@ -665,6 +702,51 @@ class MochiProject():
         self.tasks[seed] = mochi_task
         return mochi_task
 
+    def run_sparse_stage_grid_search(
+        self,
+        stage_index,
+        init_weights = None,
+        fix_weights = {},
+        overwrite = False):
+        """
+        Build and run grid search for one sparse stage.
+
+        :param stage_index: One-based sparse stage index (required).
+        :param init_weights: Task to use for model weight initialization (optional).
+        :param fix_weights: Dictionary of layer names to fix weights (required).
+        :param overwrite: Whether or not to overwrite existing stage artifacts (default:False).
+        :returns: MochiTask object.
+        """
+        task_directory = self.get_task_directory(stage_index)
+        if os.path.exists(os.path.join(task_directory, "saved_models")) and not overwrite:
+            mochi_task = MochiTask(directory = task_directory)
+            grid_search_models = [i for i in mochi_task.models if i.metadata.grid_search == True]
+            if len(grid_search_models) == 0:
+                print("Error: Saved sparse stage directory does not contain grid search models.")
+                raise ValueError
+            print(f"run_sparse_stage_grid_search: Reusing existing grid search artifacts for stage {stage_index}")
+            self.tasks[stage_index] = mochi_task
+            return mochi_task
+
+        mochi_data_args, mochi_task_args, _ = self.build_sparse_stage_inputs(stage_index)
+        _, mochi_task = self.build_task(
+            mochi_data_args = mochi_data_args,
+            mochi_task_args = mochi_task_args)
+
+        print(f"run_sparse_stage_grid_search: Starting grid search for stage {stage_index}")
+        mochi_task.grid_search(
+            seed = mochi_data_args['seed'],
+            init_weights = init_weights,
+            fix_weights = fix_weights)
+        log_process_memory(f"run_sparse_stage_grid_search: Stage {stage_index} grid search completed")
+        self.finalize_task_outputs(
+            mochi_task = mochi_task,
+            save_model = True,
+            save_report = False,
+            save_weights = False)
+        self.tasks[stage_index] = mochi_task
+        return mochi_task
+
     def run_fit_fold_task(
         self,
         seed,
@@ -708,6 +790,56 @@ class MochiProject():
             init_weights = init_weights,
             fix_weights = fix_weights)
         log_process_memory("run_fit_fold_task: fit_best completed")
+        self.finalize_task_outputs(
+            mochi_task = mochi_task,
+            save_model = True,
+            save_report = False,
+            save_weights = False)
+        return mochi_task
+
+    def run_sparse_stage_fit_fold(
+        self,
+        stage_index,
+        fold,
+        grid_search_fold = 1,
+        init_weights = None,
+        fix_weights = {},
+        overwrite = False):
+        """
+        Fit one fold for a sparse stage using saved stage grid-search artifacts.
+
+        :param stage_index: One-based sparse stage index (required).
+        :param fold: Cross-validation fold to fit (required).
+        :param grid_search_fold: Cross-validation fold of grid search models (default:1).
+        :param init_weights: Task to use for model weight initialization (optional).
+        :param fix_weights: Dictionary of layer names to fix weights (required).
+        :param overwrite: Whether or not to overwrite an existing fold directory (default:False).
+        :returns: MochiTask object.
+        """
+        task_directory = self.get_task_directory(stage_index)
+        fold_directory = self.get_fold_directory(stage_index, fold)
+        if os.path.exists(os.path.join(fold_directory, "saved_models")) and not overwrite:
+            mochi_task = MochiTask(directory = fold_directory)
+            fold_models = [
+                i for i in mochi_task.models
+                if (i.metadata.grid_search == False) and (i.metadata.fold == fold)]
+            if len(fold_models) == 0:
+                print("Error: Saved sparse stage fold directory does not contain fit_best models.")
+                raise ValueError
+            print(f"run_sparse_stage_fit_fold: Reusing existing fold artifacts for stage {stage_index}, fold {fold}")
+            return mochi_task
+
+        mochi_task = MochiTask(directory = task_directory)
+        os.makedirs(fold_directory, exist_ok = True)
+        mochi_task.directory = fold_directory
+        print(f"run_sparse_stage_fit_fold: Starting fit_best for stage {stage_index}, fold {fold}")
+        mochi_task.fit_best(
+            fold = fold,
+            grid_search_fold = grid_search_fold,
+            seed = self.seed,
+            init_weights = init_weights,
+            fix_weights = fix_weights)
+        log_process_memory(f"run_sparse_stage_fit_fold: Stage {stage_index}, fold {fold} fit_best completed")
         self.finalize_task_outputs(
             mochi_task = mochi_task,
             save_model = True,
@@ -761,6 +893,49 @@ class MochiProject():
             save_report = save_report,
             save_weights = save_weights)
         self.tasks[seed] = mochi_task
+        return mochi_task
+
+    def merge_sparse_stage(
+        self,
+        stage_index,
+        RT = None,
+        seq_position_offset = 0):
+        """
+        Merge one sparse stage's per-fold models back into its canonical task directory.
+
+        :param stage_index: One-based sparse stage index (required).
+        :param RT: R=gas constant (in kcal/K/mol) * T=Temperature (in K) (optional).
+        :param seq_position_offset: Sequence position offset (default:0).
+        :returns: MochiTask object.
+        """
+        stage_settings = self.get_sparse_stage_settings(stage_index)
+        task_directory = self.get_task_directory(stage_index)
+        mochi_task = MochiTask(directory = task_directory)
+        mochi_task.models = [i for i in mochi_task.models if i.metadata.grid_search == True]
+
+        for fold in range(1, self.k_folds+1):
+            fold_directory = self.get_fold_directory(stage_index, fold)
+            if not os.path.exists(os.path.join(fold_directory, "saved_models")):
+                print("Error: Fold directory does not exist.")
+                raise ValueError
+            fold_task = MochiTask(directory = fold_directory)
+            fold_models = [
+                i for i in fold_task.models
+                if (i.metadata.grid_search == False) and (i.metadata.fold == fold)]
+            if len(fold_models) == 0:
+                print("Error: Fold directory does not contain fit_best models.")
+                raise ValueError
+            mochi_task.models.extend(fold_models)
+
+        mochi_task.directory = task_directory
+        self.finalize_task_outputs(
+            mochi_task = mochi_task,
+            RT = RT,
+            seq_position_offset = seq_position_offset,
+            save_model = stage_settings['save_model'],
+            save_report = stage_settings['save_report'],
+            save_weights = stage_settings['save_weights'])
+        self.tasks[stage_index] = mochi_task
         return mochi_task
 
     def run_cv_task(

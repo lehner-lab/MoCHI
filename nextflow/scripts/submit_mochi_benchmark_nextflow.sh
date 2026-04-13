@@ -24,6 +24,9 @@ FOLD_MEMORY_MAX="${FOLD_MEMORY_MAX:-32 GB}"
 MAX_MEMORY_RETRIES="${MAX_MEMORY_RETRIES:-3}"
 BATCH_SIZE="${BATCH_SIZE:-}"
 LEARN_RATE="${LEARN_RATE:-}"
+L1_REGULARIZATION_FACTOR="${L1_REGULARIZATION_FACTOR:-}"
+L2_REGULARIZATION_FACTOR="${L2_REGULARIZATION_FACTOR:-}"
+SPARSE_METHOD="${SPARSE_METHOD:-}"
 GMODEL="${GMODEL:-}"
 MIG_PROFILE="${MIG_PROFILE:-}"
 GPU_AFFINITY="${GPU_AFFINITY:-}"
@@ -61,6 +64,12 @@ fi
 source /etc/profile.d/modules.sh
 module load HGI/common/nextflow/23.10.0
 
+export MOCHI_GPU_QUEUE="${QUEUE}"
+export MOCHI_GPU_TIME="${RUN_TIME}"
+export MOCHI_GPU_CLUSTER_OPTIONS="${CLUSTER_OPTIONS}"
+export MOCHI_MAX_MEMORY_RETRIES="${MAX_MEMORY_RETRIES}"
+export MOCHI_PARALLEL_FOLDS="${PARALLEL_FOLDS}"
+
 nextflow_args=(
     run "${NEXTFLOW_ROOT}/main.nf"
     -c "${NEXTFLOW_ROOT}/nextflow.config"
@@ -97,6 +106,15 @@ if [ -n "${BATCH_SIZE}" ]; then
 fi
 if [ -n "${LEARN_RATE}" ]; then
     nextflow_args+=(--learn_rate "${LEARN_RATE}")
+fi
+if [ -n "${L1_REGULARIZATION_FACTOR}" ]; then
+    nextflow_args+=(--l1_regularization_factor "${L1_REGULARIZATION_FACTOR}")
+fi
+if [ -n "${L2_REGULARIZATION_FACTOR}" ]; then
+    nextflow_args+=(--l2_regularization_factor "${L2_REGULARIZATION_FACTOR}")
+fi
+if [ -n "${SPARSE_METHOD}" ]; then
+    nextflow_args+=(--sparse_method "${SPARSE_METHOD}")
 fi
 if [ "${RESUME}" = "1" ]; then
     nextflow_args+=(-resume)

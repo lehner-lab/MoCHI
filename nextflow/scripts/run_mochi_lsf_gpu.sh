@@ -14,6 +14,7 @@ MOCHI_OUTPUT_DIRECTORY="${MOCHI_OUTPUT_DIRECTORY:-${OUTPUT_DIR}}"
 PROJECT_NAME="${PROJECT_NAME:-mochi_project}"
 MAX_INTERACTION_ORDER="${MAX_INTERACTION_ORDER:-2}"
 MOCHI_PHASE="${MOCHI_PHASE:-full}"
+SPARSE_STAGE_INDEX="${SPARSE_STAGE_INDEX:-}"
 MOCHI_SEED="${MOCHI_SEED:-1}"
 MOCHI_FOLD="${MOCHI_FOLD:-}"
 K_FOLDS="${K_FOLDS:-}"
@@ -21,6 +22,9 @@ NUM_EPOCHS="${NUM_EPOCHS:-}"
 NUM_EPOCHS_GRID="${NUM_EPOCHS_GRID:-}"
 BATCH_SIZE="${BATCH_SIZE:-}"
 LEARN_RATE="${LEARN_RATE:-}"
+L1_REGULARIZATION_FACTOR="${L1_REGULARIZATION_FACTOR:-}"
+L2_REGULARIZATION_FACTOR="${L2_REGULARIZATION_FACTOR:-}"
+SPARSE_METHOD="${SPARSE_METHOD:-}"
 CACHE_DIR="${CACHE_DIR:-${OUTPUT_ROOT%/}/cache}"
 LOCAL_UV_CACHE="${LOCAL_UV_CACHE:-${OUTPUT_DIR}/uv-cache}"
 RUN_LOG="${RUN_LOG:-${OUTPUT_DIR}/run.log}"
@@ -98,6 +102,9 @@ MOCHI_CMD=(
 if [ -n "${MOCHI_FOLD}" ]; then
     MOCHI_CMD+=(--fold "${MOCHI_FOLD}")
 fi
+if [ -n "${SPARSE_STAGE_INDEX}" ]; then
+    MOCHI_CMD+=(--stage_index "${SPARSE_STAGE_INDEX}")
+fi
 if [ -n "${K_FOLDS}" ]; then
     MOCHI_CMD+=(--k_folds "${K_FOLDS}")
 fi
@@ -112,6 +119,15 @@ if [ -n "${BATCH_SIZE}" ]; then
 fi
 if [ -n "${LEARN_RATE}" ]; then
     MOCHI_CMD+=(--learn_rate "${LEARN_RATE}")
+fi
+if [ -n "${L1_REGULARIZATION_FACTOR}" ]; then
+    MOCHI_CMD+=(--l1_regularization_factor "${L1_REGULARIZATION_FACTOR}")
+fi
+if [ -n "${L2_REGULARIZATION_FACTOR}" ]; then
+    MOCHI_CMD+=(--l2_regularization_factor "${L2_REGULARIZATION_FACTOR}")
+fi
+if [ -n "${SPARSE_METHOD}" ]; then
+    MOCHI_CMD+=(--sparse_method "${SPARSE_METHOD}")
 fi
 
 printf '%q ' "${MOCHI_CMD[@]}" > "${COMMAND_FILE}"
@@ -134,11 +150,15 @@ printf '\n' >> "${COMMAND_FILE}"
     echo "project_name=${PROJECT_NAME}"
     echo "max_interaction_order=${MAX_INTERACTION_ORDER}"
     echo "mochi_phase=${MOCHI_PHASE}"
+    echo "sparse_stage_index=${SPARSE_STAGE_INDEX}"
     echo "mochi_seed=${MOCHI_SEED}"
     echo "mochi_fold=${MOCHI_FOLD}"
     echo "k_folds=${K_FOLDS}"
     echo "num_epochs=${NUM_EPOCHS}"
     echo "num_epochs_grid=${NUM_EPOCHS_GRID}"
+    echo "l1_regularization_factor=${L1_REGULARIZATION_FACTOR}"
+    echo "l2_regularization_factor=${L2_REGULARIZATION_FACTOR}"
+    echo "sparse_method=${SPARSE_METHOD}"
     echo "python=${PYTHON_BIN}"
     echo "python_version=$("${PYTHON_BIN}" -c 'import sys; print(sys.version.replace("\n", " "))')"
     echo "torch_version=$("${PYTHON_BIN}" -c 'import torch; print(torch.__version__)')"
@@ -166,11 +186,15 @@ printf '\n' >> "${COMMAND_FILE}"
     echo "MAX_INTERACTION_ORDER=${MAX_INTERACTION_ORDER}"
     echo "MOCHI_OUTPUT_DIRECTORY=${MOCHI_OUTPUT_DIRECTORY}"
     echo "MOCHI_PHASE=${MOCHI_PHASE}"
+    echo "SPARSE_STAGE_INDEX=${SPARSE_STAGE_INDEX}"
     echo "MOCHI_SEED=${MOCHI_SEED}"
     echo "MOCHI_FOLD=${MOCHI_FOLD}"
     echo "K_FOLDS=${K_FOLDS}"
     echo "NUM_EPOCHS=${NUM_EPOCHS}"
     echo "NUM_EPOCHS_GRID=${NUM_EPOCHS_GRID}"
+    echo "L1_REGULARIZATION_FACTOR=${L1_REGULARIZATION_FACTOR}"
+    echo "L2_REGULARIZATION_FACTOR=${L2_REGULARIZATION_FACTOR}"
+    echo "SPARSE_METHOD=${SPARSE_METHOD}"
     echo "PHASE_MANIFEST=${PHASE_MANIFEST}"
     echo "MOCHI_DEVICE=${MOCHI_DEVICE}"
     echo "START_TIME=$(date -Is)"
@@ -178,6 +202,7 @@ printf '\n' >> "${COMMAND_FILE}"
 
 {
     echo "MOCHI_PHASE=${MOCHI_PHASE}"
+    echo "SPARSE_STAGE_INDEX=${SPARSE_STAGE_INDEX}"
     echo "MOCHI_SEED=${MOCHI_SEED}"
     echo "MOCHI_FOLD=${MOCHI_FOLD}"
     echo "MOCHI_OUTPUT_DIRECTORY=${MOCHI_OUTPUT_DIRECTORY}"

@@ -837,6 +837,81 @@ def test_main_grid_search_phase_dispatches_project_method(tmp_path, monkeypatch)
     ]
 
 
+def test_main_full_sparse_phase_dispatches_sparse_method(tmp_path, monkeypatch):
+    """Test CLI full phase dispatches sparse runs to the sparse helper."""
+    calls = []
+
+    class FakeProject:
+        def __init__(self, **kwargs):
+            calls.append(("init", kwargs["auto_run"], kwargs["directory"], kwargs["sparse_method"]))
+            self.fix_weights = kwargs["fix_weights"]
+            self.RT = kwargs["RT"]
+            self.seq_position_offset = kwargs["seq_position_offset"]
+
+        def run_sparse_sig_highestorder_step(self):
+            calls.append(("sparse",))
+
+        def run_full_task(self, seed, fix_weights):
+            calls.append(("full", seed, fix_weights))
+
+    monkeypatch.setattr(mochi_main, "configure_logging", lambda: None)
+    monkeypatch.setattr(mochi_main, "MochiProject", FakeProject)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_mochi.py",
+            "--model_design", str(Path(__file__).parent.parent / "data/model_design.txt"),
+            "--output_directory", str(tmp_path),
+            "--project_name", "phase_test",
+            "--sparse_method", "sig_highestorder_step",
+        ])
+
+    mochi_main.main()
+
+    assert calls == [
+        ("init", False, str(tmp_path / "phase_test"), "sig_highestorder_step"),
+        ("sparse",),
+    ]
+
+
+def test_main_sparse_grid_phase_dispatches_stage_helper(tmp_path, monkeypatch):
+    """Test CLI sparse split phases dispatch to sparse stage helpers."""
+    calls = []
+
+    class FakeProject:
+        def __init__(self, **kwargs):
+            calls.append(("init", kwargs["auto_run"], kwargs["directory"], kwargs["sparse_method"]))
+            self.fix_weights = kwargs["fix_weights"]
+            self.RT = kwargs["RT"]
+            self.seq_position_offset = kwargs["seq_position_offset"]
+
+        def run_sparse_stage_grid_search(self, stage_index, fix_weights):
+            calls.append(("sparse_grid", stage_index, fix_weights))
+
+    monkeypatch.setattr(mochi_main, "configure_logging", lambda: None)
+    monkeypatch.setattr(mochi_main, "MochiProject", FakeProject)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_mochi.py",
+            "--model_design", str(Path(__file__).parent.parent / "data/model_design.txt"),
+            "--output_directory", str(tmp_path),
+            "--project_name", "phase_test",
+            "--phase", "sparse_grid_search",
+            "--stage_index", "2",
+            "--sparse_method", "sig_highestorder_step",
+        ])
+
+    mochi_main.main()
+
+    assert calls == [
+        ("init", False, str(tmp_path / "phase_test"), "sig_highestorder_step"),
+        ("sparse_grid", 2, {}),
+    ]
+
+
 def test_main_fit_best_phase_requires_fold(tmp_path, monkeypatch):
     """Test CLI fit_best phase requires an explicit fold argument."""
     monkeypatch.setattr(mochi_main, "configure_logging", lambda: None)
@@ -853,6 +928,61 @@ def test_main_fit_best_phase_requires_fold(tmp_path, monkeypatch):
 
     with pytest.raises(ValueError, match = "--fold is required when --phase fit_best"):
         mochi_main.main()
+
+
+def test_main_sparse_phase_requires_stage_index(tmp_path, monkeypatch):
+    """Test sparse split phases require an explicit stage index."""
+    monkeypatch.setattr(mochi_main, "configure_logging", lambda: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_mochi.py",
+            "--model_design", str(Path(__file__).parent.parent / "data/model_design.txt"),
+            "--output_directory", str(tmp_path),
+            "--project_name", "phase_test",
+            "--phase", "sparse_grid_search",
+            "--sparse_method", "sig_highestorder_step",
+        ])
+
+    with pytest.raises(ValueError, match = "--stage_index is required for sparse split phases"):
+        mochi_main.main()
+
+
+def test_main_sparse_method_requires_full_phase(tmp_path, monkeypatch):
+    """Test sparse runs reject split phases that bypass sparse pruning."""
+    monkeypatch.setattr(mochi_main, "configure_logging", lambda: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_mochi.py",
+            "--model_design", str(Path(__file__).parent.parent / "data/model_design.txt"),
+            "--output_directory", str(tmp_path),
+            "--project_name", "phase_test",
+            "--phase", "grid_search",
+            "--sparse_method", "sig_highestorder_step",
+        ])
+
+    with pytest.raises(ValueError, match = "--sparse_method is only supported when --phase full"):
+        mochi_main.main()
+
+
+def test_get_sparse_stage_settings_final_stage_disables_l1(tmp_path):
+    """Test the final sparse stage runs without L1 regularization."""
+    project = MochiProject(
+        directory = str(tmp_path / "project"),
+        model_design = make_demo_model_design(),
+        max_interaction_order = 2,
+        l1_regularization_factor = "0.01,0.001,0.0001",
+        auto_run = False)
+
+    stage_settings = project.get_sparse_stage_settings(stage_index = 4)
+
+    assert stage_settings["order"] == -1
+    assert stage_settings["l1_regularization_factor"] == 0
+    assert stage_settings["save_report"] is True
+    assert stage_settings["save_weights"] is True
 
 
 def test_main_requires_at_least_three_folds(tmp_path, monkeypatch):

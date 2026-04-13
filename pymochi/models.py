@@ -1304,20 +1304,21 @@ class MochiTask():
             agg_list = []
             for i in range(len(at_list)):
                 grouped = at_list[i].groupby("Pos_ref")
-                agg_list += [pd.merge(
-                        pd.DataFrame(grouped.apply(
-                            self.wavg, 
-                            absolute_value = aggregate_absolute_value, 
-                            suffix = ['', '_kcal/mol'][int(RT!=None)])), 
-                        pd.DataFrame(grouped.apply(
-                            self.wavg, 
+                agg_list += [grouped.apply(
+                    lambda group: pd.Series({
+                        "mean": self.wavg(
+                            group,
+                            absolute_value = aggregate_absolute_value,
+                            suffix = ['', '_kcal/mol'][int(RT!=None)]),
+                        "sigma": self.wavg(
+                            group,
                             error_only = True,
-                            suffix = ['', '_kcal/mol'][int(RT!=None)])), 
-                    on = "Pos_ref")]
+                            suffix = ['', '_kcal/mol'][int(RT!=None)])
+                    })
+                ).reset_index()]
                 agg_list[-1] = agg_list[-1].sort_values(
                     by="Pos_ref",
-                    key=lambda x: np.array([int(i) for i in agg_list[-1].index]))
-                agg_list[-1].columns = ['mean', 'sigma']
+                    key=lambda x: np.array([int(i) for i in x]))
             #Save aggregated model weights
             file_prefix = ["weights_agg_", "weights_agg_abs_"][int(aggregate_absolute_value)]
             for i in range(len(agg_list)):

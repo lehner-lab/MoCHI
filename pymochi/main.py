@@ -90,9 +90,10 @@ def init_argparse(
     parser.add_argument('--init_weights_task_id', type = int, default = 1, help = "task identifier to use for model weight initialization (default:1)")
     parser.add_argument('--fix_weights', type = pathlib.Path, default = None, help = "path to file of layer names to fix weights (default: no layers fixed)")
     parser.add_argument('--sparse_method', type = str, default = None, help = "sparse model inference method: one of 'sig_highestorder_step' (default: no sparse inference)")
-    parser.add_argument('--phase', type = str, choices = ['full', 'grid_search', 'fit_best', 'merge_folds'], default = 'full', help = "execution phase to run (default: 'full')")
+    parser.add_argument('--phase', type = str, choices = ['full', 'grid_search', 'fit_best', 'merge_folds', 'sparse_grid_search', 'sparse_fit_best', 'sparse_merge_folds'], default = 'full', help = "execution phase to run (default: 'full')")
     parser.add_argument('--fold', type = int, default = None, help = "cross-validation fold to fit when --phase fit_best")
     parser.add_argument('--grid_search_fold', type = int, default = 1, help = "cross-validation fold containing grid search models (default: 1)")
+    parser.add_argument('--stage_index', type = int, default = None, help = "one-based sparse stage index for sparse split phases")
     parser.add_argument('--predict', type = pathlib.Path, default = None, help = "path to supplementary variants file for prediction (default: None)")
     return parser
 
@@ -141,10 +142,17 @@ def main(
         args.fix_weights = {}
     if args.sos_architecture!=None:
         args.sos_architecture = [int(i) for i in args.sos_architecture.split(',')]
+    sparse_stage_phases = {'sparse_grid_search', 'sparse_fit_best', 'sparse_merge_folds'}
     if args.k_folds < 3:
         raise ValueError("--k_folds must be at least 3")
-    if args.phase == 'fit_best' and args.fold is None:
+    if args.phase in {'fit_best', 'sparse_fit_best'} and args.fold is None:
         raise ValueError("--fold is required when --phase fit_best")
+    if args.phase in sparse_stage_phases and args.stage_index is None:
+        raise ValueError("--stage_index is required for sparse split phases")
+    if args.phase in sparse_stage_phases and args.sparse_method != 'sig_highestorder_step':
+        raise ValueError("--sparse_method sig_highestorder_step is required for sparse split phases")
+    if args.sparse_method is not None and args.phase != 'full' and args.phase not in sparse_stage_phases:
+        raise ValueError("--sparse_method is only supported when --phase full")
 
     #######################################################################
     ## CREATE PROJECT ##
@@ -189,9 +197,14 @@ def main(
         auto_run = False)
 
     if args.phase == 'full':
-        mochi_project.run_full_task(
-            seed = args.seed,
-            fix_weights = mochi_project.fix_weights)
+        if args.sparse_method is None:
+            mochi_project.run_full_task(
+                seed = args.seed,
+                fix_weights = mochi_project.fix_weights)
+        elif args.sparse_method == 'sig_highestorder_step':
+            mochi_project.run_sparse_sig_highestorder_step()
+        else:
+            raise ValueError(f"Unsupported sparse_method: {args.sparse_method}")
     elif args.phase == 'grid_search':
         mochi_project.run_grid_search_task(
             seed = args.seed,
@@ -205,6 +218,21 @@ def main(
     elif args.phase == 'merge_folds':
         mochi_project.merge_parallel_task(
             seed = args.seed,
+            RT = mochi_project.RT,
+            seq_position_offset = mochi_project.seq_position_offset)
+    elif args.phase == 'sparse_grid_search':
+        mochi_project.run_sparse_stage_grid_search(
+            stage_index = args.stage_index,
+            fix_weights = mochi_project.fix_weights)
+    elif args.phase == 'sparse_fit_best':
+        mochi_project.run_sparse_stage_fit_fold(
+            stage_index = args.stage_index,
+            fold = args.fold,
+            grid_search_fold = args.grid_search_fold,
+            fix_weights = mochi_project.fix_weights)
+    elif args.phase == 'sparse_merge_folds':
+        mochi_project.merge_sparse_stage(
+            stage_index = args.stage_index,
             RT = mochi_project.RT,
             seq_position_offset = mochi_project.seq_position_offset)
 
