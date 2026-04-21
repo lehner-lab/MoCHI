@@ -4,6 +4,8 @@ MoCHI project module
 """
 
 import os
+import pickle
+import shutil
 import torch
 import pathlib
 import numpy as np
@@ -251,6 +253,92 @@ class MochiProject():
         """
         return os.path.join(self.get_task_directory(seed), "fold_"+str(fold))
 
+    def get_grid_condition_directory(
+        self,
+        seed,
+        condition_index):
+        """
+        Return the per-condition grid-search directory for a task seed.
+
+        :param seed: Task seed identifier (required).
+        :param condition_index: One-based grid-condition identifier (required).
+        :returns: Condition directory path string.
+        """
+        return os.path.join(self.get_task_directory(seed), "grid_condition_"+str(condition_index))
+
+    def list_grid_condition_directories(
+        self,
+        seed):
+        """
+        Return sorted grid-condition directories for a task seed.
+
+        :param seed: Task seed identifier (required).
+        :returns: List of condition directory path strings.
+        """
+        task_directory = self.get_task_directory(seed)
+        if not os.path.exists(task_directory):
+            return []
+        condition_dirs = []
+        for entry in os.listdir(task_directory):
+            if not entry.startswith("grid_condition_"):
+                continue
+            suffix = entry.split("grid_condition_", 1)[1]
+            if suffix.isdigit():
+                condition_dirs.append((int(suffix), os.path.join(task_directory, entry)))
+        return [path for _, path in sorted(condition_dirs)]
+
+    def list_grid_condition_task_directories(
+        self,
+        seed,
+        stage_index = None):
+        """
+        Return sorted task directories containing per-condition grid-search outputs.
+
+        :param seed: Task seed identifier (required).
+        :param stage_index: Optional sparse stage identifier (default:None).
+        :returns: List of task directory path strings.
+        """
+        condition_task_dirs = []
+
+        # First support the canonical in-task layout.
+        canonical_condition_dirs = self.list_grid_condition_directories(seed)
+        for condition_dir in canonical_condition_dirs:
+            if os.path.exists(os.path.join(condition_dir, "saved_models")):
+                condition_task_dirs.append(condition_dir)
+                continue
+            condition_task_dir = os.path.join(condition_dir, "task_"+str(seed))
+            if os.path.exists(os.path.join(condition_task_dir, "saved_models")):
+                condition_task_dirs.append(condition_task_dir)
+        if len(condition_task_dirs) != 0:
+            return condition_task_dirs
+
+        # Fall back to the Nextflow per-condition run layout.
+        run_directory = os.path.dirname(self.directory)
+        project_name = os.path.basename(self.directory)
+        if stage_index is None:
+            grid_root = os.path.join(run_directory, "grid_search")
+        else:
+            grid_root = os.path.join(run_directory, "stage_"+str(stage_index), "grid_search")
+
+        if not os.path.exists(grid_root):
+            return []
+
+        discovered_dirs = []
+        for entry in os.listdir(grid_root):
+            if not entry.startswith("condition_"):
+                continue
+            suffix = entry.split("condition_", 1)[1]
+            if not suffix.isdigit():
+                continue
+            condition_task_dir = os.path.join(
+                grid_root,
+                entry,
+                project_name,
+                "task_"+str(seed))
+            if os.path.exists(os.path.join(condition_task_dir, "saved_models")):
+                discovered_dirs.append((int(suffix), condition_task_dir))
+        return [path for _, path in sorted(discovered_dirs)]
+
     def get_sparse_stage_count(self):
         """
         Return the number of sparse stages for the configured interaction order.
@@ -269,6 +357,22 @@ class MochiProject():
         :returns: Integer interaction order for the stage.
         """
         return self.max_interaction_order - (stage_index - 1)
+
+    def get_parallel_canonical_project_directory(self):
+        """
+        Return the canonical project directory for phase-split Nextflow runs.
+
+        :returns: Project directory path string.
+        """
+        project_directory = Path(self.directory)
+        for ancestor in project_directory.parents:
+            if ancestor.name != "grid_search":
+                continue
+            run_directory = ancestor.parent
+            if run_directory.name.startswith("stage_"):
+                run_directory = run_directory.parent
+            return str(run_directory / project_directory.name)
+        return self.directory
 
     def get_sparse_stage_settings(
         self,
@@ -304,7 +408,12 @@ class MochiProject():
         stage_settings = self.get_sparse_stage_settings(stage_index)
         features = self.features
         if stage_index > 1:
-            prev_task = MochiTask(directory = self.get_task_directory(stage_index - 1))
+            prev_task_directory = self.get_task_directory(stage_index - 1)
+            if not os.path.exists(os.path.join(prev_task_directory, "saved_models")) and running_in_parallel_mode():
+                prev_task_directory = os.path.join(
+                    self.get_parallel_canonical_project_directory(),
+                    "task_"+str(stage_index - 1))
+            prev_task = MochiTask(directory = prev_task_directory)
             at_list = prev_task.get_additive_trait_weights(save = False)
             features = {}
             for i in range(len(at_list)):
@@ -769,15 +878,20 @@ class MochiProject():
         task_directory = self.get_task_directory(seed)
         fold_directory = self.get_fold_directory(seed, fold)
         if os.path.exists(os.path.join(fold_directory, "saved_models")) and not overwrite:
-            mochi_task = MochiTask(directory = fold_directory)
-            fold_models = [
-                i for i in mochi_task.models
-                if (i.metadata.grid_search == False) and (i.metadata.fold == fold)]
-            if len(fold_models) == 0:
-                print("Error: Saved fold directory does not contain fit_best models.")
-                raise ValueError
-            print("run_fit_fold_task: Reusing existing fold artifacts")
-            return mochi_task
+            try:
+                mochi_task = MochiTask(directory = fold_directory)
+            except (EOFError, OSError, ValueError, pickle.UnpicklingError):
+                print(f"run_fit_fold_task: Saved fold artifacts for fold {fold} are corrupted; rebuilding fold output")
+                shutil.rmtree(fold_directory, ignore_errors = True)
+            else:
+                fold_models = [
+                    i for i in mochi_task.models
+                    if (i.metadata.grid_search == False) and (i.metadata.fold == fold)]
+                if len(fold_models) == 0:
+                    print("Error: Saved fold directory does not contain fit_best models.")
+                    raise ValueError
+                print("run_fit_fold_task: Reusing existing fold artifacts")
+                return mochi_task
 
         mochi_task = MochiTask(directory = task_directory)
         os.makedirs(fold_directory, exist_ok = True)
@@ -819,15 +933,21 @@ class MochiProject():
         task_directory = self.get_task_directory(stage_index)
         fold_directory = self.get_fold_directory(stage_index, fold)
         if os.path.exists(os.path.join(fold_directory, "saved_models")) and not overwrite:
-            mochi_task = MochiTask(directory = fold_directory)
-            fold_models = [
-                i for i in mochi_task.models
-                if (i.metadata.grid_search == False) and (i.metadata.fold == fold)]
-            if len(fold_models) == 0:
-                print("Error: Saved sparse stage fold directory does not contain fit_best models.")
-                raise ValueError
-            print(f"run_sparse_stage_fit_fold: Reusing existing fold artifacts for stage {stage_index}, fold {fold}")
-            return mochi_task
+            try:
+                mochi_task = MochiTask(directory = fold_directory)
+            except (EOFError, OSError, ValueError, pickle.UnpicklingError):
+                print(
+                    f"run_sparse_stage_fit_fold: Saved fold artifacts for stage {stage_index}, fold {fold} are corrupted; rebuilding fold output")
+                shutil.rmtree(fold_directory, ignore_errors = True)
+            else:
+                fold_models = [
+                    i for i in mochi_task.models
+                    if (i.metadata.grid_search == False) and (i.metadata.fold == fold)]
+                if len(fold_models) == 0:
+                    print("Error: Saved sparse stage fold directory does not contain fit_best models.")
+                    raise ValueError
+                print(f"run_sparse_stage_fit_fold: Reusing existing fold artifacts for stage {stage_index}, fold {fold}")
+                return mochi_task
 
         mochi_task = MochiTask(directory = task_directory)
         os.makedirs(fold_directory, exist_ok = True)
@@ -867,24 +987,43 @@ class MochiProject():
         :returns: MochiTask object.
         """
         task_directory = self.get_task_directory(seed)
+        print(f"merge_parallel_task: Starting merge for seed {seed} across {self.k_folds} folds")
         mochi_task = MochiTask(directory = task_directory)
         mochi_task.models = [i for i in mochi_task.models if i.metadata.grid_search == True]
-
+        merged_folds = []
+        skipped_folds = []
         for fold in range(1, self.k_folds+1):
             fold_directory = self.get_fold_directory(seed, fold)
+            print(f"merge_parallel_task: Loading fold {fold}/{self.k_folds} from {fold_directory}")
             if not os.path.exists(os.path.join(fold_directory, "saved_models")):
-                print("Error: Fold directory does not exist.")
-                raise ValueError
-            fold_task = MochiTask(directory = fold_directory)
+                print(f"merge_parallel_task: Skipping fold {fold}/{self.k_folds} because saved_models is missing")
+                skipped_folds.append(fold)
+                continue
+            try:
+                fold_task = MochiTask(directory = fold_directory)
+            except (EOFError, OSError, ValueError, pickle.UnpicklingError):
+                print(f"merge_parallel_task: Skipping corrupted fold directory for fold {fold}/{self.k_folds}")
+                skipped_folds.append(fold)
+                continue
             fold_models = [
                 i for i in fold_task.models
                 if (i.metadata.grid_search == False) and (i.metadata.fold == fold)]
             if len(fold_models) == 0:
-                print("Error: Fold directory does not contain fit_best models.")
-                raise ValueError
+                print(f"merge_parallel_task: Skipping fold {fold}/{self.k_folds} because no fit_best models were found")
+                skipped_folds.append(fold)
+                continue
             mochi_task.models.extend(fold_models)
+            print(f"merge_parallel_task: Loaded fold {fold}/{self.k_folds} with {len(fold_models)} fit_best model(s)")
+            merged_folds.append(fold)
+
+        if len(merged_folds) == 0:
+            print("Error: No completed fold directories found.")
+            raise ValueError
+        if len(skipped_folds) != 0:
+            print(f"merge_parallel_task: Merging partial fold set; merged folds {merged_folds}, skipped folds {skipped_folds}")
 
         mochi_task.directory = task_directory
+        print(f"merge_parallel_task: Finalizing merged outputs for seed {seed}")
         self.finalize_task_outputs(
             mochi_task = mochi_task,
             RT = RT,
@@ -892,6 +1031,7 @@ class MochiProject():
             save_model = save_model,
             save_report = save_report,
             save_weights = save_weights)
+        print(f"merge_parallel_task: Completed merge for seed {seed}")
         self.tasks[seed] = mochi_task
         return mochi_task
 
@@ -910,24 +1050,43 @@ class MochiProject():
         """
         stage_settings = self.get_sparse_stage_settings(stage_index)
         task_directory = self.get_task_directory(stage_index)
+        print(f"merge_sparse_stage: Starting merge for stage {stage_index} across {self.k_folds} folds")
         mochi_task = MochiTask(directory = task_directory)
         mochi_task.models = [i for i in mochi_task.models if i.metadata.grid_search == True]
-
+        merged_folds = []
+        skipped_folds = []
         for fold in range(1, self.k_folds+1):
             fold_directory = self.get_fold_directory(stage_index, fold)
+            print(f"merge_sparse_stage: Loading fold {fold}/{self.k_folds} for stage {stage_index} from {fold_directory}")
             if not os.path.exists(os.path.join(fold_directory, "saved_models")):
-                print("Error: Fold directory does not exist.")
-                raise ValueError
-            fold_task = MochiTask(directory = fold_directory)
+                print(f"merge_sparse_stage: Skipping stage {stage_index}, fold {fold}/{self.k_folds} because saved_models is missing")
+                skipped_folds.append(fold)
+                continue
+            try:
+                fold_task = MochiTask(directory = fold_directory)
+            except (EOFError, OSError, ValueError, pickle.UnpicklingError):
+                print(f"merge_sparse_stage: Skipping corrupted fold directory for stage {stage_index}, fold {fold}/{self.k_folds}")
+                skipped_folds.append(fold)
+                continue
             fold_models = [
                 i for i in fold_task.models
                 if (i.metadata.grid_search == False) and (i.metadata.fold == fold)]
             if len(fold_models) == 0:
-                print("Error: Fold directory does not contain fit_best models.")
-                raise ValueError
+                print(f"merge_sparse_stage: Skipping stage {stage_index}, fold {fold}/{self.k_folds} because no fit_best models were found")
+                skipped_folds.append(fold)
+                continue
             mochi_task.models.extend(fold_models)
+            print(f"merge_sparse_stage: Loaded stage {stage_index}, fold {fold}/{self.k_folds} with {len(fold_models)} fit_best model(s)")
+            merged_folds.append(fold)
+
+        if len(merged_folds) == 0:
+            print("Error: No completed fold directories found.")
+            raise ValueError
+        if len(skipped_folds) != 0:
+            print(f"merge_sparse_stage: Merging partial fold set for stage {stage_index}; merged folds {merged_folds}, skipped folds {skipped_folds}")
 
         mochi_task.directory = task_directory
+        print(f"merge_sparse_stage: Finalizing merged outputs for stage {stage_index}")
         self.finalize_task_outputs(
             mochi_task = mochi_task,
             RT = RT,
@@ -935,8 +1094,81 @@ class MochiProject():
             save_model = stage_settings['save_model'],
             save_report = stage_settings['save_report'],
             save_weights = stage_settings['save_weights'])
+        print(f"merge_sparse_stage: Completed merge for stage {stage_index}")
         self.tasks[stage_index] = mochi_task
         return mochi_task
+
+    def merge_grid_search_conditions(
+        self,
+        seed,
+        overwrite = False,
+        stage_index = None):
+        """
+        Merge isolated per-condition grid-search runs into the canonical task directory.
+
+        :param seed: Task seed identifier (required).
+        :param overwrite: Whether or not to overwrite existing merged artifacts (default:False).
+        :param stage_index: Optional sparse stage identifier (default:None).
+        :returns: MochiTask object.
+        """
+        task_directory = self.get_task_directory(seed)
+        if os.path.exists(os.path.join(task_directory, "saved_models")) and not overwrite:
+            mochi_task = MochiTask(directory = task_directory)
+            grid_search_models = [i for i in mochi_task.models if i.metadata.grid_search == True]
+            if len(grid_search_models) != 0:
+                print("merge_grid_search_conditions: Reusing existing merged grid-search artifacts")
+                self.tasks[seed] = mochi_task
+                return mochi_task
+
+        condition_task_directories = self.list_grid_condition_task_directories(
+            seed = seed,
+            stage_index = stage_index)
+        if len(condition_task_directories) == 0:
+            print("Error: No grid condition task directories found.")
+            raise ValueError
+
+        merged_task = None
+        merged_models = []
+        for condition_task_directory in condition_task_directories:
+            if not os.path.exists(os.path.join(condition_task_directory, "saved_models")):
+                print("Error: Grid condition task directory does not exist.")
+                raise ValueError
+            condition_task = MochiTask(directory = condition_task_directory)
+            condition_models = [i for i in condition_task.models if i.metadata.grid_search == True]
+            if len(condition_models) == 0:
+                print("Error: Grid condition task directory does not contain grid-search models.")
+                raise ValueError
+            if merged_task is None:
+                merged_task = condition_task
+            merged_models.extend(condition_models)
+
+        merged_task.models = merged_models
+        merged_task.directory = task_directory
+        self.finalize_task_outputs(
+            mochi_task = merged_task,
+            save_model = True,
+            save_report = False,
+            save_weights = False)
+        self.tasks[seed] = merged_task
+        return merged_task
+
+    def merge_sparse_stage_grid_search(
+        self,
+        stage_index,
+        overwrite = False):
+        """
+        Merge isolated per-condition sparse-stage grid-search runs into the stage task directory.
+
+        :param stage_index: One-based sparse stage index (required).
+        :param overwrite: Whether or not to overwrite existing merged artifacts (default:False).
+        :returns: MochiTask object.
+        """
+        merged_task = self.merge_grid_search_conditions(
+            seed = stage_index,
+            overwrite = overwrite,
+            stage_index = stage_index)
+        self.tasks[stage_index] = merged_task
+        return merged_task
 
     def run_cv_task(
         self,

@@ -4,7 +4,6 @@ params.nextflow_root = params.containsKey("nextflow_root") ? params["nextflow_ro
 params.repo_root = params.containsKey("repo_root") ? params["repo_root"] : new File(params.nextflow_root.toString()).getCanonicalFile().getParent()
 params.mochi_repo = params.containsKey("mochi_repo") ? params["mochi_repo"] : "${params.repo_root}"
 params.model_design = params.containsKey("model_design") ? params["model_design"] : "/nfs/users/nfs_e/eh19/work/data/mochi-dev/dataset_for_order2_model_benchmarks/model_design_mochi_pool2_abs.txt"
-params.expected_dataset = params.containsKey("expected_dataset") ? params["expected_dataset"] : "/nfs/users/nfs_e/eh19/work/data/mochi-dev/dataset_for_order2_model_benchmarks/FYN_BIBD_4sG2_mochi_pool2.txt"
 params.output_root = params.containsKey("output_root") ? params["output_root"] : "/lustre/scratch124/humgen/teams_v2/hgi/eh19/work-data/mochi-dev"
 params.cache_root = params.containsKey("cache_root") ? params["cache_root"] : "${params.output_root}/cache"
 params.run_name = params.containsKey("run_name") ? params["run_name"] : "mochi-benchmark"
@@ -23,26 +22,107 @@ params.l2_regularization_factor = params.containsKey("l2_regularization_factor")
 params.sparse_method = params.containsKey("sparse_method") ? params["sparse_method"] : ""
 params.workflow_mode = params.containsKey("workflow_mode") ? params["workflow_mode"] : "parallel_folds"
 params.gpu_queue = params.containsKey("gpu_queue") ? params["gpu_queue"] : "gpu-normal"
-params.gpu_time = params.containsKey("gpu_time") ? params["gpu_time"] : "12h"
-params.gpu_cluster_options = params.containsKey("gpu_cluster_options") ? params["gpu_cluster_options"] : "-gpu 'num=1:mode=shared:j_exclusive=no:gpack=yes'"
-params.grid_memory = params.containsKey("grid_memory") ? params["grid_memory"] : "8 GB"
+params.gpu_cluster_options = params.containsKey("gpu_cluster_options") ? params["gpu_cluster_options"] : "-gpu 'num=1:mode=shared:j_exclusive=no:gpack=yes' -R \"select[hname!='farm22-gpu0203']\""
+params.grid_gpu_cluster_options = params.containsKey("grid_gpu_cluster_options") ? params["grid_gpu_cluster_options"] : params.gpu_cluster_options
+params.fold_gpu_cluster_options = params.containsKey("fold_gpu_cluster_options") ? params["fold_gpu_cluster_options"] : "-gpu 'num=1:mode=exclusive_process:j_exclusive=no:gpack=yes' -R \"select[hname!='farm22-gpu0203']\""
+params.cpu_queue = params.containsKey("cpu_queue") ? params["cpu_queue"] : "normal"
+params.merge_memory = params.containsKey("merge_memory") ? params["merge_memory"] : "24 GB"
+params.merge_memory_max = params.containsKey("merge_memory_max") ? params["merge_memory_max"] : "50 GB"
+params.grid_memory = params.containsKey("grid_memory") ? params["grid_memory"] : "24 GB"
 params.grid_memory_max = params.containsKey("grid_memory_max") ? params["grid_memory_max"] : "50 GB"
-params.fold_memory = params.containsKey("fold_memory") ? params["fold_memory"] : "8 GB"
-params.fold_memory_max = params.containsKey("fold_memory_max") ? params["fold_memory_max"] : "32 GB"
+params.fold_memory = params.containsKey("fold_memory") ? params["fold_memory"] : "24 GB"
+params.fold_memory_max = params.containsKey("fold_memory_max") ? params["fold_memory_max"] : "50 GB"
 params.max_memory_retries = params.containsKey("max_memory_retries") ? params["max_memory_retries"] : 3
 
+def splitGridParam = { value, defaults ->
+    def text = value == null ? "" : value.toString().trim()
+    def rawValues = text ? text.split(/\s*,\s*/) : defaults
+    return rawValues.collect { it.toString() }.findAll { it }
+}
+
+def buildGridConditions = {
+    def batchSizes = splitGridParam(params.batch_size, ["512", "1024", "2048"])
+    def learnRates = splitGridParam(params.learn_rate, ["0.05"])
+    def l1Factors = splitGridParam(params.l1_regularization_factor, ["0"])
+    def l2Factors = splitGridParam(params.l2_regularization_factor, ["0.000001"])
+    def conditions = []
+    int conditionIndex = 1
+    batchSizes.each { batchSize ->
+        learnRates.each { learnRate ->
+            l1Factors.each { l1Factor ->
+                l2Factors.each { l2Factor ->
+                    conditions << tuple(conditionIndex, batchSize, learnRate, l1Factor, l2Factor)
+                    conditionIndex += 1
+                }
+            }
+        }
+    }
+    return conditions
+}
+
+def sparseRunRoot = new File("${params.output_root}/${params.run_name}")
+def sparseShortcutDir = new File(sparseRunRoot, ".nextflow_shortcuts")
+
+def ensureSparseShortcutFile = { name ->
+    sparseShortcutDir.mkdirs()
+    def shortcutFile = new File(sparseShortcutDir, name)
+    if (!shortcutFile.exists()) {
+        shortcutFile.text = "shortcut\n"
+    }
+    return file(shortcutFile.toString())
+}
+
+def sparseTaskDirectory = { stage ->
+    new File(sparseRunRoot, "${params.project_name}/task_${stage}")
+}
+
+def sparseFoldSavedModelsExist = { stage, fold ->
+    new File(sparseTaskDirectory(stage), "fold_${fold}/saved_models").exists()
+}
+
+def sparseStageSavedModelsExist = { stage ->
+    new File(sparseTaskDirectory(stage), "saved_models").exists()
+}
+
+def sparseMergeManifestFile = { stage ->
+    new File(sparseRunRoot, "stage_${stage}/merge/benchmark_manifest.env")
+}
+
+def sparseAllFoldArtifactsExist = { stage, foldCount ->
+    (1..foldCount).every { fold -> sparseFoldSavedModelsExist(stage, fold) }
+}
+
+def sparseMergeShortcutReady = { stage, foldCount ->
+    sparseStageSavedModelsExist(stage) &&
+        sparseAllFoldArtifactsExist(stage, foldCount) &&
+        sparseMergeManifestFile(stage).exists()
+}
+
+def sparseGridShortcutReady = { stage ->
+    sparseStageSavedModelsExist(stage)
+}
+
 include {
-    RUN_GRID_SEARCH
+    RUN_GRID_SEARCH_CONDITION
+    MERGE_GRID_SEARCH_CONDITIONS
     RUN_FOLD
     MERGE_FOLDS
-    RUN_SPARSE_STAGE_GRID_SEARCH as RUN_SPARSE_STAGE_GRID_SEARCH_1
-    RUN_SPARSE_STAGE_GRID_SEARCH as RUN_SPARSE_STAGE_GRID_SEARCH_2
-    RUN_SPARSE_STAGE_GRID_SEARCH as RUN_SPARSE_STAGE_GRID_SEARCH_3
-    RUN_SPARSE_STAGE_GRID_SEARCH as RUN_SPARSE_STAGE_GRID_SEARCH_4
-    RUN_SPARSE_STAGE_GRID_SEARCH as RUN_SPARSE_STAGE_GRID_SEARCH_5
-    RUN_SPARSE_STAGE_GRID_SEARCH as RUN_SPARSE_STAGE_GRID_SEARCH_6
-    RUN_SPARSE_STAGE_GRID_SEARCH as RUN_SPARSE_STAGE_GRID_SEARCH_7
-    RUN_SPARSE_STAGE_GRID_SEARCH as RUN_SPARSE_STAGE_GRID_SEARCH_8
+    RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION as RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION_1
+    RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION as RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION_2
+    RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION as RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION_3
+    RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION as RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION_4
+    RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION as RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION_5
+    RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION as RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION_6
+    RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION as RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION_7
+    RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION as RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION_8
+    MERGE_SPARSE_STAGE_GRID_SEARCH as MERGE_SPARSE_STAGE_GRID_SEARCH_1
+    MERGE_SPARSE_STAGE_GRID_SEARCH as MERGE_SPARSE_STAGE_GRID_SEARCH_2
+    MERGE_SPARSE_STAGE_GRID_SEARCH as MERGE_SPARSE_STAGE_GRID_SEARCH_3
+    MERGE_SPARSE_STAGE_GRID_SEARCH as MERGE_SPARSE_STAGE_GRID_SEARCH_4
+    MERGE_SPARSE_STAGE_GRID_SEARCH as MERGE_SPARSE_STAGE_GRID_SEARCH_5
+    MERGE_SPARSE_STAGE_GRID_SEARCH as MERGE_SPARSE_STAGE_GRID_SEARCH_6
+    MERGE_SPARSE_STAGE_GRID_SEARCH as MERGE_SPARSE_STAGE_GRID_SEARCH_7
+    MERGE_SPARSE_STAGE_GRID_SEARCH as MERGE_SPARSE_STAGE_GRID_SEARCH_8
     RUN_SPARSE_STAGE_FOLD as RUN_SPARSE_STAGE_FOLD_1
     RUN_SPARSE_STAGE_FOLD as RUN_SPARSE_STAGE_FOLD_2
     RUN_SPARSE_STAGE_FOLD as RUN_SPARSE_STAGE_FOLD_3
@@ -68,6 +148,7 @@ workflow {
     if (params.workflow_mode == "legacy_full") {
         RUN_MOCHI()
     } else if (params.workflow_mode == "parallel_folds") {
+        def gridConditions = buildGridConditions()
         if (params.sparse_method) {
             if (params.sparse_method != "sig_highestorder_step") {
                 throw new IllegalArgumentException("Unsupported sparse_method for parallel_folds: ${params.sparse_method}")
@@ -82,42 +163,80 @@ workflow {
 
             for (int stage = 1; stage <= stageCount; stage++) {
                 def stageVal = stage
-                def gridInput = prevStageReady.map { ready -> tuple(stageVal, ready) }
-                def gridDone
-                switch (stage) {
-                    case 1: gridDone = RUN_SPARSE_STAGE_GRID_SEARCH_1(gridInput); break
-                    case 2: gridDone = RUN_SPARSE_STAGE_GRID_SEARCH_2(gridInput); break
-                    case 3: gridDone = RUN_SPARSE_STAGE_GRID_SEARCH_3(gridInput); break
-                    case 4: gridDone = RUN_SPARSE_STAGE_GRID_SEARCH_4(gridInput); break
-                    case 5: gridDone = RUN_SPARSE_STAGE_GRID_SEARCH_5(gridInput); break
-                    case 6: gridDone = RUN_SPARSE_STAGE_GRID_SEARCH_6(gridInput); break
-                    case 7: gridDone = RUN_SPARSE_STAGE_GRID_SEARCH_7(gridInput); break
-                    case 8: gridDone = RUN_SPARSE_STAGE_GRID_SEARCH_8(gridInput); break
-                }
-                def foldInputs = gridDone.flatMap { sparseStage, gridReady ->
-                    (1..foldCount).collect { fold -> tuple(sparseStage, fold, gridReady) }
-                }
-                def foldDone
-                switch (stage) {
-                    case 1: foldDone = RUN_SPARSE_STAGE_FOLD_1(foldInputs); break
-                    case 2: foldDone = RUN_SPARSE_STAGE_FOLD_2(foldInputs); break
-                    case 3: foldDone = RUN_SPARSE_STAGE_FOLD_3(foldInputs); break
-                    case 4: foldDone = RUN_SPARSE_STAGE_FOLD_4(foldInputs); break
-                    case 5: foldDone = RUN_SPARSE_STAGE_FOLD_5(foldInputs); break
-                    case 6: foldDone = RUN_SPARSE_STAGE_FOLD_6(foldInputs); break
-                    case 7: foldDone = RUN_SPARSE_STAGE_FOLD_7(foldInputs); break
-                    case 8: foldDone = RUN_SPARSE_STAGE_FOLD_8(foldInputs); break
-                }
                 def mergedStage
-                switch (stage) {
-                    case 1: mergedStage = RUN_SPARSE_STAGE_MERGE_1(gridDone, foldDone.collect()); break
-                    case 2: mergedStage = RUN_SPARSE_STAGE_MERGE_2(gridDone, foldDone.collect()); break
-                    case 3: mergedStage = RUN_SPARSE_STAGE_MERGE_3(gridDone, foldDone.collect()); break
-                    case 4: mergedStage = RUN_SPARSE_STAGE_MERGE_4(gridDone, foldDone.collect()); break
-                    case 5: mergedStage = RUN_SPARSE_STAGE_MERGE_5(gridDone, foldDone.collect()); break
-                    case 6: mergedStage = RUN_SPARSE_STAGE_MERGE_6(gridDone, foldDone.collect()); break
-                    case 7: mergedStage = RUN_SPARSE_STAGE_MERGE_7(gridDone, foldDone.collect()); break
-                    case 8: mergedStage = RUN_SPARSE_STAGE_MERGE_8(gridDone, foldDone.collect()); break
+
+                if (sparseMergeShortcutReady(stageVal, foldCount)) {
+                    mergedStage = Channel.value(tuple(
+                        stageVal,
+                        ensureSparseShortcutFile("sparse_stage_${stageVal}_merge.done"),
+                        file(sparseMergeManifestFile(stageVal).toString())
+                    ))
+                } else {
+                    def gridInput = prevStageReady.flatMap { ready ->
+                        gridConditions.collect { condition ->
+                            tuple(stageVal, condition[0], condition[1], condition[2], condition[3], condition[4], ready)
+                        }
+                    }
+
+                    def gridDone
+                    if (sparseGridShortcutReady(stageVal)) {
+                        gridDone = Channel.value(tuple(
+                            stageVal,
+                            ensureSparseShortcutFile("sparse_stage_${stageVal}_grid.done")
+                        ))
+                    } else {
+                        switch (stage) {
+                            case 1: gridDone = MERGE_SPARSE_STAGE_GRID_SEARCH_1(Channel.value(stageVal), RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION_1(gridInput).map { sparseStage, condition, done -> done }.collect()); break
+                            case 2: gridDone = MERGE_SPARSE_STAGE_GRID_SEARCH_2(Channel.value(stageVal), RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION_2(gridInput).map { sparseStage, condition, done -> done }.collect()); break
+                            case 3: gridDone = MERGE_SPARSE_STAGE_GRID_SEARCH_3(Channel.value(stageVal), RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION_3(gridInput).map { sparseStage, condition, done -> done }.collect()); break
+                            case 4: gridDone = MERGE_SPARSE_STAGE_GRID_SEARCH_4(Channel.value(stageVal), RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION_4(gridInput).map { sparseStage, condition, done -> done }.collect()); break
+                            case 5: gridDone = MERGE_SPARSE_STAGE_GRID_SEARCH_5(Channel.value(stageVal), RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION_5(gridInput).map { sparseStage, condition, done -> done }.collect()); break
+                            case 6: gridDone = MERGE_SPARSE_STAGE_GRID_SEARCH_6(Channel.value(stageVal), RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION_6(gridInput).map { sparseStage, condition, done -> done }.collect()); break
+                            case 7: gridDone = MERGE_SPARSE_STAGE_GRID_SEARCH_7(Channel.value(stageVal), RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION_7(gridInput).map { sparseStage, condition, done -> done }.collect()); break
+                            case 8: gridDone = MERGE_SPARSE_STAGE_GRID_SEARCH_8(Channel.value(stageVal), RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION_8(gridInput).map { sparseStage, condition, done -> done }.collect()); break
+                        }
+                    }
+
+                    def shortcutFoldPaths = []
+                    def missingFolds = []
+                    (1..foldCount).each { fold ->
+                        if (sparseFoldSavedModelsExist(stageVal, fold)) {
+                            shortcutFoldPaths << ensureSparseShortcutFile("sparse_stage_${stageVal}_fold_${fold}.done")
+                        } else {
+                            missingFolds << fold
+                        }
+                    }
+
+                    def shortcutFoldDone = Channel.fromList(shortcutFoldPaths)
+                    def submittedFoldDone = Channel.empty()
+                    if (missingFolds) {
+                        def foldInputs = gridDone.flatMap { sparseStage, gridReady ->
+                            missingFolds.collect { fold -> tuple(sparseStage, fold, gridReady) }
+                        }
+                        switch (stage) {
+                            case 1: submittedFoldDone = RUN_SPARSE_STAGE_FOLD_1(foldInputs); break
+                            case 2: submittedFoldDone = RUN_SPARSE_STAGE_FOLD_2(foldInputs); break
+                            case 3: submittedFoldDone = RUN_SPARSE_STAGE_FOLD_3(foldInputs); break
+                            case 4: submittedFoldDone = RUN_SPARSE_STAGE_FOLD_4(foldInputs); break
+                            case 5: submittedFoldDone = RUN_SPARSE_STAGE_FOLD_5(foldInputs); break
+                            case 6: submittedFoldDone = RUN_SPARSE_STAGE_FOLD_6(foldInputs); break
+                            case 7: submittedFoldDone = RUN_SPARSE_STAGE_FOLD_7(foldInputs); break
+                            case 8: submittedFoldDone = RUN_SPARSE_STAGE_FOLD_8(foldInputs); break
+                        }
+                    }
+
+                    def foldDone = missingFolds ? shortcutFoldDone.mix(submittedFoldDone) : shortcutFoldDone
+
+                    switch (stage) {
+                        case 1: mergedStage = RUN_SPARSE_STAGE_MERGE_1(gridDone, foldDone.collect()); break
+                        case 2: mergedStage = RUN_SPARSE_STAGE_MERGE_2(gridDone, foldDone.collect()); break
+                        case 3: mergedStage = RUN_SPARSE_STAGE_MERGE_3(gridDone, foldDone.collect()); break
+                        case 4: mergedStage = RUN_SPARSE_STAGE_MERGE_4(gridDone, foldDone.collect()); break
+                        case 5: mergedStage = RUN_SPARSE_STAGE_MERGE_5(gridDone, foldDone.collect()); break
+                        case 6: mergedStage = RUN_SPARSE_STAGE_MERGE_6(gridDone, foldDone.collect()); break
+                        case 7: mergedStage = RUN_SPARSE_STAGE_MERGE_7(gridDone, foldDone.collect()); break
+                        case 8: mergedStage = RUN_SPARSE_STAGE_MERGE_8(gridDone, foldDone.collect()); break
+                    }
                 }
                 prevStageReady = mergedStage.map { sparseStage, mergeReady, manifest -> mergeReady }
                 finalManifest = mergedStage.map { sparseStage, mergeReady, manifest -> manifest }
@@ -126,7 +245,8 @@ workflow {
             finalManifest
         } else {
             def foldCount = params.k_folds as int
-            def gridDone = RUN_GRID_SEARCH()
+            def gridConditionDone = RUN_GRID_SEARCH_CONDITION(Channel.fromList(gridConditions))
+            def gridDone = MERGE_GRID_SEARCH_CONDITIONS(gridConditionDone.map { condition, done -> done }.collect())
             def foldInputs = gridDone.flatMap { gridReady ->
                 (1..foldCount).collect { fold -> tuple(fold, gridReady) }
             }
@@ -154,7 +274,6 @@ process RUN_MOCHI {
     export MOCHI_REPO="${params.mochi_repo}"
     export MOCHI_VENV="${params.mochi_venv}"
     export MODEL_DESIGN="${params.model_design}"
-    export EXPECTED_DATASET="${params.expected_dataset}"
     export RUN_LABEL="${runLabel}"
     export OUTPUT_ROOT="${params.output_root}/${params.run_name}"
     export OUTPUT_DIR="${outputDir}"

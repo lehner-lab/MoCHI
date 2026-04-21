@@ -6,7 +6,6 @@ MOCHI_REPO="${MOCHI_REPO:-${REPO_ROOT}}"
 MOCHI_VENV="${MOCHI_VENV:-${MOCHI_REPO}/.venv}"
 PYTHON_BIN="${PYTHON_BIN:-${MOCHI_VENV}/bin/python}"
 MODEL_DESIGN="${MODEL_DESIGN:-${REPO_ROOT}/model_design_all_programmed_variants_abs_g1234567.txt}"
-EXPECTED_DATASET="${EXPECTED_DATASET:-}"
 RUN_LABEL="${RUN_LABEL:-mochi_batch_compare}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-/tmp}"
 OUTPUT_DIR="${OUTPUT_DIR:-${OUTPUT_ROOT%/}/${RUN_LABEL}}"
@@ -25,6 +24,9 @@ LEARN_RATE="${LEARN_RATE:-}"
 L1_REGULARIZATION_FACTOR="${L1_REGULARIZATION_FACTOR:-}"
 L2_REGULARIZATION_FACTOR="${L2_REGULARIZATION_FACTOR:-}"
 SPARSE_METHOD="${SPARSE_METHOD:-}"
+if [[ "${SPARSE_METHOD,,}" == "none" ]]; then
+    SPARSE_METHOD=""
+fi
 CACHE_DIR="${CACHE_DIR:-${OUTPUT_ROOT%/}/cache}"
 LOCAL_UV_CACHE="${LOCAL_UV_CACHE:-${OUTPUT_DIR}/uv-cache}"
 RUN_LOG="${RUN_LOG:-${OUTPUT_DIR}/run.log}"
@@ -52,13 +54,12 @@ if [ ! -f "${MODEL_DESIGN}" ]; then
     exit 1
 fi
 
-"${PYTHON_BIN}" - "${MODEL_DESIGN}" "${EXPECTED_DATASET}" <<'PY'
+"${PYTHON_BIN}" - "${MODEL_DESIGN}" <<'PY'
 import csv
 import sys
 from pathlib import Path
 
 model_design = Path(sys.argv[1])
-expected_dataset = sys.argv[2].strip()
 
 with model_design.open(newline="") as handle:
     reader = csv.DictReader(handle, delimiter="\t")
@@ -72,11 +73,6 @@ if missing:
     raise SystemExit(
         "The following dataset paths referenced by the model design do not exist:\n"
         + "\n".join(missing)
-    )
-
-if expected_dataset and expected_dataset not in files:
-    raise SystemExit(
-        f"Expected dataset {expected_dataset} was not found in {model_design}"
     )
 PY
 
@@ -143,7 +139,6 @@ printf '\n' >> "${COMMAND_FILE}"
     echo "repo_root=${REPO_ROOT}"
     echo "mochi_repo=${MOCHI_REPO}"
     echo "model_design=${MODEL_DESIGN}"
-    echo "expected_dataset=${EXPECTED_DATASET}"
     echo "output_dir=${OUTPUT_DIR}"
     echo "mochi_output_directory=${MOCHI_OUTPUT_DIRECTORY}"
     echo "cache_dir=${CACHE_DIR}"
@@ -181,7 +176,6 @@ printf '\n' >> "${COMMAND_FILE}"
     echo "STATUS_FILE=${STATUS_FILE}"
     echo "COMMAND_FILE=${COMMAND_FILE}"
     echo "MODEL_DESIGN=${MODEL_DESIGN}"
-    echo "EXPECTED_DATASET=${EXPECTED_DATASET}"
     echo "PROJECT_NAME=${PROJECT_NAME}"
     echo "MAX_INTERACTION_ORDER=${MAX_INTERACTION_ORDER}"
     echo "MOCHI_OUTPUT_DIRECTORY=${MOCHI_OUTPUT_DIRECTORY}"

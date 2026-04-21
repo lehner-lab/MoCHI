@@ -16,6 +16,7 @@ import itertools
 import shutil
 import functools
 import math
+import uuid
 from sklearn.cluster import KMeans
 
 def running_in_parallel_mode():
@@ -847,31 +848,50 @@ class MochiTask():
                 print("Error: Saved models directory already exists. Set 'overwrite'=True to overwrite previous models.")
                 raise ValueError
 
-        #Delete entire directory contents and create fresh directory
-        shutil.rmtree(directory)
-        os.makedirs(directory, exist_ok = True)
+        temp_suffix = uuid.uuid4().hex
+        temp_directory = os.path.join(
+            os.path.dirname(directory),
+            f".{os.path.basename(directory)}.tmp.{temp_suffix}")
+        backup_directory = os.path.join(
+            os.path.dirname(directory),
+            f".{os.path.basename(directory)}.bak.{temp_suffix}")
+        shutil.rmtree(temp_directory, ignore_errors = True)
+        shutil.rmtree(backup_directory, ignore_errors = True)
+        os.makedirs(temp_directory, exist_ok = True)
 
         #Save unpickleable objects
         temp_custom_transformations = copy.deepcopy(self.data.custom_transformations)
 
-        #Save models using torch.save
-        if len(self.models)==0:
-            print("Warning: No fit models. Saving metadata only.")
-        for i in range(len(self.models)):
-            self.models[i].custom_transformations = None
-            torch.save(self.models[i], os.path.join(directory, 'model_'+str(i)+'.pth'))
-            self.models[i].custom_transformations = temp_custom_transformations
+        try:
+            #Save models using torch.save
+            if len(self.models)==0:
+                print("Warning: No fit models. Saving metadata only.")
+            for i in range(len(self.models)):
+                self.models[i].custom_transformations = None
+                torch.save(self.models[i], os.path.join(temp_directory, 'model_'+str(i)+'.pth'))
+                self.models[i].custom_transformations = temp_custom_transformations
 
-        #Save remaining (non-built-in) attributes
-        self.data.custom_transformations = None
-        save_dict = {}
-        for i in self.__dict__.keys():
-            #Exclude built-in objects and torch models
-            if not i.startswith("__") and i != "models":
-                save_dict[i] = self.__dict__[i]
-        with bz2.BZ2File(os.path.join(directory, 'data.pbz2'), 'w') as f:
-            cPickle.dump(save_dict, f, pickle.HIGHEST_PROTOCOL)
-        self.data.custom_transformations = temp_custom_transformations
+            #Save remaining (non-built-in) attributes
+            self.data.custom_transformations = None
+            save_dict = {}
+            for i in self.__dict__.keys():
+                #Exclude built-in objects and torch models
+                if not i.startswith("__") and i != "models":
+                    save_dict[i] = self.__dict__[i]
+            with bz2.BZ2File(os.path.join(temp_directory, 'data.pbz2'), 'w') as f:
+                cPickle.dump(save_dict, f, pickle.HIGHEST_PROTOCOL)
+
+            if os.path.exists(directory):
+                os.rename(directory, backup_directory)
+            os.rename(temp_directory, directory)
+            shutil.rmtree(backup_directory, ignore_errors = True)
+        except Exception:
+            shutil.rmtree(temp_directory, ignore_errors = True)
+            if os.path.exists(backup_directory) and not os.path.exists(directory):
+                os.rename(backup_directory, directory)
+            raise
+        finally:
+            self.data.custom_transformations = temp_custom_transformations
 
     def load(self):
         """

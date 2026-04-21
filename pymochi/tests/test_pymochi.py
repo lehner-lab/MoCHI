@@ -837,6 +837,41 @@ def test_main_grid_search_phase_dispatches_project_method(tmp_path, monkeypatch)
     ]
 
 
+def test_main_merge_grid_search_phase_dispatches_project_method(tmp_path, monkeypatch):
+    """Test CLI merge_grid_search phase dispatches to the project helper."""
+    calls = []
+
+    class FakeProject:
+        def __init__(self, **kwargs):
+            calls.append(("init", kwargs["auto_run"], kwargs["directory"]))
+            self.fix_weights = kwargs["fix_weights"]
+            self.RT = kwargs["RT"]
+            self.seq_position_offset = kwargs["seq_position_offset"]
+
+        def merge_grid_search_conditions(self, seed):
+            calls.append(("merge_grid_search", seed))
+
+    monkeypatch.setattr(mochi_main, "configure_logging", lambda: None)
+    monkeypatch.setattr(mochi_main, "MochiProject", FakeProject)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_mochi.py",
+            "--model_design", str(Path(__file__).parent.parent / "data/model_design.txt"),
+            "--output_directory", str(tmp_path),
+            "--project_name", "phase_test",
+            "--phase", "merge_grid_search",
+        ])
+
+    mochi_main.main()
+
+    assert calls == [
+        ("init", False, str(tmp_path / "phase_test")),
+        ("merge_grid_search", 1),
+    ]
+
+
 def test_main_full_sparse_phase_dispatches_sparse_method(tmp_path, monkeypatch):
     """Test CLI full phase dispatches sparse runs to the sparse helper."""
     calls = []
@@ -909,6 +944,43 @@ def test_main_sparse_grid_phase_dispatches_stage_helper(tmp_path, monkeypatch):
     assert calls == [
         ("init", False, str(tmp_path / "phase_test"), "sig_highestorder_step"),
         ("sparse_grid", 2, {}),
+    ]
+
+
+def test_main_sparse_merge_grid_phase_dispatches_stage_helper(tmp_path, monkeypatch):
+    """Test CLI sparse grid-merge phase dispatches to the stage helper."""
+    calls = []
+
+    class FakeProject:
+        def __init__(self, **kwargs):
+            calls.append(("init", kwargs["auto_run"], kwargs["directory"], kwargs["sparse_method"]))
+            self.fix_weights = kwargs["fix_weights"]
+            self.RT = kwargs["RT"]
+            self.seq_position_offset = kwargs["seq_position_offset"]
+
+        def merge_sparse_stage_grid_search(self, stage_index):
+            calls.append(("sparse_merge_grid", stage_index))
+
+    monkeypatch.setattr(mochi_main, "configure_logging", lambda: None)
+    monkeypatch.setattr(mochi_main, "MochiProject", FakeProject)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_mochi.py",
+            "--model_design", str(Path(__file__).parent.parent / "data/model_design.txt"),
+            "--output_directory", str(tmp_path),
+            "--project_name", "phase_test",
+            "--phase", "sparse_merge_grid_search",
+            "--stage_index", "2",
+            "--sparse_method", "sig_highestorder_step",
+        ])
+
+    mochi_main.main()
+
+    assert calls == [
+        ("init", False, str(tmp_path / "phase_test"), "sig_highestorder_step"),
+        ("sparse_merge_grid", 2),
     ]
 
 
@@ -1096,6 +1168,261 @@ def test_run_fit_fold_task_reuses_existing_fold_models(tmp_path, monkeypatch):
 
     assert reused_task.models[0].metadata.fold == 2
     assert calls == [project.get_fold_directory(1, 2)]
+
+
+def test_merge_grid_search_conditions_combines_condition_models(tmp_path, monkeypatch):
+    """Test merging grid condition directories rebuilds the canonical task artifacts."""
+    finalized = []
+
+    def make_model(grid_search, fold, tag):
+        return type("ModelInfo", (), {
+            "metadata": type("Metadata", (), {"grid_search": grid_search, "fold": fold})(),
+            "tag": tag,
+        })()
+
+    class FakeTask:
+        def __init__(self, directory = None, **kwargs):
+            self.directory = directory
+            self.models = []
+            self.data = object()
+            self.custom_transformations = None
+            if str(directory).endswith("grid_condition_1"):
+                self.models = [make_model(True, 1, "a")]
+            elif str(directory).endswith("grid_condition_2"):
+                self.models = [make_model(True, 1, "b")]
+            elif str(directory).endswith("task_1"):
+                self.models = []
+
+    monkeypatch.setattr(mochi_project_module, "MochiTask", FakeTask)
+    project = MochiProject(
+        directory = str(tmp_path / "project"),
+        model_design = make_demo_model_design(),
+        auto_run = False)
+
+    Path(project.get_grid_condition_directory(1, 1), "saved_models").mkdir(parents = True)
+    Path(project.get_grid_condition_directory(1, 2), "saved_models").mkdir(parents = True)
+
+    def fake_finalize(mochi_task, **kwargs):
+        finalized.append((mochi_task.directory, [model.tag for model in mochi_task.models], kwargs))
+        return mochi_task
+
+    monkeypatch.setattr(project, "finalize_task_outputs", fake_finalize)
+
+    merged_task = project.merge_grid_search_conditions(seed = 1)
+
+    assert [model.tag for model in merged_task.models] == ["a", "b"]
+    assert finalized == [
+        (
+            project.get_task_directory(1),
+            ["a", "b"],
+            {"save_model": True, "save_report": False, "save_weights": False},
+        )
+    ]
+
+
+def test_merge_sparse_grid_search_conditions_discovers_nextflow_condition_layout(tmp_path, monkeypatch):
+    """Test sparse grid merge discovers task outputs saved under Nextflow condition directories."""
+    finalized = []
+
+    def make_model(grid_search, fold, tag):
+        return type("ModelInfo", (), {
+            "metadata": type("Metadata", (), {"grid_search": grid_search, "fold": fold})(),
+            "tag": tag,
+        })()
+
+    class FakeTask:
+        def __init__(self, directory = None, **kwargs):
+            self.directory = directory
+            self.models = []
+            self.data = object()
+            self.custom_transformations = None
+            if str(directory).endswith("stage_1/grid_search/condition_1/mochi_project/task_1"):
+                self.models = [make_model(True, 1, "a")]
+            elif str(directory).endswith("stage_1/grid_search/condition_2/mochi_project/task_1"):
+                self.models = [make_model(True, 1, "b")]
+            elif str(directory).endswith("mochi_project/task_1"):
+                self.models = []
+
+    monkeypatch.setattr(mochi_project_module, "MochiTask", FakeTask)
+    run_root = tmp_path / "run"
+    run_root.mkdir()
+    project = MochiProject(
+        directory = str(run_root / "mochi_project"),
+        model_design = make_demo_model_design(),
+        auto_run = False)
+
+    (run_root / "stage_1" / "grid_search" / "condition_1" / "mochi_project" / "task_1" / "saved_models").mkdir(parents = True)
+    (run_root / "stage_1" / "grid_search" / "condition_2" / "mochi_project" / "task_1" / "saved_models").mkdir(parents = True)
+
+    def fake_finalize(mochi_task, **kwargs):
+        finalized.append((mochi_task.directory, [model.tag for model in mochi_task.models], kwargs))
+        return mochi_task
+
+    monkeypatch.setattr(project, "finalize_task_outputs", fake_finalize)
+
+    merged_task = project.merge_sparse_stage_grid_search(stage_index = 1)
+
+    assert [model.tag for model in merged_task.models] == ["a", "b"]
+    assert finalized == [
+        (
+            project.get_task_directory(1),
+            ["a", "b"],
+            {"save_model": True, "save_report": False, "save_weights": False},
+        )
+    ]
+
+
+def test_merge_parallel_task_skips_missing_fold_artifacts(tmp_path, monkeypatch):
+    """Test parallel fold merge succeeds when only some folds produced outputs."""
+    finalized = []
+
+    def make_model(grid_search, fold, tag):
+        return type("ModelInfo", (), {
+            "metadata": type("Metadata", (), {"grid_search": grid_search, "fold": fold})(),
+            "tag": tag,
+        })()
+
+    class FakeTask:
+        def __init__(self, directory = None, **kwargs):
+            self.directory = directory
+            self.models = []
+            self.data = object()
+            self.custom_transformations = None
+            if str(directory).endswith("task_1"):
+                self.models = [make_model(True, 1, "grid")]
+            elif str(directory).endswith("fold_1"):
+                self.models = [make_model(False, 1, "fold-1")]
+
+    monkeypatch.setattr(mochi_project_module, "MochiTask", FakeTask)
+    project = MochiProject(
+        directory = str(tmp_path / "project"),
+        model_design = make_demo_model_design(),
+        k_folds = 3,
+        auto_run = False)
+
+    Path(project.get_task_directory(1), "saved_models").mkdir(parents = True)
+    Path(project.get_fold_directory(1, 1), "saved_models").mkdir(parents = True)
+
+    def fake_finalize(mochi_task, **kwargs):
+        finalized.append((mochi_task.directory, [model.tag for model in mochi_task.models], kwargs))
+        return mochi_task
+
+    monkeypatch.setattr(project, "finalize_task_outputs", fake_finalize)
+
+    merged_task = project.merge_parallel_task(seed = 1)
+
+    assert [model.tag for model in merged_task.models] == ["grid", "fold-1"]
+    assert finalized == [
+        (
+            project.get_task_directory(1),
+            ["grid", "fold-1"],
+            {
+                "RT": None,
+                "seq_position_offset": 0,
+                "save_model": True,
+                "save_report": True,
+                "save_weights": True,
+            },
+        )
+    ]
+
+
+def test_merge_sparse_stage_skips_missing_fold_artifacts(tmp_path, monkeypatch):
+    """Test sparse stage merge succeeds when only some folds produced outputs."""
+    finalized = []
+
+    def make_model(grid_search, fold, tag):
+        return type("ModelInfo", (), {
+            "metadata": type("Metadata", (), {"grid_search": grid_search, "fold": fold})(),
+            "tag": tag,
+        })()
+
+    class FakeTask:
+        def __init__(self, directory = None, **kwargs):
+            self.directory = directory
+            self.models = []
+            self.data = object()
+            self.custom_transformations = None
+            if str(directory).endswith("task_1"):
+                self.models = [make_model(True, 1, "grid")]
+            elif str(directory).endswith("fold_1"):
+                self.models = [make_model(False, 1, "fold-1")]
+
+    monkeypatch.setattr(mochi_project_module, "MochiTask", FakeTask)
+    project = MochiProject(
+        directory = str(tmp_path / "project"),
+        model_design = make_demo_model_design(),
+        k_folds = 3,
+        sparse_method = "sig_highestorder_step",
+        auto_run = False)
+
+    Path(project.get_task_directory(1), "saved_models").mkdir(parents = True)
+    Path(project.get_fold_directory(1, 1), "saved_models").mkdir(parents = True)
+
+    def fake_finalize(mochi_task, **kwargs):
+        finalized.append((mochi_task.directory, [model.tag for model in mochi_task.models], kwargs))
+        return mochi_task
+
+    monkeypatch.setattr(project, "finalize_task_outputs", fake_finalize)
+
+    merged_task = project.merge_sparse_stage(stage_index = 1)
+
+    assert [model.tag for model in merged_task.models] == ["grid", "fold-1"]
+    assert finalized == [
+        (
+            project.get_task_directory(1),
+            ["grid", "fold-1"],
+            {
+                "RT": None,
+                "seq_position_offset": 0,
+                "save_model": True,
+                "save_report": False,
+                "save_weights": True,
+            },
+        )
+    ]
+
+
+def test_build_sparse_stage_inputs_uses_canonical_previous_stage_from_nextflow_layout(tmp_path, monkeypatch):
+    """Test sparse stage inputs load the previous merged task from the canonical Nextflow project root."""
+    calls = []
+
+    class FakePrevTask:
+        def __init__(self, directory = None, **kwargs):
+            calls.append(directory)
+            self.directory = directory
+            self.data = type(
+                "Data",
+                (),
+                {"additive_trait_names": ["trait_a"]})()
+
+        def get_additive_trait_weights(self, save = False):
+            return [pd.DataFrame({
+                "id": ["WT", "1"],
+                "Pos": [None, "1"],
+                "mean": [0.0, 1.0],
+                "ci95": [0.0, 0.1],
+            })]
+
+    monkeypatch.setattr(mochi_project_module, "MochiTask", FakePrevTask)
+    monkeypatch.setenv("MOCHI_PARALLEL_MODE", "1")
+    run_root = tmp_path / "run"
+    canonical_project = run_root / "mochi_project"
+    (canonical_project / "task_1" / "saved_models").mkdir(parents = True)
+    condition_project = run_root / "stage_2" / "grid_search" / "condition_2" / "mochi_project"
+    condition_project.mkdir(parents = True)
+
+    project = MochiProject(
+        directory = str(condition_project),
+        model_design = make_demo_model_design(),
+        max_interaction_order = 2,
+        auto_run = False)
+
+    mochi_data_args, mochi_task_args, stage_settings = project.build_sparse_stage_inputs(stage_index = 2)
+
+    assert calls == [str(canonical_project / "task_1")]
+    assert mochi_task_args["directory"] == str(condition_project / "task_2")
+    assert stage_settings["order"] == 1
 
 
 def test_mochi_task_save_creates_missing_parent_directories(tmp_path):
