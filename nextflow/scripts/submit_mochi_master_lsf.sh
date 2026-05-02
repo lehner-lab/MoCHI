@@ -6,7 +6,6 @@ SUBMIT_SCRIPT="${REPO_ROOT}/nextflow/scripts/submit_mochi_benchmark_nextflow.sh"
 
 MASTER_QUEUE="${MASTER_QUEUE:-oversubscribed}"
 MASTER_CPUS="${MASTER_CPUS:-1}"
-MASTER_WALLTIME="${MASTER_WALLTIME:-72:00}"
 MASTER_MEMORY_GB="${MASTER_MEMORY_GB:-24}"
 MASTER_MEMORY_MB="${MASTER_MEMORY_MB:-$((MASTER_MEMORY_GB * 1024))}"
 
@@ -90,7 +89,6 @@ echo "Submitting Nextflow master job"
 echo "  queue: ${MASTER_QUEUE}"
 echo "  cpus: ${MASTER_CPUS}"
 echo "  memory_mb: ${MASTER_MEMORY_MB}"
-echo "  walltime: ${MASTER_WALLTIME}"
 echo "  job_name: ${JOB_NAME}"
 echo "  logs: ${LOG_DIR}/nextflow-master.%J.{log,err}"
 echo "  submit_script: ${JOB_SCRIPT}"
@@ -100,7 +98,6 @@ bsub \
     -n "${MASTER_CPUS}" \
     -M "${MASTER_MEMORY_MB}" \
     -R "select[mem>${MASTER_MEMORY_MB}] rusage[mem=${MASTER_MEMORY_MB}] span[hosts=1]" \
-    -W "${MASTER_WALLTIME}" \
     -J "${JOB_NAME}" \
     -o "${LOG_DIR}/nextflow-master.%J.log" \
     -e "${LOG_DIR}/nextflow-master.%J.err" \
