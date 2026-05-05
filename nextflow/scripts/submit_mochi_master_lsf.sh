@@ -6,7 +6,7 @@ SUBMIT_SCRIPT="${REPO_ROOT}/nextflow/scripts/submit_mochi_benchmark_nextflow.sh"
 
 MASTER_QUEUE="${MASTER_QUEUE:-oversubscribed}"
 MASTER_CPUS="${MASTER_CPUS:-1}"
-MASTER_MEMORY_GB="${MASTER_MEMORY_GB:-24}"
+MASTER_MEMORY_GB="${MASTER_MEMORY_GB:-4}"
 MASTER_MEMORY_MB="${MASTER_MEMORY_MB:-$((MASTER_MEMORY_GB * 1024))}"
 
 RUN_NAME="${RUN_NAME:-mochi-benchmark-$(date +%Y%m%d_%H%M%S)}"
