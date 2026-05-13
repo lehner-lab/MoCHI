@@ -9,6 +9,7 @@ readme = "README.md"
 license = { text = "MIT" }
 authors = [
     { name = "Andre J Faure", email = "ajfaure@gmail.com" },
+    { name = "Eric Hidari", email = "feedbackeric@gmail.com" },
 ]
 requires-python = ">=3.11"
 dynamic = ["version"]
@@ -39,8 +40,8 @@ include = ["pymochi*"]
 [tool.setuptools.package-data]
 pymochi = [
     "data/model_design.txt",
-    "data/fitness_abundance.RData",
-    "data/fitness_binding.RData",
+    "data/fitness_abundance.txt",
+    "data/fitness_binding.txt",
 ]
 
 [tool.setuptools_scm]
