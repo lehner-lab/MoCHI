@@ -5,28 +5,10 @@ REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 MOCHI_REPO="${MOCHI_REPO:-${REPO_ROOT}}"
 MOCHI_VENV="${MOCHI_VENV:-${MOCHI_REPO}/.venv}"
 PYTHON_BIN="${PYTHON_BIN:-${MOCHI_VENV}/bin/python}"
-MODEL_DESIGN="${MODEL_DESIGN:-${REPO_ROOT}/model_design_all_programmed_variants_abs_g1234567.txt}"
+MOCHI_ARGS_FILE="${MOCHI_ARGS_FILE:-}"
 RUN_LABEL="${RUN_LABEL:-mochi_batch_compare}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-/tmp}"
 OUTPUT_DIR="${OUTPUT_DIR:-${OUTPUT_ROOT%/}/${RUN_LABEL}}"
-MOCHI_OUTPUT_DIRECTORY="${MOCHI_OUTPUT_DIRECTORY:-${OUTPUT_DIR}}"
-PROJECT_NAME="${PROJECT_NAME:-mochi_project}"
-MAX_INTERACTION_ORDER="${MAX_INTERACTION_ORDER:-2}"
-MOCHI_PHASE="${MOCHI_PHASE:-full}"
-SPARSE_STAGE_INDEX="${SPARSE_STAGE_INDEX:-}"
-MOCHI_SEED="${MOCHI_SEED:-1}"
-MOCHI_FOLD="${MOCHI_FOLD:-}"
-K_FOLDS="${K_FOLDS:-}"
-NUM_EPOCHS="${NUM_EPOCHS:-}"
-NUM_EPOCHS_GRID="${NUM_EPOCHS_GRID:-}"
-BATCH_SIZE="${BATCH_SIZE:-}"
-LEARN_RATE="${LEARN_RATE:-}"
-L1_REGULARIZATION_FACTOR="${L1_REGULARIZATION_FACTOR:-}"
-L2_REGULARIZATION_FACTOR="${L2_REGULARIZATION_FACTOR:-}"
-SPARSE_METHOD="${SPARSE_METHOD:-}"
-if [[ "${SPARSE_METHOD,,}" == "none" ]]; then
-    SPARSE_METHOD=""
-fi
 CACHE_DIR="${CACHE_DIR:-${OUTPUT_ROOT%/}/cache}"
 LOCAL_UV_CACHE="${LOCAL_UV_CACHE:-${OUTPUT_DIR}/uv-cache}"
 RUN_LOG="${RUN_LOG:-${OUTPUT_DIR}/run.log}"
@@ -39,7 +21,6 @@ COMMAND_FILE="${COMMAND_FILE:-${OUTPUT_DIR}/job_command.txt}"
 PID_FILE="${PID_FILE:-${OUTPUT_DIR}/mochi.pid}"
 BENCHMARK_MANIFEST="${BENCHMARK_MANIFEST:-${OUTPUT_DIR}/benchmark_manifest.env}"
 PHASE_MANIFEST="${PHASE_MANIFEST:-${OUTPUT_DIR}/phase_manifest.env}"
-MOCHI_ARGS_FILE="${MOCHI_ARGS_FILE:-}"
 MONITOR_INTERVAL_SECONDS="${MONITOR_INTERVAL_SECONDS:-30}"
 
 mkdir -p "${OUTPUT_DIR}" "${CACHE_DIR}" "${LOCAL_UV_CACHE}"
@@ -49,33 +30,6 @@ if [ ! -x "${PYTHON_BIN}" ]; then
     echo "Run nextflow/scripts/bootstrap_mochi_uv.sh first." >&2
     exit 1
 fi
-
-if [ ! -f "${MODEL_DESIGN}" ]; then
-    echo "Model design file not found at ${MODEL_DESIGN}" >&2
-    exit 1
-fi
-
-"${PYTHON_BIN}" - "${MODEL_DESIGN}" <<'PY'
-import csv
-import sys
-from pathlib import Path
-
-model_design = Path(sys.argv[1])
-
-with model_design.open(newline="") as handle:
-    reader = csv.DictReader(handle, delimiter="\t")
-    files = [row["file"].strip() for row in reader if row.get("file")]
-
-if not files:
-    raise SystemExit(f"No dataset entries found in {model_design}")
-
-missing = [path for path in files if not Path(path).exists()]
-if missing:
-    raise SystemExit(
-        "The following dataset paths referenced by the model design do not exist:\n"
-        + "\n".join(missing)
-    )
-PY
 
 export MOCHI_FEATURES_UINT8="${MOCHI_FEATURES_UINT8:-1}"
 export MOCHI_AMP="${MOCHI_AMP:-auto}"
@@ -101,46 +55,6 @@ if [ -n "${MOCHI_ARGS_FILE}" ]; then
     done < "${MOCHI_ARGS_FILE}"
 fi
 
-MOCHI_CMD+=(
-    --model_design "${MODEL_DESIGN}"
-    --output_directory "${MOCHI_OUTPUT_DIRECTORY}"
-    --project_name "${PROJECT_NAME}"
-    --max_interaction_order "${MAX_INTERACTION_ORDER}"
-    --seed "${MOCHI_SEED}"
-    --phase "${MOCHI_PHASE}"
-)
-
-if [ -n "${MOCHI_FOLD}" ]; then
-    MOCHI_CMD+=(--fold "${MOCHI_FOLD}")
-fi
-if [ -n "${SPARSE_STAGE_INDEX}" ]; then
-    MOCHI_CMD+=(--stage_index "${SPARSE_STAGE_INDEX}")
-fi
-if [ -n "${K_FOLDS}" ]; then
-    MOCHI_CMD+=(--k_folds "${K_FOLDS}")
-fi
-if [ -n "${NUM_EPOCHS}" ]; then
-    MOCHI_CMD+=(--num_epochs "${NUM_EPOCHS}")
-fi
-if [ -n "${NUM_EPOCHS_GRID}" ]; then
-    MOCHI_CMD+=(--num_epochs_grid "${NUM_EPOCHS_GRID}")
-fi
-if [ -n "${BATCH_SIZE}" ]; then
-    MOCHI_CMD+=(--batch_size "${BATCH_SIZE}")
-fi
-if [ -n "${LEARN_RATE}" ]; then
-    MOCHI_CMD+=(--learn_rate "${LEARN_RATE}")
-fi
-if [ -n "${L1_REGULARIZATION_FACTOR}" ]; then
-    MOCHI_CMD+=(--l1_regularization_factor "${L1_REGULARIZATION_FACTOR}")
-fi
-if [ -n "${L2_REGULARIZATION_FACTOR}" ]; then
-    MOCHI_CMD+=(--l2_regularization_factor "${L2_REGULARIZATION_FACTOR}")
-fi
-if [ -n "${SPARSE_METHOD}" ]; then
-    MOCHI_CMD+=(--sparse_method "${SPARSE_METHOD}")
-fi
-
 printf '%q ' "${MOCHI_CMD[@]}" > "${COMMAND_FILE}"
 printf '\n' >> "${COMMAND_FILE}"
 
@@ -153,22 +67,8 @@ printf '\n' >> "${COMMAND_FILE}"
     echo "start_time=$(date -Is)"
     echo "repo_root=${REPO_ROOT}"
     echo "mochi_repo=${MOCHI_REPO}"
-    echo "model_design=${MODEL_DESIGN}"
     echo "output_dir=${OUTPUT_DIR}"
-    echo "mochi_output_directory=${MOCHI_OUTPUT_DIRECTORY}"
     echo "cache_dir=${CACHE_DIR}"
-    echo "project_name=${PROJECT_NAME}"
-    echo "max_interaction_order=${MAX_INTERACTION_ORDER}"
-    echo "mochi_phase=${MOCHI_PHASE}"
-    echo "sparse_stage_index=${SPARSE_STAGE_INDEX}"
-    echo "mochi_seed=${MOCHI_SEED}"
-    echo "mochi_fold=${MOCHI_FOLD}"
-    echo "k_folds=${K_FOLDS}"
-    echo "num_epochs=${NUM_EPOCHS}"
-    echo "num_epochs_grid=${NUM_EPOCHS_GRID}"
-    echo "l1_regularization_factor=${L1_REGULARIZATION_FACTOR}"
-    echo "l2_regularization_factor=${L2_REGULARIZATION_FACTOR}"
-    echo "sparse_method=${SPARSE_METHOD}"
     echo "mochi_args_file=${MOCHI_ARGS_FILE}"
     echo "python=${PYTHON_BIN}"
     echo "python_version=$("${PYTHON_BIN}" -c 'import sys; print(sys.version.replace("\n", " "))')"
@@ -191,36 +91,14 @@ printf '\n' >> "${COMMAND_FILE}"
     echo "JOB_META=${JOB_META}"
     echo "STATUS_FILE=${STATUS_FILE}"
     echo "COMMAND_FILE=${COMMAND_FILE}"
-    echo "MODEL_DESIGN=${MODEL_DESIGN}"
-    echo "PROJECT_NAME=${PROJECT_NAME}"
-    echo "MAX_INTERACTION_ORDER=${MAX_INTERACTION_ORDER}"
-    echo "MOCHI_OUTPUT_DIRECTORY=${MOCHI_OUTPUT_DIRECTORY}"
-    echo "MOCHI_PHASE=${MOCHI_PHASE}"
-    echo "SPARSE_STAGE_INDEX=${SPARSE_STAGE_INDEX}"
-    echo "MOCHI_SEED=${MOCHI_SEED}"
-    echo "MOCHI_FOLD=${MOCHI_FOLD}"
-    echo "K_FOLDS=${K_FOLDS}"
-    echo "NUM_EPOCHS=${NUM_EPOCHS}"
-    echo "NUM_EPOCHS_GRID=${NUM_EPOCHS_GRID}"
-    echo "L1_REGULARIZATION_FACTOR=${L1_REGULARIZATION_FACTOR}"
-    echo "L2_REGULARIZATION_FACTOR=${L2_REGULARIZATION_FACTOR}"
-    echo "SPARSE_METHOD=${SPARSE_METHOD}"
     echo "PHASE_MANIFEST=${PHASE_MANIFEST}"
     echo "MOCHI_DEVICE=${MOCHI_DEVICE}"
     echo "START_TIME=$(date -Is)"
 } > "${RUN_INFO_FILE}"
 
 {
-    echo "MOCHI_PHASE=${MOCHI_PHASE}"
-    echo "SPARSE_STAGE_INDEX=${SPARSE_STAGE_INDEX}"
-    echo "MOCHI_SEED=${MOCHI_SEED}"
-    echo "MOCHI_FOLD=${MOCHI_FOLD}"
-    echo "MOCHI_OUTPUT_DIRECTORY=${MOCHI_OUTPUT_DIRECTORY}"
-    echo "MOCHI_PROJECT_DIR=${MOCHI_OUTPUT_DIRECTORY%/}/${PROJECT_NAME}"
-    echo "MOCHI_TASK_DIR=${MOCHI_OUTPUT_DIRECTORY%/}/${PROJECT_NAME}/task_${MOCHI_SEED}"
-    if [ -n "${MOCHI_FOLD}" ]; then
-        echo "MOCHI_FOLD_DIR=${MOCHI_OUTPUT_DIRECTORY%/}/${PROJECT_NAME}/task_${MOCHI_SEED}/fold_${MOCHI_FOLD}"
-    fi
+    echo "MOCHI_ARGS_FILE=${MOCHI_ARGS_FILE}"
+    echo "COMMAND_FILE=${COMMAND_FILE}"
 } > "${PHASE_MANIFEST}"
 
 monitor_resources() {
