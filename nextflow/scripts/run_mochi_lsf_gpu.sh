@@ -39,6 +39,7 @@ COMMAND_FILE="${COMMAND_FILE:-${OUTPUT_DIR}/job_command.txt}"
 PID_FILE="${PID_FILE:-${OUTPUT_DIR}/mochi.pid}"
 BENCHMARK_MANIFEST="${BENCHMARK_MANIFEST:-${OUTPUT_DIR}/benchmark_manifest.env}"
 PHASE_MANIFEST="${PHASE_MANIFEST:-${OUTPUT_DIR}/phase_manifest.env}"
+MOCHI_ARGS_FILE="${MOCHI_ARGS_FILE:-}"
 MONITOR_INTERVAL_SECONDS="${MONITOR_INTERVAL_SECONDS:-30}"
 
 mkdir -p "${OUTPUT_DIR}" "${CACHE_DIR}" "${LOCAL_UV_CACHE}"
@@ -87,6 +88,20 @@ export XDG_CACHE_HOME="${LOCAL_UV_CACHE}"
 MOCHI_CMD=(
     "${PYTHON_BIN}"
     "${MOCHI_REPO}/pymochi/bin/run_mochi.py"
+)
+
+if [ -n "${MOCHI_ARGS_FILE}" ]; then
+    if [ ! -f "${MOCHI_ARGS_FILE}" ]; then
+        echo "MOCHI_ARGS_FILE not found at ${MOCHI_ARGS_FILE}" >&2
+        exit 1
+    fi
+    while IFS= read -r arg || [ -n "${arg}" ]; do
+        [ -z "${arg}" ] && continue
+        MOCHI_CMD+=("${arg}")
+    done < "${MOCHI_ARGS_FILE}"
+fi
+
+MOCHI_CMD+=(
     --model_design "${MODEL_DESIGN}"
     --output_directory "${MOCHI_OUTPUT_DIRECTORY}"
     --project_name "${PROJECT_NAME}"
@@ -154,6 +169,7 @@ printf '\n' >> "${COMMAND_FILE}"
     echo "l1_regularization_factor=${L1_REGULARIZATION_FACTOR}"
     echo "l2_regularization_factor=${L2_REGULARIZATION_FACTOR}"
     echo "sparse_method=${SPARSE_METHOD}"
+    echo "mochi_args_file=${MOCHI_ARGS_FILE}"
     echo "python=${PYTHON_BIN}"
     echo "python_version=$("${PYTHON_BIN}" -c 'import sys; print(sys.version.replace("\n", " "))')"
     echo "torch_version=$("${PYTHON_BIN}" -c 'import torch; print(torch.__version__)')"

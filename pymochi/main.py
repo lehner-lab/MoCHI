@@ -19,6 +19,17 @@ from pymochi.project import MochiProject
 ORIGINAL_PRINT = builtins.print
 
 
+def str_to_bool(value):
+    if isinstance(value, bool):
+        return value
+    value = value.lower()
+    if value == "true":
+        return True
+    if value == "false":
+        return False
+    raise argparse.ArgumentTypeError(f"Expected boolean value 'true' or 'false', got {value!r}")
+
+
 def configure_logging():
     """
     Route existing CLI print output through loguru with timestamps.
@@ -69,9 +80,9 @@ def init_argparse(
     parser.add_argument('--validation_factor', type = int, default = 2, help = "validation factor where validation set%% = 100/k_folds*validation_factor (default: 2 i.e. 20%%)")
     parser.add_argument('--holdout_minobs', type = int, default = 0, help = "minimum number of observations of additive trait weights to be held out (default: 0)")
     parser.add_argument('--holdout_orders', type = str, help = "comma-separated list of integer mutation orders corresponding to retained variants (default: variants of all mutation orders can be held out)")
-    parser.add_argument('--holdout_WT', action = 'store_true', default = False, help = "WT variant can be held out (default: False)")
+    parser.add_argument('--holdout_WT', nargs = '?', const = True, type = str_to_bool, default = False, help = "WT variant can be held out (default: False)")
     parser.add_argument('--features', type = pathlib.Path, default = None, help = "path to features file (default: None)")
-    parser.add_argument('--ensemble', action = 'store_true', default = False, help = "use ensemble feature encoding (default: False)")
+    parser.add_argument('--ensemble', nargs = '?', const = True, type = str_to_bool, default = False, help = "use ensemble feature encoding (default: False)")
     parser.add_argument('--custom_transformations', type = pathlib.Path, default = None, help = "path to custom transformations file (default: None)")
     #MochiTask arguments
     parser.add_argument('--batch_size', default = "512,1024,2048", help = "comma-separated list of minibatch sizes to consider during grid search (default: '512,1024,2048')")
@@ -85,7 +96,7 @@ def init_argparse(
     parser.add_argument('--scheduler_gamma', type = float, default = 0.98, help = "multiplicative factor of learning rate decay (default:0.98)")
     parser.add_argument('--loss_function_name', type = str, default = 'WeightedL1', help = "loss function name: one of 'WeightedL1', 'GaussianNLL' (default:'WeightedL1')")
     parser.add_argument('--sos_architecture', type = str, default = '20', help = "comma-separated list of integers corresponding to number of neurons per fully-connected sumOfSigmoids hidden layer (default: '20')")
-    parser.add_argument('--sos_outputlinear', action = 'store_true', default = False, help = "final sumOfSigmoids should be linear rather than sigmoidal (default:False)")
+    parser.add_argument('--sos_outputlinear', nargs = '?', const = True, type = str_to_bool, default = False, help = "final sumOfSigmoids should be linear rather than sigmoidal (default:False)")
     parser.add_argument('--init_weights_directory', type = pathlib.Path, default = None, help = "path to project directory for model weight initialization (default: random model weight initialization)")
     parser.add_argument('--init_weights_task_id', type = int, default = 1, help = "task identifier to use for model weight initialization (default:1)")
     parser.add_argument('--fix_weights', type = pathlib.Path, default = None, help = "path to file of layer names to fix weights (default: no layers fixed)")
@@ -111,7 +122,9 @@ def main(
 
     #Get command line arguments
     parser = init_argparse(demo_mode = demo_mode)
-    args = parser.parse_args()
+    args, unknown_args = parser.parse_known_args()
+    if unknown_args:
+        logger.warning("Ignoring unknown command line arguments: {}", " ".join(unknown_args))
 
     #Load model design
     if demo_mode:

@@ -1,3 +1,74 @@
+def formatArgValue = { value ->
+    value == null ? "" : value.toString().replace("'", "'\"'\"'")
+}
+
+def formatArgsFileValue = { value ->
+    value == null ? "" : value.toString()
+}
+
+def mochiParamArgs = {
+    params.findAll { key, value ->
+        value != null && value.toString() != "" && !(key == "sparse_method" && value.toString().toLowerCase() == "none")
+    }.collect { key, value ->
+        def text = formatArgsFileValue(value)
+        "--${key}\n${text}"
+    }.join("\n")
+}
+
+def mochiJobScript = { Map opts ->
+    def runOutputDir = "${params.output_root}/${params.run_name}"
+    def jobOutputDir = opts.jobOutputDir
+    def cacheDir = opts.cacheDir ?: "${params.cache_root}/${params.run_name}"
+    def mochiOutputDirectory = opts.mochiOutputDirectory ?: runOutputDir
+    def foldExport = opts.fold != null ? "export MOCHI_FOLD='${formatArgValue(opts.fold)}'" : ""
+    def stageExport = opts.stage != null ? "export SPARSE_STAGE_INDEX='${formatArgValue(opts.stage)}'" : ""
+    def deviceExport = opts.device ? "export MOCHI_DEVICE='${formatArgValue(opts.device)}'" : ""
+    def batchSizeExport = opts.batchSize != null ? "export BATCH_SIZE='${formatArgValue(opts.batchSize)}'" : ""
+    def learnRateExport = opts.learnRate != null ? "export LEARN_RATE='${formatArgValue(opts.learnRate)}'" : ""
+    def l1Export = opts.l1Factor != null ? "export L1_REGULARIZATION_FACTOR='${formatArgValue(opts.l1Factor)}'" : ""
+    def l2Export = opts.l2Factor != null ? "export L2_REGULARIZATION_FACTOR='${formatArgValue(opts.l2Factor)}'" : ""
+    """
+    mkdir -p "${jobOutputDir}"
+    cat > mochi_nextflow_args.txt <<'EOF'
+${mochiParamArgs()}
+EOF
+
+    export REPO_ROOT="${params.repo_root}"
+    export MOCHI_REPO="${params.mochi_repo}"
+    export MOCHI_VENV="${params.mochi_venv}"
+    export MODEL_DESIGN="${params.model_design}"
+    export RUN_LABEL="${opts.runLabel}"
+    export OUTPUT_ROOT="${params.output_root}"
+    export OUTPUT_DIR="${jobOutputDir}"
+    export MOCHI_OUTPUT_DIRECTORY="${mochiOutputDirectory}"
+    export CACHE_DIR="${cacheDir}"
+    export PROJECT_NAME="${params.project_name}"
+    export MAX_INTERACTION_ORDER="${params.max_interaction_order}"
+    export MOCHI_PARALLEL_MODE="1"
+    export MOCHI_PHASE="${opts.phase}"
+    export MOCHI_SEED="${params.seed}"
+    export K_FOLDS="${params.k_folds}"
+    export NUM_EPOCHS="${params.num_epochs}"
+    export NUM_EPOCHS_GRID="${params.num_epochs_grid}"
+    export BATCH_SIZE="${params.batch_size}"
+    export LEARN_RATE="${params.learn_rate}"
+    export L1_REGULARIZATION_FACTOR="${params.l1_regularization_factor}"
+    export L2_REGULARIZATION_FACTOR="${params.l2_regularization_factor}"
+    export SPARSE_METHOD="${params.sparse_method}"
+    export MOCHI_ARGS_FILE="\$PWD/mochi_nextflow_args.txt"
+    ${foldExport}
+    ${stageExport}
+    ${deviceExport}
+    ${batchSizeExport}
+    ${learnRateExport}
+    ${l1Export}
+    ${l2Export}
+
+    "${params.nextflow_root}/scripts/run_mochi_lsf_gpu.sh"
+    ${opts.afterRun ?: ""}
+    """
+}
+
 process RUN_GRID_SEARCH_CONDITION {
     label "mochi_grid_gpu"
 
@@ -9,36 +80,18 @@ process RUN_GRID_SEARCH_CONDITION {
 
     script:
     def runOutputDir = "${params.output_root}/${params.run_name}"
-    def jobOutputDir = "${runOutputDir}/grid_search/condition_${condition}"
-    def cacheDir = "${params.cache_root}/${params.run_name}/grid_search/condition_${condition}"
-    """
-    mkdir -p "${jobOutputDir}"
-    export REPO_ROOT="${params.repo_root}"
-    export MOCHI_REPO="${params.mochi_repo}"
-    export MOCHI_VENV="${params.mochi_venv}"
-    export MODEL_DESIGN="${params.model_design}"
-    export RUN_LABEL="${params.run_name}-grid-${condition}"
-    export OUTPUT_ROOT="${params.output_root}"
-    export OUTPUT_DIR="${jobOutputDir}"
-    export MOCHI_OUTPUT_DIRECTORY="${jobOutputDir}"
-    export CACHE_DIR="${cacheDir}"
-    export PROJECT_NAME="${params.project_name}"
-    export MAX_INTERACTION_ORDER="${params.max_interaction_order}"
-    export MOCHI_PARALLEL_MODE="1"
-    export MOCHI_PHASE="grid_search"
-    export MOCHI_SEED="${params.seed}"
-    export K_FOLDS="${params.k_folds}"
-    export NUM_EPOCHS="${params.num_epochs}"
-    export NUM_EPOCHS_GRID="${params.num_epochs_grid}"
-    export BATCH_SIZE="${batchSize}"
-    export LEARN_RATE="${learnRate}"
-    export L1_REGULARIZATION_FACTOR="${l1Factor}"
-    export L2_REGULARIZATION_FACTOR="${l2Factor}"
-    export SPARSE_METHOD="${params.sparse_method}"
-
-    "${params.nextflow_root}/scripts/run_mochi_lsf_gpu.sh"
-    touch "grid_condition_${condition}.done"
-    """
+    mochiJobScript(
+        runLabel: "${params.run_name}-grid-${condition}",
+        phase: "grid_search",
+        jobOutputDir: "${runOutputDir}/grid_search/condition_${condition}",
+        mochiOutputDirectory: "${runOutputDir}/grid_search/condition_${condition}",
+        cacheDir: "${params.cache_root}/${params.run_name}/grid_search/condition_${condition}",
+        batchSize: batchSize,
+        learnRate: learnRate,
+        l1Factor: l1Factor,
+        l2Factor: l2Factor,
+        afterRun: "touch \"grid_condition_${condition}.done\""
+    )
 }
 
 process MERGE_GRID_SEARCH_CONDITIONS {
@@ -52,37 +105,14 @@ process MERGE_GRID_SEARCH_CONDITIONS {
 
     script:
     def runOutputDir = "${params.output_root}/${params.run_name}"
-    def jobOutputDir = "${runOutputDir}/grid_search_merge"
-    def cacheDir = "${params.cache_root}/${params.run_name}/grid_search_merge"
-    """
-    mkdir -p "${jobOutputDir}"
-    export REPO_ROOT="${params.repo_root}"
-    export MOCHI_REPO="${params.mochi_repo}"
-    export MOCHI_VENV="${params.mochi_venv}"
-    export MODEL_DESIGN="${params.model_design}"
-    export RUN_LABEL="${params.run_name}-grid-merge"
-    export OUTPUT_ROOT="${params.output_root}"
-    export OUTPUT_DIR="${jobOutputDir}"
-    export MOCHI_OUTPUT_DIRECTORY="${runOutputDir}"
-    export CACHE_DIR="${cacheDir}"
-    export PROJECT_NAME="${params.project_name}"
-    export MAX_INTERACTION_ORDER="${params.max_interaction_order}"
-    export MOCHI_PARALLEL_MODE="1"
-    export MOCHI_PHASE="merge_grid_search"
-    export MOCHI_DEVICE="cpu"
-    export MOCHI_SEED="${params.seed}"
-    export K_FOLDS="${params.k_folds}"
-    export NUM_EPOCHS="${params.num_epochs}"
-    export NUM_EPOCHS_GRID="${params.num_epochs_grid}"
-    export BATCH_SIZE="${params.batch_size}"
-    export LEARN_RATE="${params.learn_rate}"
-    export L1_REGULARIZATION_FACTOR="${params.l1_regularization_factor}"
-    export L2_REGULARIZATION_FACTOR="${params.l2_regularization_factor}"
-    export SPARSE_METHOD="${params.sparse_method}"
-
-    "${params.nextflow_root}/scripts/run_mochi_lsf_gpu.sh"
-    touch "grid_search.done"
-    """
+    mochiJobScript(
+        runLabel: "${params.run_name}-grid-merge",
+        phase: "merge_grid_search",
+        device: "cpu",
+        jobOutputDir: "${runOutputDir}/grid_search_merge",
+        cacheDir: "${params.cache_root}/${params.run_name}/grid_search_merge",
+        afterRun: "touch \"grid_search.done\""
+    )
 }
 
 process RUN_FOLD {
@@ -96,37 +126,13 @@ process RUN_FOLD {
 
     script:
     def runOutputDir = "${params.output_root}/${params.run_name}"
-    def jobOutputDir = "${runOutputDir}/fold_${fold}"
-    def cacheDir = "${params.cache_root}/${params.run_name}"
-    """
-    mkdir -p "${jobOutputDir}"
-    export REPO_ROOT="${params.repo_root}"
-    export MOCHI_REPO="${params.mochi_repo}"
-    export MOCHI_VENV="${params.mochi_venv}"
-    export MODEL_DESIGN="${params.model_design}"
-    export RUN_LABEL="${params.run_name}-fold-${fold}"
-    export OUTPUT_ROOT="${params.output_root}"
-    export OUTPUT_DIR="${jobOutputDir}"
-    export MOCHI_OUTPUT_DIRECTORY="${runOutputDir}"
-    export CACHE_DIR="${cacheDir}"
-    export PROJECT_NAME="${params.project_name}"
-    export MAX_INTERACTION_ORDER="${params.max_interaction_order}"
-    export MOCHI_PARALLEL_MODE="1"
-    export MOCHI_PHASE="fit_best"
-    export MOCHI_SEED="${params.seed}"
-    export MOCHI_FOLD="${fold}"
-    export K_FOLDS="${params.k_folds}"
-    export NUM_EPOCHS="${params.num_epochs}"
-    export NUM_EPOCHS_GRID="${params.num_epochs_grid}"
-    export BATCH_SIZE="${params.batch_size}"
-    export LEARN_RATE="${params.learn_rate}"
-    export L1_REGULARIZATION_FACTOR="${params.l1_regularization_factor}"
-    export L2_REGULARIZATION_FACTOR="${params.l2_regularization_factor}"
-    export SPARSE_METHOD="${params.sparse_method}"
-
-    "${params.nextflow_root}/scripts/run_mochi_lsf_gpu.sh"
-    touch "fold_${fold}.done"
-    """
+    mochiJobScript(
+        runLabel: "${params.run_name}-fold-${fold}",
+        phase: "fit_best",
+        fold: fold,
+        jobOutputDir: "${runOutputDir}/fold_${fold}",
+        afterRun: "touch \"fold_${fold}.done\""
+    )
 }
 
 process MERGE_FOLDS {
@@ -141,37 +147,13 @@ process MERGE_FOLDS {
 
     script:
     def runOutputDir = "${params.output_root}/${params.run_name}"
-    def jobOutputDir = "${runOutputDir}/merge"
-    def cacheDir = "${params.cache_root}/${params.run_name}"
-    """
-    mkdir -p "${jobOutputDir}"
-    export REPO_ROOT="${params.repo_root}"
-    export MOCHI_REPO="${params.mochi_repo}"
-    export MOCHI_VENV="${params.mochi_venv}"
-    export MODEL_DESIGN="${params.model_design}"
-    export RUN_LABEL="${params.run_name}-merge"
-    export OUTPUT_ROOT="${params.output_root}"
-    export OUTPUT_DIR="${jobOutputDir}"
-    export MOCHI_OUTPUT_DIRECTORY="${runOutputDir}"
-    export CACHE_DIR="${cacheDir}"
-    export PROJECT_NAME="${params.project_name}"
-    export MAX_INTERACTION_ORDER="${params.max_interaction_order}"
-    export MOCHI_PARALLEL_MODE="1"
-    export MOCHI_PHASE="merge_folds"
-    export MOCHI_DEVICE="cpu"
-    export MOCHI_SEED="${params.seed}"
-    export K_FOLDS="${params.k_folds}"
-    export NUM_EPOCHS="${params.num_epochs}"
-    export NUM_EPOCHS_GRID="${params.num_epochs_grid}"
-    export BATCH_SIZE="${params.batch_size}"
-    export LEARN_RATE="${params.learn_rate}"
-    export L1_REGULARIZATION_FACTOR="${params.l1_regularization_factor}"
-    export L2_REGULARIZATION_FACTOR="${params.l2_regularization_factor}"
-    export SPARSE_METHOD="${params.sparse_method}"
-
-    "${params.nextflow_root}/scripts/run_mochi_lsf_gpu.sh"
-    cp "${jobOutputDir}/benchmark_manifest.env" "benchmark_manifest.env"
-    """
+    mochiJobScript(
+        runLabel: "${params.run_name}-merge",
+        phase: "merge_folds",
+        device: "cpu",
+        jobOutputDir: "${runOutputDir}/merge",
+        afterRun: "cp \"${runOutputDir}/merge/benchmark_manifest.env\" \"benchmark_manifest.env\""
+    )
 }
 
 process RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION {
@@ -185,37 +167,19 @@ process RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION {
 
     script:
     def runOutputDir = "${params.output_root}/${params.run_name}"
-    def jobOutputDir = "${runOutputDir}/stage_${stage}/grid_search/condition_${condition}"
-    def cacheDir = "${params.cache_root}/${params.run_name}/stage_${stage}/grid_search/condition_${condition}"
-    """
-    mkdir -p "${jobOutputDir}"
-    export REPO_ROOT="${params.repo_root}"
-    export MOCHI_REPO="${params.mochi_repo}"
-    export MOCHI_VENV="${params.mochi_venv}"
-    export MODEL_DESIGN="${params.model_design}"
-    export RUN_LABEL="${params.run_name}-stage-${stage}-grid-${condition}"
-    export OUTPUT_ROOT="${params.output_root}"
-    export OUTPUT_DIR="${jobOutputDir}"
-    export MOCHI_OUTPUT_DIRECTORY="${jobOutputDir}"
-    export CACHE_DIR="${cacheDir}"
-    export PROJECT_NAME="${params.project_name}"
-    export MAX_INTERACTION_ORDER="${params.max_interaction_order}"
-    export MOCHI_PARALLEL_MODE="1"
-    export MOCHI_PHASE="sparse_grid_search"
-    export SPARSE_STAGE_INDEX="${stage}"
-    export MOCHI_SEED="${params.seed}"
-    export K_FOLDS="${params.k_folds}"
-    export NUM_EPOCHS="${params.num_epochs}"
-    export NUM_EPOCHS_GRID="${params.num_epochs_grid}"
-    export BATCH_SIZE="${batchSize}"
-    export LEARN_RATE="${learnRate}"
-    export L1_REGULARIZATION_FACTOR="${l1Factor}"
-    export L2_REGULARIZATION_FACTOR="${l2Factor}"
-    export SPARSE_METHOD="${params.sparse_method}"
-
-    "${params.nextflow_root}/scripts/run_mochi_lsf_gpu.sh"
-    touch "sparse_stage_${stage}_grid_condition_${condition}.done"
-    """
+    mochiJobScript(
+        runLabel: "${params.run_name}-stage-${stage}-grid-${condition}",
+        phase: "sparse_grid_search",
+        stage: stage,
+        jobOutputDir: "${runOutputDir}/stage_${stage}/grid_search/condition_${condition}",
+        mochiOutputDirectory: "${runOutputDir}/stage_${stage}/grid_search/condition_${condition}",
+        cacheDir: "${params.cache_root}/${params.run_name}/stage_${stage}/grid_search/condition_${condition}",
+        batchSize: batchSize,
+        learnRate: learnRate,
+        l1Factor: l1Factor,
+        l2Factor: l2Factor,
+        afterRun: "touch \"sparse_stage_${stage}_grid_condition_${condition}.done\""
+    )
 }
 
 process MERGE_SPARSE_STAGE_GRID_SEARCH {
@@ -230,38 +194,15 @@ process MERGE_SPARSE_STAGE_GRID_SEARCH {
 
     script:
     def runOutputDir = "${params.output_root}/${params.run_name}"
-    def jobOutputDir = "${runOutputDir}/stage_${stage}/grid_search_merge"
-    def cacheDir = "${params.cache_root}/${params.run_name}/stage_${stage}/grid_search_merge"
-    """
-    mkdir -p "${jobOutputDir}"
-    export REPO_ROOT="${params.repo_root}"
-    export MOCHI_REPO="${params.mochi_repo}"
-    export MOCHI_VENV="${params.mochi_venv}"
-    export MODEL_DESIGN="${params.model_design}"
-    export RUN_LABEL="${params.run_name}-stage-${stage}-grid-merge"
-    export OUTPUT_ROOT="${params.output_root}"
-    export OUTPUT_DIR="${jobOutputDir}"
-    export MOCHI_OUTPUT_DIRECTORY="${runOutputDir}"
-    export CACHE_DIR="${cacheDir}"
-    export PROJECT_NAME="${params.project_name}"
-    export MAX_INTERACTION_ORDER="${params.max_interaction_order}"
-    export MOCHI_PARALLEL_MODE="1"
-    export MOCHI_PHASE="sparse_merge_grid_search"
-    export MOCHI_DEVICE="cpu"
-    export SPARSE_STAGE_INDEX="${stage}"
-    export MOCHI_SEED="${params.seed}"
-    export K_FOLDS="${params.k_folds}"
-    export NUM_EPOCHS="${params.num_epochs}"
-    export NUM_EPOCHS_GRID="${params.num_epochs_grid}"
-    export BATCH_SIZE="${params.batch_size}"
-    export LEARN_RATE="${params.learn_rate}"
-    export L1_REGULARIZATION_FACTOR="${params.l1_regularization_factor}"
-    export L2_REGULARIZATION_FACTOR="${params.l2_regularization_factor}"
-    export SPARSE_METHOD="${params.sparse_method}"
-
-    "${params.nextflow_root}/scripts/run_mochi_lsf_gpu.sh"
-    touch "sparse_stage_${stage}_grid.done"
-    """
+    mochiJobScript(
+        runLabel: "${params.run_name}-stage-${stage}-grid-merge",
+        phase: "sparse_merge_grid_search",
+        stage: stage,
+        device: "cpu",
+        jobOutputDir: "${runOutputDir}/stage_${stage}/grid_search_merge",
+        cacheDir: "${params.cache_root}/${params.run_name}/stage_${stage}/grid_search_merge",
+        afterRun: "touch \"sparse_stage_${stage}_grid.done\""
+    )
 }
 
 process RUN_SPARSE_STAGE_FOLD {
@@ -275,38 +216,14 @@ process RUN_SPARSE_STAGE_FOLD {
 
     script:
     def runOutputDir = "${params.output_root}/${params.run_name}"
-    def jobOutputDir = "${runOutputDir}/stage_${stage}/fold_${fold}"
-    def cacheDir = "${params.cache_root}/${params.run_name}"
-    """
-    mkdir -p "${jobOutputDir}"
-    export REPO_ROOT="${params.repo_root}"
-    export MOCHI_REPO="${params.mochi_repo}"
-    export MOCHI_VENV="${params.mochi_venv}"
-    export MODEL_DESIGN="${params.model_design}"
-    export RUN_LABEL="${params.run_name}-stage-${stage}-fold-${fold}"
-    export OUTPUT_ROOT="${params.output_root}"
-    export OUTPUT_DIR="${jobOutputDir}"
-    export MOCHI_OUTPUT_DIRECTORY="${runOutputDir}"
-    export CACHE_DIR="${cacheDir}"
-    export PROJECT_NAME="${params.project_name}"
-    export MAX_INTERACTION_ORDER="${params.max_interaction_order}"
-    export MOCHI_PARALLEL_MODE="1"
-    export MOCHI_PHASE="sparse_fit_best"
-    export SPARSE_STAGE_INDEX="${stage}"
-    export MOCHI_SEED="${params.seed}"
-    export MOCHI_FOLD="${fold}"
-    export K_FOLDS="${params.k_folds}"
-    export NUM_EPOCHS="${params.num_epochs}"
-    export NUM_EPOCHS_GRID="${params.num_epochs_grid}"
-    export BATCH_SIZE="${params.batch_size}"
-    export LEARN_RATE="${params.learn_rate}"
-    export L1_REGULARIZATION_FACTOR="${params.l1_regularization_factor}"
-    export L2_REGULARIZATION_FACTOR="${params.l2_regularization_factor}"
-    export SPARSE_METHOD="${params.sparse_method}"
-
-    "${params.nextflow_root}/scripts/run_mochi_lsf_gpu.sh"
-    touch "sparse_stage_${stage}_fold_${fold}.done"
-    """
+    mochiJobScript(
+        runLabel: "${params.run_name}-stage-${stage}-fold-${fold}",
+        phase: "sparse_fit_best",
+        stage: stage,
+        fold: fold,
+        jobOutputDir: "${runOutputDir}/stage_${stage}/fold_${fold}",
+        afterRun: "touch \"sparse_stage_${stage}_fold_${fold}.done\""
+    )
 }
 
 process RUN_SPARSE_STAGE_MERGE {
@@ -321,37 +238,12 @@ process RUN_SPARSE_STAGE_MERGE {
 
     script:
     def runOutputDir = "${params.output_root}/${params.run_name}"
-    def jobOutputDir = "${runOutputDir}/stage_${stage}/merge"
-    def cacheDir = "${params.cache_root}/${params.run_name}"
-    """
-    mkdir -p "${jobOutputDir}"
-    export REPO_ROOT="${params.repo_root}"
-    export MOCHI_REPO="${params.mochi_repo}"
-    export MOCHI_VENV="${params.mochi_venv}"
-    export MODEL_DESIGN="${params.model_design}"
-    export RUN_LABEL="${params.run_name}-stage-${stage}-merge"
-    export OUTPUT_ROOT="${params.output_root}"
-    export OUTPUT_DIR="${jobOutputDir}"
-    export MOCHI_OUTPUT_DIRECTORY="${runOutputDir}"
-    export CACHE_DIR="${cacheDir}"
-    export PROJECT_NAME="${params.project_name}"
-    export MAX_INTERACTION_ORDER="${params.max_interaction_order}"
-    export MOCHI_PARALLEL_MODE="1"
-    export MOCHI_PHASE="sparse_merge_folds"
-    export MOCHI_DEVICE="cpu"
-    export SPARSE_STAGE_INDEX="${stage}"
-    export MOCHI_SEED="${params.seed}"
-    export K_FOLDS="${params.k_folds}"
-    export NUM_EPOCHS="${params.num_epochs}"
-    export NUM_EPOCHS_GRID="${params.num_epochs_grid}"
-    export BATCH_SIZE="${params.batch_size}"
-    export LEARN_RATE="${params.learn_rate}"
-    export L1_REGULARIZATION_FACTOR="${params.l1_regularization_factor}"
-    export L2_REGULARIZATION_FACTOR="${params.l2_regularization_factor}"
-    export SPARSE_METHOD="${params.sparse_method}"
-
-    "${params.nextflow_root}/scripts/run_mochi_lsf_gpu.sh"
-    touch "sparse_stage_${stage}_merge.done"
-    cp "${jobOutputDir}/benchmark_manifest.env" "benchmark_manifest.env"
-    """
+    mochiJobScript(
+        runLabel: "${params.run_name}-stage-${stage}-merge",
+        phase: "sparse_merge_folds",
+        stage: stage,
+        device: "cpu",
+        jobOutputDir: "${runOutputDir}/stage_${stage}/merge",
+        afterRun: "touch \"sparse_stage_${stage}_merge.done\"\n    cp \"${runOutputDir}/stage_${stage}/merge/benchmark_manifest.env\" \"benchmark_manifest.env\""
+    )
 }
