@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-MOCHI_REPO="${REPO_ROOT}"
+MOCHI_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MOCHI_REPO="${MOCHI_REPO:-${MOCHI_ROOT}}"
 MOCHI_VENV="${MOCHI_VENV:-${MOCHI_REPO}/.venv}"
 PYTHON_SPEC="${PYTHON_SPEC:-3.11}"
 UV_INSTALL_DIR="${UV_INSTALL_DIR:-${HOME}/.local/bin}"
@@ -32,17 +32,22 @@ ensure_uv() {
     fi
 }
 
-if [ ! -d "${MOCHI_REPO}" ]; then
-    echo "MoCHI repository not found at ${MOCHI_REPO}" >&2
+if [ ! -f "${MOCHI_REPO}/pyproject.toml" ]; then
+    echo "MoCHI pyproject.toml not found at ${MOCHI_REPO}/pyproject.toml" >&2
     exit 1
 fi
 
-cd "${MOCHI_REPO}"
+if [ ! -f "${MOCHI_REPO}/uv.lock" ]; then
+    echo "MoCHI uv.lock not found at ${MOCHI_REPO}/uv.lock" >&2
+    exit 1
+fi
 
 ensure_uv
 
-echo "Syncing MoCHI runtime dependencies from uv.lock into ${MOCHI_VENV}"
-UV_PROJECT_ENVIRONMENT="${MOCHI_VENV}" uv sync --frozen --python "${PYTHON_SPEC}"
+echo "Syncing MoCHI runtime dependencies"
+echo "  project: ${MOCHI_REPO}"
+echo "  venv:    ${MOCHI_VENV}"
+UV_PROJECT_ENVIRONMENT="${MOCHI_VENV}" uv sync --project "${MOCHI_REPO}" --frozen --python "${PYTHON_SPEC}"
 
 echo "Verifying environment"
 "${MOCHI_VENV}/bin/python" - <<'PY'

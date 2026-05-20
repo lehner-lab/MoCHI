@@ -27,7 +27,7 @@ mkdir -p "${OUTPUT_DIR}" "${CACHE_DIR}" "${LOCAL_UV_CACHE}"
 
 if [ ! -x "${PYTHON_BIN}" ]; then
     echo "Expected Python interpreter not found at ${PYTHON_BIN}" >&2
-    echo "Run nextflow/scripts/bootstrap_mochi_uv.sh first." >&2
+    echo "Run bootstrap_mochi_uv.sh from the MoCHI root first." >&2
     exit 1
 fi
 

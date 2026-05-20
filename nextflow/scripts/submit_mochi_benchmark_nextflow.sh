@@ -91,7 +91,7 @@ FOLD_CLUSTER_OPTIONS="$(build_cluster_options "${FOLD_GPU_MODE}")"
 mkdir -p "${OUTPUT_ROOT%/}/${RUN_NAME}"
 
 if [ ! -x "${MOCHI_VENV}/bin/python" ]; then
-    echo "MoCHI environment not found at ${MOCHI_VENV}. Run nextflow/scripts/bootstrap_mochi_uv.sh first." >&2
+    echo "MoCHI environment not found at ${MOCHI_VENV}. Run bootstrap_mochi_uv.sh from the MoCHI root first." >&2
     exit 1
 fi
 

@@ -4,7 +4,7 @@ Bootstrap once:
 
 ```bash
 cd MoCHI
-bash nextflow/scripts/bootstrap_mochi_uv.sh
+bash bootstrap_mochi_uv.sh
 ```
 
 Submit the Nextflow master to the oversubscribed queue:
