@@ -3,6 +3,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NEXTFLOW_ROOT="${REPO_ROOT}/nextflow"
+set -a
 RUN_NAME="${RUN_NAME:-mochi-benchmark-$(date +%Y%m%d_%H%M%S)}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-/lustre/scratch124/humgen/teams_v2/hgi/eh19/work-data/mochi-dev}"
 WORK_DIR="${WORK_DIR:-${OUTPUT_ROOT%/}/${RUN_NAME}/work}"
@@ -38,6 +39,11 @@ FOLD_GPU_MODE="${FOLD_GPU_MODE:-exclusive_process}"
 HOST_FILTER="${HOST_FILTER:-}"
 GPU_HOST_EXCLUDE="${GPU_HOST_EXCLUDE:-farm22-gpu0203}"
 RESUME="${RESUME:-0}"
+set +a
+
+env_name_to_param() {
+    printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
 
 build_host_exclude_select() {
     local raw_hosts="${1:-}"
@@ -112,44 +118,21 @@ nextflow_args=(
     --repo_root "${REPO_ROOT}"
     --nextflow_root "${NEXTFLOW_ROOT}"
     --mochi_venv "${MOCHI_VENV}"
-    --model_design "${MODEL_DESIGN}"
-    --output_root "${OUTPUT_ROOT}"
-    --run_name "${RUN_NAME}"
-    --workflow_mode "${WORKFLOW_MODE}"
     --gpu_queue "${QUEUE}"
     --cpu_queue "${CPU_QUEUE}"
     --gpu_cluster_options "${GRID_CLUSTER_OPTIONS}"
     --grid_gpu_cluster_options "${GRID_CLUSTER_OPTIONS}"
     --fold_gpu_cluster_options "${FOLD_CLUSTER_OPTIONS}"
-    --grid_memory "${GRID_MEMORY}"
-    --grid_memory_max "${GRID_MEMORY_MAX}"
-    --fold_memory "${FOLD_MEMORY}"
-    --fold_memory_max "${FOLD_MEMORY_MAX}"
-    --merge_memory "${MERGE_MEMORY}"
-    --merge_memory_max "${MERGE_MEMORY_MAX}"
-    --max_memory_retries "${MAX_MEMORY_RETRIES}"
-    --seed "${SEED}"
-    --k_folds "${K_FOLDS}"
-    --parallel_folds "${PARALLEL_FOLDS}"
-    --num_epochs "${NUM_EPOCHS}"
-    --num_epochs_grid "${NUM_EPOCHS_GRID}"
 )
 
-if [ -n "${BATCH_SIZE}" ]; then
-    nextflow_args+=(--batch_size "${BATCH_SIZE}")
-fi
-if [ -n "${LEARN_RATE}" ]; then
-    nextflow_args+=(--learn_rate "${LEARN_RATE}")
-fi
-if [ -n "${L1_REGULARIZATION_FACTOR}" ]; then
-    nextflow_args+=(--l1_regularization_factor "${L1_REGULARIZATION_FACTOR}")
-fi
-if [ -n "${L2_REGULARIZATION_FACTOR}" ]; then
-    nextflow_args+=(--l2_regularization_factor "${L2_REGULARIZATION_FACTOR}")
-fi
-if [ -n "${SPARSE_METHOD}" ]; then
-    nextflow_args+=(--sparse_method "${SPARSE_METHOD}")
-fi
+while IFS= read -r name; do
+    value="${!name}"
+    if [ -z "${value}" ]; then
+        continue
+    fi
+    nextflow_args+=("--$(env_name_to_param "${name}")" "${value}")
+done < <(compgen -e)
+
 if [ "${RESUME}" = "1" ]; then
     nextflow_args+=(-resume)
 fi
