@@ -20,7 +20,7 @@ def mochiJobScript = { Map opts ->
     def jobOutputDir = opts.jobOutputDir
     def cacheDir = opts.cacheDir ?: "${params.cache_root}/${params.run_name}"
     def deviceExport = opts.device ? "export MOCHI_DEVICE='${formatArgValue(opts.device)}'" : ""
-    def cliArgs = [:] + params + (opts.args ?: [:])
+    def cliArgs = params.forwarded_mochi_args + (opts.args ?: [:])
     """
     mkdir -p "${jobOutputDir}"
     cat > mochi_nextflow_args.txt <<'EOF'
@@ -143,6 +143,7 @@ process MERGE_FOLDS {
 
 process RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION {
     label "mochi_grid_gpu"
+    tag "stage-${stage}-grid-${condition}"
 
     input:
     tuple val(stage), val(condition), val(batchSize), val(learnRate), val(l1Factor), val(l2Factor), path(prev_stage_ready)
@@ -171,10 +172,10 @@ process RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION {
 
 process MERGE_SPARSE_STAGE_GRID_SEARCH {
     label "summary_lsf_cpu"
+    tag "stage-${stage}-grid-merge"
 
     input:
-    val stage
-    path grid_condition_done
+    tuple val(stage), path(grid_condition_done)
 
     output:
     tuple val(stage), path("sparse_stage_${stage}_grid.done")
@@ -197,12 +198,13 @@ process MERGE_SPARSE_STAGE_GRID_SEARCH {
 
 process RUN_SPARSE_STAGE_FOLD {
     label "mochi_fold_gpu"
+    tag "stage-${stage}-fold-${fold}"
 
     input:
     tuple val(stage), val(fold), path(grid_ready)
 
     output:
-    path "sparse_stage_${stage}_fold_${fold}.done"
+    tuple val(stage), val(fold), path("sparse_stage_${stage}_fold_${fold}.done")
 
     script:
     def runOutputDir = "${params.output_root}/${params.run_name}"
@@ -219,12 +221,12 @@ process RUN_SPARSE_STAGE_FOLD {
     )
 }
 
-process RUN_SPARSE_STAGE_MERGE {
+process MERGE_SPARSE_STAGE_FOLDS {
     label "summary_lsf_cpu"
+    tag "stage-${stage}-merge"
 
     input:
-    tuple val(stage), path(grid_ready)
-    path fold_done
+    tuple val(stage), path(fold_done)
 
     output:
     tuple val(stage), path("sparse_stage_${stage}_merge.done"), path("benchmark_manifest.env")
@@ -242,4 +244,50 @@ process RUN_SPARSE_STAGE_MERGE {
         ],
         afterRun: "touch \"sparse_stage_${stage}_merge.done\"\n    cp \"${runOutputDir}/stage_${stage}/merge/benchmark_manifest.env\" \"benchmark_manifest.env\""
     )
+}
+
+workflow RUN_SPARSE_STAGE {
+    take:
+    stage_state
+
+    main:
+    def gridConditions = []
+    int conditionIndex = 1
+    def splitGridParam = { value ->
+        def text = value == null ? "" : value.toString().trim()
+        return text ? text.split(/\s*,\s*/).collect { it.toString() }.findAll { it } : [""]
+    }
+    def paramOr = { key, fallback ->
+        params.containsKey(key) && params[key] != null && params[key].toString() != "" ? params[key] : fallback
+    }
+    splitGridParam(paramOr("batch_size", "")).each { batchSize ->
+        splitGridParam(paramOr("learn_rate", "")).each { learnRate ->
+            splitGridParam(paramOr("l1_regularization_factor", "")).each { l1Factor ->
+                splitGridParam(paramOr("l2_regularization_factor", "")).each { l2Factor ->
+                    gridConditions << tuple(conditionIndex, batchSize, learnRate, l1Factor, l2Factor)
+                    conditionIndex += 1
+                }
+            }
+        }
+    }
+    def foldCount = params.k_folds as int
+    def sparseGridInputs = stage_state.flatMap { stage, previousReady ->
+        gridConditions.collect { condition ->
+            tuple(stage, condition[0], condition[1], condition[2], condition[3], condition[4], previousReady)
+        }
+    }
+    def sparseGridDone = RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION(sparseGridInputs)
+    def sparseMergedGrid = MERGE_SPARSE_STAGE_GRID_SEARCH(
+        sparseGridDone.map { stage, condition, done -> tuple(stage, done) }.groupTuple(size: gridConditions.size())
+    )
+    def sparseFoldInputs = sparseMergedGrid.flatMap { stage, gridReady ->
+        (1..foldCount).collect { fold -> tuple(stage, fold, gridReady) }
+    }
+    def sparseFoldDone = RUN_SPARSE_STAGE_FOLD(sparseFoldInputs)
+    def sparseMergedStage = MERGE_SPARSE_STAGE_FOLDS(
+        sparseFoldDone.map { stage, fold, done -> tuple(stage, done) }.groupTuple(size: foldCount)
+    )
+
+    emit:
+    sparseMergedStage.map { stage, done, manifest -> tuple((stage as int) + 1, manifest) }
 }

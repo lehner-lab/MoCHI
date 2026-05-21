@@ -11,11 +11,11 @@ Submit the Nextflow master to the oversubscribed queue:
 
 ```bash
 cd MoCHI
-RUN_NAME=mochi-parallel-order2-test \
-MODEL_DESIGN=/path/to/model_design.tsv \
-SPARSE_METHOD=sig_highestorder_step \
 MASTER_MEMORY_GB=24 \
-bash nextflow/scripts/submit_mochi_master_lsf.sh
+bash nextflow/scripts/submit_mochi_master_lsf.sh \
+    --run_name mochi-parallel-order2-test \
+    --model_design /path/to/model_design.tsv \
+    --sparse_method sig_highestorder_step
 ```
 
 Resume:
@@ -23,8 +23,8 @@ Resume:
 ```bash
 cd MoCHI
 RESUME=1 \
-RUN_NAME=mochi-parallel-order2-test \
-MODEL_DESIGN=/path/to/model_design.tsv \
-SPARSE_METHOD=sig_highestorder_step \
-bash nextflow/scripts/submit_mochi_master_lsf.sh
+bash nextflow/scripts/submit_mochi_master_lsf.sh \
+    --run_name mochi-parallel-order2-test \
+    --model_design /path/to/model_design.tsv \
+    --sparse_method sig_highestorder_step
 ```
