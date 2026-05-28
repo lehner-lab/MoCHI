@@ -1236,5 +1236,126 @@ class MochiProject():
         result_df.to_csv(os.path.join(directory, output_filename), sep = "\t", index = False)
 
 
+def predict_fast(
+    task_directory,
+    sequences,
+    phenotype_index = 0,
+    batch_size = 2048,
+    output_file = None):
+    """
+    Predict fitness for new variant sequences using a saved MochiTask, without
+    reconstructing MochiData from training variants.
+
+    Feature names and model weights are loaded directly from the saved task
+    directory. New sequences are one-hot encoded against the saved feature list
+    using a mutation-lookup approach: O(N * k^2) where k = mutations per
+    variant, vs. O(N * N_features) for the full MochiData pipeline.
+
+    :param task_directory: Path to a saved MochiTask directory (required).
+    :param sequences: List or Series of variant sequences; must match WT length (required).
+    :param phenotype_index: 0-based index of the phenotype to predict (default:0).
+    :param batch_size: Forward-pass batch size (default:2048).
+    :param output_file: If supplied, save TSV results to this path (optional).
+    :returns: DataFrame with columns sequence, fold_1, …, mean, std, ci95.
+    """
+
+    # --- Step 1: load task from disk ---
+    task = MochiTask(directory=str(task_directory))
+    feature_names = list(task.data.get_feature_names())
+    wildtype = task.data.fdata.wildtype
+    n_features = len(feature_names)
+    n_phenotypes = len(task.data.phenotype_names)
+    sequences = list(sequences)
+    N = len(sequences)
+
+    if phenotype_index < 0 or phenotype_index >= n_phenotypes:
+        print("Error: phenotype_index out of range.")
+        return
+
+    # --- Step 2: build mutation-lookup dicts (one-time O(N_features)) ---
+    wt_col = feature_names.index('WT')
+    single_mut_to_col = {}
+    interaction_to_col = {}
+    for col, name in enumerate(feature_names):
+        if name == 'WT':
+            continue
+        parts = name.split('_')
+        if len(parts) == 1:
+            single_mut_to_col[name] = col
+        else:
+            interaction_to_col[frozenset(parts)] = col
+
+    # --- Step 3: encode sequences -> scipy CSR (N x N_features, uint8) ---
+    wt_len = len(wildtype)
+    rows, cols = [], []
+    for row_idx, seq in enumerate(sequences):
+        if len(seq) != wt_len:
+            print(f"Error: sequence {row_idx} length {len(seq)} != WT length {wt_len}.")
+            return
+        mutations = [
+            wildtype[i] + str(i + 1) + seq[i]
+            for i in range(wt_len) if seq[i] != wildtype[i]
+        ]
+        # WT feature always active
+        rows.append(row_idx)
+        cols.append(wt_col)
+        # order-1 features
+        for m in mutations:
+            if m in single_mut_to_col:
+                rows.append(row_idx)
+                cols.append(single_mut_to_col[m])
+        # order >= 2 interaction features
+        for r in range(2, len(mutations) + 1):
+            for combo in itertools.combinations(mutations, r):
+                key = frozenset(combo)
+                if key in interaction_to_col:
+                    rows.append(row_idx)
+                    cols.append(interaction_to_col[key])
+
+    X_csr = sp.csr_matrix(
+        (np.ones(len(rows), dtype=np.uint8), (rows, cols)),
+        shape=(N, n_features),
+        dtype=np.uint8)
+
+    # --- Step 4: select tensor (all rows predict the same phenotype) ---
+    select = torch.zeros(N, n_phenotypes, dtype=torch.float32)
+    select[:, phenotype_index] = 1.0
+
+    # --- Step 5: filter to non-grid-search (i.e. fit_best) models ---
+    models_subset = [m for m in task.models if not m.metadata.grid_search]
+    if len(models_subset) == 0:
+        print("Error: no fit_best models found in task.")
+        return
+
+    # --- Step 6: batched forward pass per CV-fold model ---
+    fold_predictions = []
+    for model in models_subset:
+        model.eval()
+        y_preds = []
+        with torch.no_grad():
+            for start in range(0, N, batch_size):
+                end = min(start + batch_size, N)
+                X_payload = prepare_feature_tensor(
+                    build_sparse_feature_batch(X_csr[start:end]),
+                    task.device)
+                sel = select[start:end].to(task.device)
+                pred = model(sel, X_payload, model.mask)
+                y_preds.append(pred.detach().cpu().numpy().flatten())
+        fold_predictions.append(
+            ('fold_' + str(model.metadata.fold), np.concatenate(y_preds)))
+
+    # --- Step 7: assemble result DataFrame ---
+    result = pd.DataFrame({'sequence': sequences})
+    for fold_name, preds in fold_predictions:
+        result[fold_name] = preds
+    fold_cols = [fn for fn, _ in fold_predictions]
+    result['mean'] = result[fold_cols].mean(axis=1)
+    result['std'] = result[fold_cols].std(axis=1)
+    result['ci95'] = result['std'] * 1.96 * 2
+
+    if output_file is not None:
+        result.to_csv(str(output_file), sep='\t', index=False)
+
+    return result
 
 
