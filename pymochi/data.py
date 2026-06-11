@@ -36,35 +36,6 @@ import collections, functools, operator
 import types
 from inspect import getmembers, isfunction
 
-def current_process_rss_gb():
-    """
-    Return current process resident memory in GiB when available.
-
-    :returns: Float or None.
-    """
-    try:
-        with open("/proc/self/status", "r", encoding = "utf-8") as handle:
-            for line in handle:
-                if line.startswith("VmRSS:"):
-                    return int(line.split()[1]) / (1024 ** 2)
-    except OSError:
-        return None
-    return None
-
-def log_process_memory(
-    label):
-    """
-    Print a simple memory checkpoint message.
-
-    :param label: Human-readable stage label (required).
-    :returns: Nothing.
-    """
-    rss_gb = current_process_rss_gb()
-    if rss_gb is None:
-        print(f"{label} | RSS unavailable")
-    else:
-        print(f"{label} | RSS_GiB={rss_gb:.2f}")
-
 def compact_feature_tensors():
     """
     Decide whether binary feature tensors should be kept as uint8 on host.
@@ -528,11 +499,9 @@ class MochiData:
             features = self.features,
             downsample_interactions = self.downsample_interactions,
             seed = self.seed)
-        log_process_memory("After interaction features")
         # Release split sequence tokens before later wide-matrix passes.
         self.X = None
         gc.collect()
-        log_process_memory("After releasing sequence token matrix")
         # self.one_hot_encode_interactions_todisk(
         #     max_order = self.max_interaction_order,
         #     min_observed = self.min_observed,
@@ -545,17 +514,14 @@ class MochiData:
         #Split into training, validation and test sets
         print("Defining cross-validation groups")
         self.define_cross_validation_groups()
-        log_process_memory("After defining cross-validation groups")
         #Define coefficients to fit (for each phenotype and trait)
         print("Defining coefficient groups")
         self.define_coefficient_groups(
             k_folds = self.k_folds)
-        log_process_memory("After defining coefficient groups")
         #Ensemble encode features
         if self.ensemble:
             print("Ensemble encoding features")
             self.Xohi = self.ensemble_encode_features()
-            log_process_memory("After ensemble encoding features")
         print("Done!")
 
     def check_custom_transformations(

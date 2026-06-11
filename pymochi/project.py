@@ -515,13 +515,10 @@ class MochiProject():
         :returns: Tuple of MochiData object and MochiTask object.
         """
         mochi_data = MochiData(**mochi_data_args)
-        log_process_memory("build_task: MochiData built")
-
         print("build_task: Initializing MochiTask")
         mochi_task = MochiTask(
             data = mochi_data,
             **mochi_task_args)
-        log_process_memory("build_task: MochiTask initialized")
         return mochi_data, mochi_task
 
     def finalize_task_outputs(
@@ -802,7 +799,6 @@ class MochiProject():
             seed = seed,
             init_weights = init_weights,
             fix_weights = fix_weights)
-        log_process_memory("run_grid_search_task: Grid search completed")
         self.finalize_task_outputs(
             mochi_task = mochi_task,
             save_model = True,
@@ -847,7 +843,6 @@ class MochiProject():
             seed = mochi_data_args['seed'],
             init_weights = init_weights,
             fix_weights = fix_weights)
-        log_process_memory(f"run_sparse_stage_grid_search: Stage {stage_index} grid search completed")
         self.finalize_task_outputs(
             mochi_task = mochi_task,
             save_model = True,
@@ -903,7 +898,6 @@ class MochiProject():
             seed = seed,
             init_weights = init_weights,
             fix_weights = fix_weights)
-        log_process_memory("run_fit_fold_task: fit_best completed")
         self.finalize_task_outputs(
             mochi_task = mochi_task,
             save_model = True,
@@ -959,7 +953,6 @@ class MochiProject():
             seed = self.seed,
             init_weights = init_weights,
             fix_weights = fix_weights)
-        log_process_memory(f"run_sparse_stage_fit_fold: Stage {stage_index}, fold {fold} fit_best completed")
         self.finalize_task_outputs(
             mochi_task = mochi_task,
             save_model = True,
@@ -1206,8 +1199,6 @@ class MochiProject():
             seed = mochi_data_args['seed'],
             init_weights = init_weights,
             fix_weights = fix_weights)
-        log_process_memory("run_cv_task: Grid search completed")
-
         #Fit model using best hyperparameters
         print("run_cv_task: Starting fit_best loop")
         for i in range(mochi_data_args['k_folds']):
@@ -1217,8 +1208,7 @@ class MochiProject():
                 seed = mochi_data_args['seed'],
                 init_weights = init_weights,
                 fix_weights = fix_weights)
-        log_process_memory("run_cv_task: fit_best loop completed")
-        
+
         return self.finalize_task_outputs(
             mochi_task = mochi_task,
             RT = RT,
