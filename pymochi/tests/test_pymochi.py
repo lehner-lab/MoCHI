@@ -364,9 +364,8 @@ def dense_from_sparse_feature_payload(
         dense[row_index, indices[start:stop]] = values[start:stop]
     return dense
 
-def test_MaterializingRowDataLoader_sparse_native_batches_match_materialized_split(monkeypatch):
+def test_MaterializingRowDataLoader_sparse_native_batches_match_materialized_split():
     """Test sparse-native row loader batches preserve the materialized split values."""
-    monkeypatch.setenv("MOCHI_SPARSE_NATIVE", "1")
     mochi_data = get_demo_mochi_data(
         max_interaction_order = 2,
         downsample_observations = 0.02,

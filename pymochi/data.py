@@ -36,42 +36,6 @@ import collections, functools, operator
 import types
 from inspect import getmembers, isfunction
 
-def compact_feature_tensors():
-    """
-    Decide whether binary feature tensors should be kept as uint8 on host.
-
-    Set MOCHI_FEATURES_UINT8=0|1 to override. Defaults to enabled.
-
-    :returns: Boolean.
-    """
-    compact_override = os.environ.get("MOCHI_FEATURES_UINT8", "1").lower()
-    return compact_override in ["1", "true", "yes", "on"]
-
-def get_feature_store_backend():
-    """
-    Select the retained-feature storage backend.
-
-    Set MOCHI_FEATURE_STORE to "sparse" or "lazy". Invalid values fall back to
-    the sparse backend.
-
-    :returns: Backend name.
-    """
-    backend = os.environ.get("MOCHI_FEATURE_STORE", "sparse").lower()
-    if backend not in ["sparse", "lazy"]:
-        return "sparse"
-    return backend
-
-def sparse_native_feature_batches():
-    """
-    Decide whether sparse CSR feature batches should be used end-to-end.
-
-    Set MOCHI_SPARSE_NATIVE=0|1 to override. Defaults to enabled.
-
-    :returns: Boolean.
-    """
-    sparse_override = os.environ.get("MOCHI_SPARSE_NATIVE", "1").lower()
-    return sparse_override in ["1", "true", "yes", "on"]
-
 def build_sparse_feature_batch(
     csr_rows):
     """
@@ -893,21 +857,7 @@ class MochiData:
             return False
         print("Loading cached interaction features")
         columns = metadata.get('columns', list(self.Xoh.columns))
-        interaction_columns = [i for i in columns if i not in self.Xoh.columns]
-        if len(interaction_columns) == 0:
-            self.Xohi = self.Xoh.loc[:, columns].copy()
-            self.feature_matrix_mode = "dense"
-            self.feature_sparse_matrix = None
-            self.feature_source_indices = None
-            self.feature_component_indices = None
-            self.Xohi_memmap = None
-            self.Xohi_memmap_path = None
-            self.feature_names = self.Xohi.columns
-        else:
-            if get_feature_store_backend() == "sparse":
-                self.build_sparse_feature_matrix_from_columns(columns)
-            else:
-                self.set_lazy_feature_matrix(columns)
+        self.build_sparse_feature_matrix_from_columns(columns)
         return True
 
     def save_cached_interactions(
@@ -1627,25 +1577,14 @@ class MochiData:
 
         print("... Total retained features (order:count): "+", ".join([str(i)+":"+str(int_order_dict_retained[i])+" ("+str(round(int_order_dict_retained[i]/int_order_dict[i]*100, 1))+"%)" for i in sorted(int_order_dict_retained.keys())]))
 
-        #Concatenate into dataframe
-        if len(int_list_names)>0:
-            ordered_interactions = [i for i in all_features_flat if i in int_set]
-            if get_feature_store_backend() == "sparse":
-                self.build_sparse_feature_matrix(
-                    columns = list(self.Xoh.columns) + ordered_interactions,
-                    interaction_names = ordered_interactions,
-                    interaction_row_indices = [interaction_row_index_map[i] for i in ordered_interactions])
-            else:
-                self.set_lazy_feature_matrix(list(self.Xoh.columns) + ordered_interactions)
-            self.save_cached_interactions(
-                metadata_path = metadata_path,
-                columns = list(self.get_feature_names()))
-        else:
-            self.Xohi = copy.deepcopy(self.Xoh)
-            self.feature_matrix_mode = "dense"
-            self.feature_sparse_matrix = None
-            self.feature_source_indices = None
-            self.feature_component_indices = None
+        ordered_interactions = [i for i in all_features_flat if i in int_set]
+        self.build_sparse_feature_matrix(
+            columns = list(self.Xoh.columns) + ordered_interactions,
+            interaction_names = ordered_interactions,
+            interaction_row_indices = [interaction_row_index_map[i] for i in ordered_interactions])
+        self.save_cached_interactions(
+            metadata_path = metadata_path,
+            columns = list(self.get_feature_names()))
 
         #Filter features
         if features!=[]:
@@ -2148,8 +2087,8 @@ class MochiData:
             seed = seed,
             training_resample = training_resample)
         data_dict = {}
-        feature_numpy_dtype = np.uint8 if compact_feature_tensors() else np.float32
-        feature_tensor_dtype = torch.uint8 if compact_feature_tensors() else torch.float32
+        feature_numpy_dtype = np.uint8
+        feature_tensor_dtype = torch.uint8
         for g in list(set(self.cvgroups[fold_name])):
             row_indices = split_data[g]['row_indices']
             sind = list(range(len(row_indices)))
@@ -2182,8 +2121,8 @@ class MochiData:
             indices = list(self.phenotypes.index)
 
         data_dict = {}
-        feature_numpy_dtype = np.uint8 if compact_feature_tensors() else np.float32
-        feature_tensor_dtype = torch.uint8 if compact_feature_tensors() else torch.float32
+        feature_numpy_dtype = np.uint8
+        feature_tensor_dtype = torch.uint8
         #Select tensor
         data_dict['select'] = torch.tensor(
             self.phenotypes.iloc[indices,:].to_numpy(dtype = np.float32, copy = True),
@@ -2381,9 +2320,9 @@ class MaterializingRowDataLoader:
         self.dataset_len = len(self.row_indices)
         self.batch_size = batch_size
         self.shuffle = shuffle
-        self.sparse_native = sparse_native_feature_batches() and self.data.is_sparse_feature_matrix()
-        self.feature_numpy_dtype = np.uint8 if compact_feature_tensors() else np.float32
-        self.feature_tensor_dtype = torch.uint8 if compact_feature_tensors() else torch.float32
+        self.sparse_native = self.data.is_sparse_feature_matrix()
+        self.feature_numpy_dtype = np.uint8
+        self.feature_tensor_dtype = torch.uint8
         self.prefetch_blocks = max(1, int(os.environ.get("MOCHI_PREFETCH_BLOCKS", "2")))
         self.prefetch_batches = max(1, int(os.environ.get("MOCHI_PREFETCH_BATCHES", "8")))
         self.block_rows = max(

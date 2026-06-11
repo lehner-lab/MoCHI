@@ -31,7 +31,6 @@ if [ ! -x "${PYTHON_BIN}" ]; then
     exit 1
 fi
 
-export MOCHI_FEATURES_UINT8="${MOCHI_FEATURES_UINT8:-1}"
 export MOCHI_AMP="${MOCHI_AMP:-auto}"
 export MOCHI_DEVICE="${MOCHI_DEVICE:-cuda}"
 export MOCHI_XOHI_CACHE_DIR="${CACHE_DIR}"
