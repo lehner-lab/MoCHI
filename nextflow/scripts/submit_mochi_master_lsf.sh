@@ -94,7 +94,7 @@ run_nextflow_master() {
     source /etc/profile.d/modules.sh
     module load HGI/common/nextflow/25.10.4
 
-    local queue="${QUEUE:-gpu-normal}"
+    local queue="${QUEUE:-gpu}"
     local max_memory_retries="${MAX_MEMORY_RETRIES:-3}"
     local parallel_folds="${PARALLEL_FOLDS:-1}"
     local host_exclude_select=""

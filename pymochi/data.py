@@ -10,7 +10,6 @@ import re
 import copy
 import random
 import math
-import tempfile
 import time
 import gc
 import csv
@@ -62,7 +61,7 @@ def build_sparse_feature_batch(
 
 class FeatureMatrixMetadata:
     """
-    Lightweight metadata wrapper for a lazily materialized feature matrix.
+    Lightweight metadata wrapper for a feature matrix.
     """
     def __init__(
         self,
@@ -406,12 +405,8 @@ class MochiData:
         self.X = None
         self.Xoh = None
         self.Xohi = None
-        self.Xohi_memmap = None
-        self.Xohi_memmap_path = None
         self.feature_matrix_mode = "dense"
         self.feature_sparse_matrix = None
-        self.feature_source_indices = None
-        self.feature_component_indices = None
         self.cvgroups = None
         self.coefficients = None
         self.coefficients_userspec = None
@@ -463,9 +458,13 @@ class MochiData:
             features = self.features,
             downsample_interactions = self.downsample_interactions,
             seed = self.seed)
-        # Release split sequence tokens before later wide-matrix passes.
-        self.X = None
-        gc.collect()
+        if not self.ensemble:
+            # self.X is only needed to build self.Xoh in the non-ensemble path.
+            # Drop it before later wide-matrix passes to reduce peak memory.
+            # Keep it for ensemble=True because ensemble_encode_features() uses
+            # the original split sequence tokens to count per-position states.
+            self.X = None
+            gc.collect()
         # self.one_hot_encode_interactions_todisk(
         #     max_order = self.max_interaction_order,
         #     min_observed = self.min_observed,
@@ -486,6 +485,9 @@ class MochiData:
         if self.ensemble:
             print("Ensemble encoding features")
             self.Xohi = self.ensemble_encode_features()
+            # Ensemble encoding is the last stage that needs self.X.
+            self.X = None
+            gc.collect()
         print("Done!")
 
     def check_custom_transformations(
@@ -687,8 +689,7 @@ class MochiData:
         one_hot_names = [self.fdata.wildtype_split[int(i[1:-2])]+str(int(i[1:-2])+1)+i[-1] for i in enc.get_feature_names_out()]
         one_hot_df = pd.DataFrame(enc.transform(self.X).toarray(), columns = one_hot_names)
         if include_WT:
-            one_hot_df = pd.concat([pd.DataFrame({'WT': np.ones(len(one_hot_df), dtype = np.uint8)}), one_hot_df], axis=1)
-        one_hot_df = one_hot_df.astype(np.uint8)
+            one_hot_df.insert(0, 'WT', np.ones(len(one_hot_df), dtype = np.uint8))
         return one_hot_df
 
     def get_theoretical_interactions_phenotype(
@@ -804,11 +805,11 @@ class MochiData:
 
         Set MOCHI_XOHI_CACHE_DIR to enable the cache.
 
-        :returns: Tuple of metadata path and memmap path, or (None, None).
+        :returns: Metadata path, or None.
         """
         cache_dir = os.environ.get("MOCHI_XOHI_CACHE_DIR")
         if cache_dir in [None, ""]:
-            return (None, None)
+            return None
         os.makedirs(cache_dir, exist_ok = True)
         file_stats = [
             {
@@ -829,14 +830,11 @@ class MochiData:
             'rows': len(self.Xoh)}
         cache_key = hashlib.sha256(
             json.dumps(cache_input, sort_keys = True, default = str).encode('utf-8')).hexdigest()
-        metadata_path = os.path.join(cache_dir, f"{cache_key}.json")
-        memmap_path = os.path.join(cache_dir, f"{cache_key}.dat")
-        return (metadata_path, memmap_path)
+        return os.path.join(cache_dir, f"{cache_key}.json")
 
     def load_cached_interactions(
         self,
-        metadata_path,
-        memmap_path):
+        metadata_path):
         """
         Load cached interaction features if present and valid.
 
@@ -875,15 +873,13 @@ class MochiData:
             'rows': len(self.Xoh),
             'base_columns': list(self.Xoh.columns),
             'columns': list(columns)}
-        if self.Xohi_memmap is not None:
-            metadata['shape'] = list(self.Xohi_memmap.shape)
         with open(metadata_path, "w") as handle:
             json.dump(metadata, handle)
 
     def get_feature_names(
         self):
         """
-        Return feature names regardless of whether features are dense or lazy.
+        Return feature names regardless of whether features are dense or sparse.
 
         :returns: pandas Index.
         """
@@ -892,15 +888,6 @@ class MochiData:
         if self.Xohi is not None and hasattr(self.Xohi, "columns"):
             return pd.Index(self.Xohi.columns)
         return pd.Index([])
-
-    def is_lazy_feature_matrix(
-        self):
-        """
-        Check whether the feature matrix is materialized on demand.
-
-        :returns: Boolean.
-        """
-        return getattr(self, "feature_matrix_mode", "dense") == "lazy"
 
     def is_sparse_feature_matrix(
         self):
@@ -926,10 +913,6 @@ class MochiData:
         self.feature_matrix_mode = "sparse"
         self.feature_names = columns
         self.feature_sparse_matrix = sparse_matrix.tocsr().astype(np.uint8, copy = False)
-        self.feature_source_indices = None
-        self.feature_component_indices = None
-        self.Xohi_memmap = None
-        self.Xohi_memmap_path = None
         self.Xohi = FeatureMatrixMetadata(
             index = self.Xoh.index,
             columns = columns)
@@ -999,37 +982,6 @@ class MochiData:
             interaction_names = interaction_names,
             interaction_row_indices = interaction_row_indices)
 
-    def set_lazy_feature_matrix(
-        self,
-        columns):
-        """
-        Configure retained feature metadata without materializing a dense matrix.
-
-        :param columns: Ordered feature names (required).
-        :returns: Nothing.
-        """
-        xoh_column_index = {name:i for i,name in enumerate(self.Xoh.columns)}
-        columns = pd.Index(columns)
-        source_indices = np.full(len(columns), -1, dtype = np.int32)
-        component_indices = [None] * len(columns)
-        for i, name in enumerate(columns):
-            if name in xoh_column_index:
-                source_indices[i] = xoh_column_index[name]
-            else:
-                component_indices[i] = np.asarray(
-                    [xoh_column_index[j] for j in name.split("_")],
-                    dtype = np.int32)
-        self.feature_matrix_mode = "lazy"
-        self.feature_names = columns
-        self.feature_sparse_matrix = None
-        self.feature_source_indices = source_indices
-        self.feature_component_indices = component_indices
-        self.Xohi_memmap = None
-        self.Xohi_memmap_path = None
-        self.Xohi = FeatureMatrixMetadata(
-            index = self.Xoh.index,
-            columns = columns)
-
     def reorder_feature_columns(
         self,
         columns):
@@ -1044,9 +996,7 @@ class MochiData:
         if len(missing) != 0:
             print("Error: Invalid feature names.")
             raise ValueError
-        if self.is_lazy_feature_matrix():
-            self.set_lazy_feature_matrix(columns)
-        elif self.is_sparse_feature_matrix():
+        if self.is_sparse_feature_matrix():
             feature_index = {name:i for i, name in enumerate(self.get_feature_names())}
             self.activate_sparse_feature_matrix(
                 columns = columns,
@@ -1118,33 +1068,10 @@ class MochiData:
                     chunk = chunk.astype(dtype, copy = False)
                 yield (start, stop, chunk)
             return
-        if not self.is_lazy_feature_matrix():
-            feature_values = self.Xohi.iloc[row_indices, feature_indices].to_numpy(
-                dtype = dtype,
-                copy = True)
-            yield (0, len(feature_indices), feature_values)
-            return
-
-        xoh_values = self.Xoh.iloc[row_indices,:].to_numpy(dtype = np.uint8, copy = False)
-        feature_source_indices = self.feature_source_indices
-        feature_component_indices = self.feature_component_indices
-        for start in range(0, len(feature_indices), chunk_size):
-            stop = min(start + chunk_size, len(feature_indices))
-            chunk_feature_indices = feature_indices[start:stop]
-            chunk = np.empty((len(row_indices), len(chunk_feature_indices)), dtype = np.uint8)
-            chunk_sources = feature_source_indices[chunk_feature_indices]
-            base_local_idx = np.flatnonzero(chunk_sources >= 0)
-            if len(base_local_idx) != 0:
-                chunk[:, base_local_idx] = xoh_values[:, chunk_sources[base_local_idx]]
-            interaction_local_idx = np.flatnonzero(chunk_sources < 0)
-            for local_i in interaction_local_idx:
-                feature_i = chunk_feature_indices[local_i]
-                chunk[:, local_i] = np.all(
-                    xoh_values[:, feature_component_indices[feature_i]] == 1,
-                    axis = 1).astype(np.uint8, copy = False)
-            if dtype != np.uint8:
-                chunk = chunk.astype(dtype, copy = False)
-            yield (start, stop, chunk)
+        feature_values = self.Xohi.iloc[row_indices, feature_indices].to_numpy(
+            dtype = dtype,
+            copy = True)
+        yield (0, len(feature_indices), feature_values)
 
     def materialize_feature_matrix(
         self,
@@ -1482,18 +1409,17 @@ class MochiData:
                 print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
                 raise ValueError
 
-        metadata_path, memmap_path = self.get_xohi_cache_paths(
+        metadata_path = self.get_xohi_cache_paths(
             max_order = max_order,
             min_observed = min_observed,
             features = features,
             downsample_interactions = downsample_interactions,
             seed = seed)
         if self.load_cached_interactions(
-            metadata_path = metadata_path,
-            memmap_path = memmap_path):
+            metadata_path = metadata_path):
             if features!=[]:
                 print("Filtering features")
-                if self.is_lazy_feature_matrix() or self.is_sparse_feature_matrix():
+                if self.is_sparse_feature_matrix():
                     self.reorder_feature_columns(
                         [i for i in self.get_feature_names() if i in features])
                 else:
@@ -1589,7 +1515,7 @@ class MochiData:
         #Filter features
         if features!=[]:
             print("Filtering features")
-            if self.is_lazy_feature_matrix() or self.is_sparse_feature_matrix():
+            if self.is_sparse_feature_matrix():
                 self.reorder_feature_columns(
                     [i for i in self.get_feature_names() if i in features])
             else:
@@ -1619,13 +1545,8 @@ class MochiData:
 
         :returns: numpy-compatible 2D array.
         """
-        if self.is_lazy_feature_matrix():
-            print("Error: Lazy feature matrix cannot be returned as one dense array.")
-            raise RuntimeError
         if self.is_sparse_feature_matrix():
             return self.feature_sparse_matrix
-        if self.Xohi_memmap is not None:
-            return self.Xohi_memmap
         return self.Xohi.to_numpy(copy = False)
 
     def filter_features(
