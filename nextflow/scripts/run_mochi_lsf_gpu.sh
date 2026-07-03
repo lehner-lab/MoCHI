@@ -9,7 +9,6 @@ MOCHI_ARGS_FILE="${MOCHI_ARGS_FILE:-}"
 RUN_LABEL="${RUN_LABEL:-mochi_batch_compare}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-/tmp}"
 OUTPUT_DIR="${OUTPUT_DIR:-${OUTPUT_ROOT%/}/${RUN_LABEL}}"
-CACHE_DIR="${CACHE_DIR:-${OUTPUT_ROOT%/}/cache}"
 LOCAL_UV_CACHE="${LOCAL_UV_CACHE:-${OUTPUT_DIR}/uv-cache}"
 RUN_LOG="${RUN_LOG:-${OUTPUT_DIR}/run.log}"
 TIME_LOG="${TIME_LOG:-${OUTPUT_DIR}/time.log}"
@@ -23,7 +22,7 @@ BENCHMARK_MANIFEST="${BENCHMARK_MANIFEST:-${OUTPUT_DIR}/benchmark_manifest.env}"
 PHASE_MANIFEST="${PHASE_MANIFEST:-${OUTPUT_DIR}/phase_manifest.env}"
 MONITOR_INTERVAL_SECONDS="${MONITOR_INTERVAL_SECONDS:-30}"
 
-mkdir -p "${OUTPUT_DIR}" "${CACHE_DIR}" "${LOCAL_UV_CACHE}"
+mkdir -p "${OUTPUT_DIR}" "${LOCAL_UV_CACHE}"
 
 if [ ! -x "${PYTHON_BIN}" ]; then
     echo "Expected Python interpreter not found at ${PYTHON_BIN}" >&2
@@ -33,7 +32,6 @@ fi
 
 export MOCHI_AMP="${MOCHI_AMP:-auto}"
 export MOCHI_DEVICE="${MOCHI_DEVICE:-cuda}"
-export MOCHI_XOHI_CACHE_DIR="${CACHE_DIR}"
 export PYTHONUNBUFFERED=1
 export UV_CACHE_DIR="${LOCAL_UV_CACHE}"
 export XDG_CACHE_HOME="${LOCAL_UV_CACHE}"
@@ -67,7 +65,6 @@ printf '\n' >> "${COMMAND_FILE}"
     echo "repo_root=${REPO_ROOT}"
     echo "mochi_repo=${MOCHI_REPO}"
     echo "output_dir=${OUTPUT_DIR}"
-    echo "cache_dir=${CACHE_DIR}"
     echo "mochi_args_file=${MOCHI_ARGS_FILE}"
     echo "python=${PYTHON_BIN}"
     echo "python_version=$("${PYTHON_BIN}" -c 'import sys; print(sys.version.replace("\n", " "))')"
@@ -79,7 +76,7 @@ printf '\n' >> "${COMMAND_FILE}"
     echo "memory:"
     free -h || true
     echo "filesystems:"
-    df -h "${OUTPUT_DIR}" "${CACHE_DIR}" || true
+    df -h "${OUTPUT_DIR}" || true
 } | tee "${JOB_META}"
 
 {

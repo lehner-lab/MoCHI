@@ -4,8 +4,6 @@ MoCHI data module
 """
 
 import os
-import json
-import hashlib
 import re
 import copy
 import random
@@ -793,89 +791,6 @@ class MochiData:
             for interaction_key, row_indices in interaction_rows.items()
         }
 
-    def get_xohi_cache_paths(
-        self,
-        max_order,
-        min_observed,
-        features,
-        downsample_interactions,
-        seed):
-        """
-        Get cache paths for interaction features if caching is enabled.
-
-        Set MOCHI_XOHI_CACHE_DIR to enable the cache.
-
-        :returns: Metadata path, or None.
-        """
-        cache_dir = os.environ.get("MOCHI_XOHI_CACHE_DIR")
-        if cache_dir in [None, ""]:
-            return None
-        os.makedirs(cache_dir, exist_ok = True)
-        file_stats = [
-            {
-                'path': str(pathlib.Path(i).resolve()),
-                'size': os.path.getsize(i),
-                'mtime_ns': os.stat(i).st_mtime_ns}
-            for i in list(self.model_design['file'])]
-        cache_input = {
-            'files': file_stats,
-            'max_order': max_order,
-            'min_observed': min_observed,
-            'features': features,
-            'downsample_interactions': downsample_interactions,
-            'seed': seed,
-            'order_subset': self.order_subset,
-            'downsample_observations': self.downsample_observations,
-            'xoh_columns': list(self.Xoh.columns),
-            'rows': len(self.Xoh)}
-        cache_key = hashlib.sha256(
-            json.dumps(cache_input, sort_keys = True, default = str).encode('utf-8')).hexdigest()
-        return os.path.join(cache_dir, f"{cache_key}.json")
-
-    def load_cached_interactions(
-        self,
-        metadata_path):
-        """
-        Load cached interaction features if present and valid.
-
-        :returns: True if cache hit, False otherwise.
-        """
-        if metadata_path is None:
-            return False
-        if not os.path.exists(metadata_path):
-            return False
-        try:
-            with open(metadata_path, "r") as handle:
-                metadata = json.load(handle)
-        except Exception:
-            return False
-        if metadata.get('rows') != len(self.Xoh):
-            return False
-        if metadata.get('base_columns') != list(self.Xoh.columns):
-            return False
-        print("Loading cached interaction features")
-        columns = metadata.get('columns', list(self.Xoh.columns))
-        self.build_sparse_feature_matrix_from_columns(columns)
-        return True
-
-    def save_cached_interactions(
-        self,
-        metadata_path,
-        columns):
-        """
-        Save interaction-feature cache metadata.
-
-        :returns: Nothing.
-        """
-        if metadata_path is None:
-            return
-        metadata = {
-            'rows': len(self.Xoh),
-            'base_columns': list(self.Xoh.columns),
-            'columns': list(columns)}
-        with open(metadata_path, "w") as handle:
-            json.dump(metadata, handle)
-
     def get_feature_names(
         self):
         """
@@ -956,31 +871,6 @@ class MochiData:
             sparse_matrix = combined)
         if list(self.get_feature_names()) != list(columns):
             self.reorder_feature_columns(columns)
-
-    def build_sparse_feature_matrix_from_columns(
-        self,
-        columns):
-        """
-        Build a sparse retained-feature matrix by recomputing only the retained
-        interaction columns named in `columns`.
-
-        :param columns: Ordered feature names (required).
-        :returns: Nothing.
-        """
-        xoh_column_index = {name:i for i, name in enumerate(self.Xoh.columns)}
-        xoh_values = self.Xoh.to_numpy(dtype = np.uint8, copy = False)
-        interaction_names = [i for i in columns if i not in xoh_column_index]
-        interaction_row_indices = []
-        for name in interaction_names:
-            feature_idx = [xoh_column_index[i] for i in name.split("_")]
-            interaction_row_indices.append(
-                np.flatnonzero(
-                    np.all(xoh_values[:, feature_idx] == 1, axis = 1)
-                ).astype(np.int32, copy = False))
-        self.build_sparse_feature_matrix(
-            columns = columns,
-            interaction_names = interaction_names,
-            interaction_row_indices = interaction_row_indices)
 
     def reorder_feature_columns(
         self,
@@ -1409,26 +1299,6 @@ class MochiData:
                 print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
                 raise ValueError
 
-        metadata_path = self.get_xohi_cache_paths(
-            max_order = max_order,
-            min_observed = min_observed,
-            features = features,
-            downsample_interactions = downsample_interactions,
-            seed = seed)
-        if self.load_cached_interactions(
-            metadata_path = metadata_path):
-            if features!=[]:
-                print("Filtering features")
-                if self.is_sparse_feature_matrix():
-                    self.reorder_feature_columns(
-                        [i for i in self.get_feature_names() if i in features])
-                else:
-                    self.Xohi = self.filter_features(
-                        input_df = self.Xohi,
-                        features = features)
-            self.feature_names = self.get_feature_names()
-            return
-
         #Get all theoretical interactions
         all_features,int_order_dict = self.get_theoretical_interactions(max_order = max_order)
         print("... Total theoretical features (order:count): "+", ".join([str(i)+":"+str(int_order_dict[i]) for i in sorted(int_order_dict.keys())]))
@@ -1508,9 +1378,6 @@ class MochiData:
             columns = list(self.Xoh.columns) + ordered_interactions,
             interaction_names = ordered_interactions,
             interaction_row_indices = [interaction_row_index_map[i] for i in ordered_interactions])
-        self.save_cached_interactions(
-            metadata_path = metadata_path,
-            columns = list(self.get_feature_names()))
 
         #Filter features
         if features!=[]:

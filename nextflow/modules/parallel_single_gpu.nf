@@ -18,7 +18,6 @@ def mochiArgsFileContent = { Map args ->
 def mochiJobScript = { Map opts ->
     def runOutputDir = "${params.output_root}/${params.run_name}"
     def jobOutputDir = opts.jobOutputDir
-    def cacheDir = opts.cacheDir ?: "${params.cache_root}/${params.run_name}"
     def deviceExport = opts.device ? "export MOCHI_DEVICE='${formatArgValue(opts.device)}'" : ""
     def cliArgs = params.forwarded_mochi_args + (opts.args ?: [:])
     """
@@ -33,7 +32,6 @@ EOF
     export RUN_LABEL="${opts.runLabel}"
     export OUTPUT_ROOT="${params.output_root}"
     export OUTPUT_DIR="${jobOutputDir}"
-    export CACHE_DIR="${cacheDir}"
     export MOCHI_PARALLEL_MODE="1"
     export MOCHI_ARGS_FILE="\$PWD/mochi_nextflow_args.txt"
     ${deviceExport}
@@ -57,7 +55,6 @@ process RUN_GRID_SEARCH_CONDITION {
     mochiJobScript(
         runLabel: "${params.run_name}-grid-${condition}",
         jobOutputDir: "${runOutputDir}/grid_search/condition_${condition}",
-        cacheDir: "${params.cache_root}/${params.run_name}/grid_search/condition_${condition}",
         args: [
             output_directory: "${runOutputDir}/grid_search/condition_${condition}",
             phase: "grid_search",
@@ -85,7 +82,6 @@ process MERGE_GRID_SEARCH_CONDITIONS {
         runLabel: "${params.run_name}-grid-merge",
         device: "cpu",
         jobOutputDir: "${runOutputDir}/grid_search_merge",
-        cacheDir: "${params.cache_root}/${params.run_name}/grid_search_merge",
         args: [
             output_directory: runOutputDir,
             phase: "merge_grid_search"
@@ -156,7 +152,6 @@ process RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION {
     mochiJobScript(
         runLabel: "${params.run_name}-stage-${stage}-grid-${condition}",
         jobOutputDir: "${runOutputDir}/stage_${stage}/grid_search/condition_${condition}",
-        cacheDir: "${params.cache_root}/${params.run_name}/stage_${stage}/grid_search/condition_${condition}",
         args: [
             output_directory: "${runOutputDir}/stage_${stage}/grid_search/condition_${condition}",
             phase: "sparse_grid_search",
@@ -186,7 +181,6 @@ process MERGE_SPARSE_STAGE_GRID_SEARCH {
         runLabel: "${params.run_name}-stage-${stage}-grid-merge",
         device: "cpu",
         jobOutputDir: "${runOutputDir}/stage_${stage}/grid_search_merge",
-        cacheDir: "${params.cache_root}/${params.run_name}/stage_${stage}/grid_search_merge",
         args: [
             output_directory: runOutputDir,
             phase: "sparse_merge_grid_search",

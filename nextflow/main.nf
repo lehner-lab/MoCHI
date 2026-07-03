@@ -8,7 +8,6 @@ def workflowOnlyParamKeys = [
     "mochi_repo",
     "mochi_venv",
     "output_root",
-    "cache_root",
     "run_name",
     "workflow_mode",
     "parallel_folds",
@@ -47,7 +46,6 @@ params.repo_root = params.containsKey("repo_root") ? params["repo_root"] : new F
 params.mochi_repo = paramOr("mochi_repo", "${params.repo_root}")
 params.mochi_venv = paramOr("mochi_venv", "${params.repo_root}/.venv")
 params.output_root = paramOr("output_root", paramOr("output_directory", workflow.launchDir.toString()))
-params.cache_root = paramOr("cache_root", "${params.output_root}/cache")
 params.run_name = paramOr("run_name", workflow.runName)
 params.workflow_mode = paramOr("workflow_mode", "parallel_folds")
 params.k_folds = paramOr("k_folds", 10)
@@ -146,7 +144,6 @@ process RUN_MOCHI {
     script:
     def runLabel = params.run_name
     def outputDir = "${params.output_root}/${params.run_name}"
-    def cacheDir = "${params.cache_root}/${params.run_name}"
     def cliArgs = params.forwarded_mochi_args + [output_directory: outputDir]
     """
     cat > mochi_nextflow_args.txt <<'EOF'
@@ -159,7 +156,6 @@ EOF
     export RUN_LABEL="${runLabel}"
     export OUTPUT_ROOT="${params.output_root}"
     export OUTPUT_DIR="${outputDir}"
-    export CACHE_DIR="${cacheDir}"
     export MOCHI_ARGS_FILE="\$PWD/mochi_nextflow_args.txt"
 
     "${params.nextflow_root}/scripts/run_mochi_lsf_gpu.sh"
