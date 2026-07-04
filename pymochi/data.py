@@ -798,6 +798,9 @@ class MochiData:
 
         :returns: pandas Index.
         """
+        # Sparse path sets self.feature_names in activate_sparse_feature_matrix()
+        # before one_hot_encode_interactions() finishes; dense path usually falls
+        # back to self.Xohi.columns when feature_names was never assigned.
         if self.feature_names is not None:
             return pd.Index(self.feature_names)
         if self.Xohi is not None and hasattr(self.Xohi, "columns"):
@@ -826,6 +829,7 @@ class MochiData:
         """
         columns = pd.Index(columns)
         self.feature_matrix_mode = "sparse"
+        # Authoritative feature order for sparse storage; get_feature_names() reads this.
         self.feature_names = columns
         self.feature_sparse_matrix = sparse_matrix.tocsr().astype(np.uint8, copy = False)
         self.Xohi = FeatureMatrixMetadata(
