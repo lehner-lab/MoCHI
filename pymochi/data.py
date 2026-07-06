@@ -901,52 +901,6 @@ class MochiData:
             self.Xohi = self.Xohi.loc[:, columns]
             self.feature_names = self.Xohi.columns
 
-    def sum_features_for_rows(
-        self,
-        row_indices):
-        """
-        Sum feature columns across a selected row subset.
-
-        :param row_indices: Row indices to aggregate (required).
-        :returns: ndarray of per-feature sums.
-        """
-        if self.is_sparse_feature_matrix():
-            return np.asarray(
-                self.feature_sparse_matrix[np.asarray(row_indices, dtype = np.int64)].sum(axis = 0),
-                dtype = np.int64).ravel()
-        return np.sum(
-            self.Xohi.iloc[np.asarray(row_indices, dtype = np.int64), :].to_numpy(
-                dtype = np.uint8,
-                copy = True),
-            axis = 0,
-            dtype = np.int64)
-
-    def sum_selected_features_per_row(
-        self,
-        row_indices,
-        feature_indices):
-        """
-        Sum a selected feature subset across each requested row.
-
-        :param row_indices: Row indices to aggregate (required).
-        :param feature_indices: Feature indices to include (required).
-        :returns: ndarray of per-row sums.
-        """
-        row_sums = np.zeros(len(row_indices), dtype = np.int64)
-        feature_indices = np.asarray(feature_indices, dtype = np.int64)
-        if len(feature_indices) == 0:
-            return row_sums
-        if self.is_sparse_feature_matrix():
-            return np.asarray(
-                self.feature_sparse_matrix[np.asarray(row_indices, dtype = np.int64)][:, feature_indices].sum(axis = 1),
-                dtype = np.int64).ravel()
-        return np.sum(
-            self.Xohi.iloc[np.asarray(row_indices, dtype = np.int64), feature_indices].to_numpy(
-                dtype = np.uint8,
-                copy = True),
-            axis = 1,
-            dtype = np.int64)
-
     # def write_features(
     #     self,
     #     feature_list, 
@@ -1578,13 +1532,33 @@ class MochiData:
                 phenotype_mask = np.asarray(self.phenotypes.loc[:,relevant_phenotype_columns].sum(axis=1)==1)
                 phenotype_indices = np.flatnonzero(phenotype_mask)
                 #Number of observations per coefficient
-                Xohp_colsum = self.sum_features_for_rows(phenotype_indices)
+                if self.is_sparse_feature_matrix():
+                    phenotype_features = self.feature_sparse_matrix[phenotype_indices]
+                    Xohp_colsum = np.asarray(
+                        phenotype_features.sum(axis = 0),
+                        dtype = np.int64).ravel()
+                else:
+                    phenotype_features = self.Xohi.iloc[phenotype_indices, :].to_numpy(
+                        dtype = np.uint8,
+                        copy = True)
+                    Xohp_colsum = np.sum(
+                        phenotype_features,
+                        axis = 0,
+                        dtype = np.int64)
                 #Indices of coefficients that do not meet required threshold
                 Xohp_noholdout = np.flatnonzero(Xohp_colsum < self.holdout_minobs)
                 #Observations of coefficients that do not meet the required threshold
-                Xohp_noholdout_rowsum = self.sum_selected_features_per_row(
-                    row_indices = phenotype_indices,
-                    feature_indices = Xohp_noholdout)
+                if len(Xohp_noholdout) == 0:
+                    Xohp_noholdout_rowsum = np.zeros(len(phenotype_indices), dtype = np.int64)
+                elif self.is_sparse_feature_matrix():
+                    Xohp_noholdout_rowsum = np.asarray(
+                        phenotype_features[:, Xohp_noholdout].sum(axis = 1),
+                        dtype = np.int64).ravel()
+                else:
+                    Xohp_noholdout_rowsum = np.sum(
+                        phenotype_features[:, Xohp_noholdout],
+                        axis = 1,
+                        dtype = np.int64)
                 #WT variants for these phenotypes
                 Xohp_WT = np.array(self.fdata.vtable.loc[phenotype_mask,'WT'])
                 #Mutation orders for these phenotypes
