@@ -291,15 +291,15 @@ def test_MochiData_downsample_interactions_two_matches_full_retained_terms():
     assert limited_data.Xohi.shape[1] == limited_data.Xoh.shape[1] + 2
 
 
-def test_MochiData_sparse_reorder_feature_columns_preserves_selected_values():
-    """Test sparse feature-column reordering keeps the same values and exposed names."""
+def test_MochiData_sparse_select_feature_columns_preserves_selected_values():
+    """Test sparse feature-column selection keeps the same values and exposed names."""
     mochi_data = MochiData(
         model_design = make_demo_model_design(),
         max_interaction_order = 2,
         downsample_observations = 0.02,
         seed = 1)
     reordered_columns = list(reversed(list(mochi_data.get_feature_names())[-3:]))
-    mochi_data.reorder_feature_columns(reordered_columns)
+    mochi_data.select_feature_columns(reordered_columns)
     assert mochi_data.feature_matrix_mode == "sparse"
     assert list(mochi_data.get_feature_names()) == reordered_columns
     materialized = mochi_data.materialize_feature_matrix(

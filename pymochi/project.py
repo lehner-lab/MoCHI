@@ -1269,8 +1269,8 @@ class MochiProject():
             features = {None: list(mochi_task.data.get_feature_names())},
             ensemble = mochi_task.data.ensemble)
 
-        #Reorder feature matrix columns
-        mochi_data.reorder_feature_columns(list(mochi_task.data.get_feature_names()))
+        # Align feature column order with the trained task before prediction.
+        mochi_data.select_feature_columns(list(mochi_task.data.get_feature_names()))
         mochi_data.feature_names = mochi_data.get_feature_names()
         #Split into training, validation and test sets
         mochi_data.define_cross_validation_groups()

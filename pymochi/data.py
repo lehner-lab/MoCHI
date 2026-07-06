@@ -410,6 +410,7 @@ class MochiData:
         self.coefficients_userspec = None
         self.custom_transformations_code = None
         self.feature_names = None
+        self.feature_chunk_size = int(os.environ.get("MOCHI_FEATURE_CHUNK_SIZE", "256"))
 
         # #Create data directory
         # try:
@@ -871,18 +872,20 @@ class MochiData:
                     dtype = np.uint8)
             combined = sp.hstack([base_sparse, interaction_sparse], format = "csr", dtype = np.uint8)
         self.activate_sparse_feature_matrix(
-            columns = list(self.Xoh.columns) + list(interaction_names),
+            columns = columns,
             sparse_matrix = combined)
-        if list(self.get_feature_names()) != list(columns):
-            self.reorder_feature_columns(columns)
 
-    def reorder_feature_columns(
+    def select_feature_columns(
         self,
         columns):
         """
-        Reorder retained feature columns while preserving the active storage mode.
+        Select feature columns by name in the requested order.
 
-        :param columns: Ordered feature names (required).
+        Subsets and/or permutes the retained feature matrix. The sparse path
+        slices the CSR matrix and re-attaches metadata; the dense path uses
+        DataFrame column selection.
+
+        :param columns: Ordered feature names to retain (required).
         :returns: Nothing.
         """
         columns = list(columns)
@@ -898,35 +901,6 @@ class MochiData:
         else:
             self.Xohi = self.Xohi.loc[:, columns]
             self.feature_names = self.Xohi.columns
-
-    def get_feature_chunk_size(
-        self):
-        """
-        Return feature chunk size used for on-demand interaction assembly.
-
-        :returns: Integer chunk size.
-        """
-        return int(os.environ.get("MOCHI_FEATURE_CHUNK_SIZE", "256"))
-
-    def check_materialization_memory(
-        self,
-        n_rows,
-        n_features,
-        dtype):
-        """
-        Fail fast when an on-demand dense materialization exceeds a configured cap.
-
-        Set MOCHI_MAX_XOHI_GB to a positive number to enable the guard.
-
-        :returns: Nothing.
-        """
-        max_gb = os.environ.get("MOCHI_MAX_XOHI_GB")
-        if max_gb in [None, ""]:
-            return
-        projected_bytes = int(n_rows) * int(n_features) * np.dtype(dtype).itemsize
-        if projected_bytes > (float(max_gb) * (1024 ** 3)):
-            print("Error: On-demand feature matrix exceeds MOCHI_MAX_XOHI_GB.")
-            raise MemoryError
 
     def iterate_feature_chunks(
         self,
@@ -944,7 +918,7 @@ class MochiData:
         :returns: iterator of (start, stop, ndarray).
         """
         if chunk_size is None:
-            chunk_size = self.get_feature_chunk_size()
+            chunk_size = self.feature_chunk_size
         row_indices = np.asarray(row_indices, dtype = np.int64)
         if feature_indices is None:
             feature_indices = np.arange(len(self.get_feature_names()), dtype = np.int64)
@@ -985,10 +959,6 @@ class MochiData:
             feature_indices = np.arange(len(self.get_feature_names()), dtype = np.int64)
         else:
             feature_indices = np.asarray(feature_indices, dtype = np.int64)
-        self.check_materialization_memory(
-            n_rows = len(row_indices),
-            n_features = len(feature_indices),
-            dtype = dtype)
         if len(feature_indices) == 0:
             return np.empty((len(row_indices), 0), dtype = dtype)
         if self.is_sparse_feature_matrix():
@@ -1387,7 +1357,7 @@ class MochiData:
         if features!=[]:
             print("Filtering features")
             if self.is_sparse_feature_matrix():
-                self.reorder_feature_columns(
+                self.select_feature_columns(
                     [i for i in self.get_feature_names() if i in features])
             else:
                 self.Xohi = self.filter_features(
