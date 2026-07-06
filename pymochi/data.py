@@ -410,7 +410,6 @@ class MochiData:
         self.coefficients_userspec = None
         self.custom_transformations_code = None
         self.feature_names = None
-        self.feature_chunk_size = int(os.environ.get("MOCHI_FEATURE_CHUNK_SIZE", "256"))
 
         # #Create data directory
         # try:
@@ -902,78 +901,6 @@ class MochiData:
             self.Xohi = self.Xohi.loc[:, columns]
             self.feature_names = self.Xohi.columns
 
-    def iterate_feature_chunks(
-        self,
-        row_indices,
-        feature_indices = None,
-        dtype = np.uint8,
-        chunk_size = None):
-        """
-        Yield dense feature chunks for a selected row subset.
-
-        :param row_indices: Row indices to materialize (required).
-        :param feature_indices: Feature indices to materialize (default:None i.e. all).
-        :param dtype: Output dtype (default:uint8).
-        :param chunk_size: Feature chunk size (default:env or 256).
-        :returns: iterator of (start, stop, ndarray).
-        """
-        if chunk_size is None:
-            chunk_size = self.feature_chunk_size
-        row_indices = np.asarray(row_indices, dtype = np.int64)
-        if feature_indices is None:
-            feature_indices = np.arange(len(self.get_feature_names()), dtype = np.int64)
-        else:
-            feature_indices = np.asarray(feature_indices, dtype = np.int64)
-        if len(feature_indices) == 0:
-            return
-        if self.is_sparse_feature_matrix():
-            sparse_rows = self.feature_sparse_matrix[row_indices]
-            for start in range(0, len(feature_indices), chunk_size):
-                stop = min(start + chunk_size, len(feature_indices))
-                chunk_feature_indices = feature_indices[start:stop]
-                chunk = sparse_rows[:, chunk_feature_indices].toarray()
-                if dtype != chunk.dtype:
-                    chunk = chunk.astype(dtype, copy = False)
-                yield (start, stop, chunk)
-            return
-        feature_values = self.Xohi.iloc[row_indices, feature_indices].to_numpy(
-            dtype = dtype,
-            copy = True)
-        yield (0, len(feature_indices), feature_values)
-
-    def materialize_feature_matrix(
-        self,
-        row_indices,
-        feature_indices = None,
-        dtype = np.uint8):
-        """
-        Materialize a dense feature matrix for a selected row subset.
-
-        :param row_indices: Row indices to materialize (required).
-        :param feature_indices: Feature indices to materialize (default:None i.e. all).
-        :param dtype: Output dtype (default:uint8).
-        :returns: ndarray.
-        """
-        row_indices = np.asarray(row_indices, dtype = np.int64)
-        if feature_indices is None:
-            feature_indices = np.arange(len(self.get_feature_names()), dtype = np.int64)
-        else:
-            feature_indices = np.asarray(feature_indices, dtype = np.int64)
-        if len(feature_indices) == 0:
-            return np.empty((len(row_indices), 0), dtype = dtype)
-        if self.is_sparse_feature_matrix():
-            matrix = self.feature_sparse_matrix[row_indices][:, feature_indices].toarray()
-            if matrix.dtype != dtype:
-                matrix = matrix.astype(dtype, copy = False)
-            return matrix
-        matrix = np.empty((len(row_indices), len(feature_indices)), dtype = dtype)
-        for start, stop, chunk in self.iterate_feature_chunks(
-            row_indices = row_indices,
-            feature_indices = feature_indices,
-            dtype = dtype):
-            matrix[:, start:stop] = chunk
-        return matrix
-
     def sum_features_for_rows(
         self,
         row_indices):
@@ -987,10 +914,12 @@ class MochiData:
             return np.asarray(
                 self.feature_sparse_matrix[np.asarray(row_indices, dtype = np.int64)].sum(axis = 0),
                 dtype = np.int64).ravel()
-        feature_sums = np.zeros(len(self.get_feature_names()), dtype = np.int64)
-        for start, stop, chunk in self.iterate_feature_chunks(row_indices = row_indices):
-            feature_sums[start:stop] = np.sum(chunk, axis = 0, dtype = np.int64)
-        return feature_sums
+        return np.sum(
+            self.Xohi.iloc[np.asarray(row_indices, dtype = np.int64), :].to_numpy(
+                dtype = np.uint8,
+                copy = True),
+            axis = 0,
+            dtype = np.int64)
 
     def sum_selected_features_per_row(
         self,
@@ -1011,11 +940,12 @@ class MochiData:
             return np.asarray(
                 self.feature_sparse_matrix[np.asarray(row_indices, dtype = np.int64)][:, feature_indices].sum(axis = 1),
                 dtype = np.int64).ravel()
-        for _, _, chunk in self.iterate_feature_chunks(
-            row_indices = row_indices,
-            feature_indices = feature_indices):
-            row_sums += np.sum(chunk, axis = 1, dtype = np.int64)
-        return row_sums
+        return np.sum(
+            self.Xohi.iloc[np.asarray(row_indices, dtype = np.int64), feature_indices].to_numpy(
+                dtype = np.uint8,
+                copy = True),
+            axis = 1,
+            dtype = np.int64)
 
     # def write_features(
     #     self,
@@ -1698,15 +1628,12 @@ class MochiData:
         :param k_folds: Number of cross-validation folds (default:10).
         :returns: Nothing.
         """
-        # Coefficients that can be fit (for each phenotype and fold). Work in
-        # manageable column chunks to avoid creating another full-width pandas
-        # temporary over the memmap-backed feature matrix.
+        # Coefficients that can be fit (for each phenotype and fold).
         n_features = len(self.get_feature_names())
         phenotype_values = self.phenotypes.to_numpy(dtype = np.uint8, copy = False)
         fold_values = {
             'fold_'+str(i+1): self.cvgroups['fold_'+str(i+1)].to_numpy(copy = False)
             for i in range(k_folds)}
-        coefficient_chunk_size = int(os.environ.get("MOCHI_COEFFICIENT_CHUNK_SIZE", "1024"))
         self.coefficients = {}
         for p_index, p in enumerate(self.phenotypes.columns):
             self.coefficients[p] = np.empty((n_features, k_folds), dtype = np.uint8)
@@ -1717,18 +1644,14 @@ class MochiData:
                     self.coefficients[p][:, i] = 0
                 elif self.is_sparse_feature_matrix():
                     # The sparse backend already stores retained features as CSR,
-                    # so per-column activity can be read directly without
-                    # re-materializing dense feature chunks.
+                    # so per-column activity can be read directly without densifying.
                     self.coefficients[p][:, i] = np.asarray(
                         self.feature_sparse_matrix[row_indices].getnnz(axis = 0) > 0,
                         dtype = np.uint8).ravel()
                 else:
-                    for chunk_start, chunk_end, chunk in self.iterate_feature_chunks(
-                        row_indices = row_indices,
-                        chunk_size = coefficient_chunk_size):
-                        self.coefficients[p][chunk_start:chunk_end, i] = np.any(
-                            chunk != 0,
-                            axis = 0).astype(np.uint8, copy = False)
+                    self.coefficients[p][:, i] = np.any(
+                        self.Xohi.iloc[row_indices, :].to_numpy(dtype = np.uint8, copy = True) != 0,
+                        axis = 0).astype(np.uint8, copy = False)
 
         # Coefficients specified to be fit (for each additive trait)
         self.coefficients_userspec = np.ones(
@@ -1902,6 +1825,37 @@ class MochiData:
                 dtype = torch.float32),
             (-1, 1))
         return data_dict
+
+    # Dense materialization helper for tests and legacy dense APIs. Sparse-native
+    # training should read feature_sparse_matrix directly.
+    def materialize_feature_matrix(
+        self,
+        row_indices,
+        feature_indices = None,
+        dtype = np.uint8):
+        """
+        Materialize a dense feature matrix for a selected row subset.
+
+        :param row_indices: Row indices to materialize (required).
+        :param feature_indices: Feature indices to materialize (default:None i.e. all).
+        :param dtype: Output dtype (default:uint8).
+        :returns: ndarray.
+        """
+        row_indices = np.asarray(row_indices, dtype = np.int64)
+        if feature_indices is None:
+            feature_indices = np.arange(len(self.get_feature_names()), dtype = np.int64)
+        else:
+            feature_indices = np.asarray(feature_indices, dtype = np.int64)
+        if len(feature_indices) == 0:
+            return np.empty((len(row_indices), 0), dtype = dtype)
+        if self.is_sparse_feature_matrix():
+            matrix = self.feature_sparse_matrix[row_indices][:, feature_indices].toarray()
+            if matrix.dtype != dtype:
+                matrix = matrix.astype(dtype, copy = False)
+            return matrix
+        return self.Xohi.iloc[row_indices, feature_indices].to_numpy(
+            dtype = dtype,
+            copy = True)
 
     def __len__(self):
         """
