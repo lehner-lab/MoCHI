@@ -10,15 +10,11 @@ import random
 import math
 import time
 import gc
-import csv
-import linecache
 import queue
 import threading
 from os.path import exists
 import pyreadr
 import torch
-from torch.utils.data import Dataset
-from torch.utils.data import DataLoader
 import pathlib
 from pathlib import Path
 from pymochi.transformation import get_transformation
@@ -463,15 +459,6 @@ class MochiData:
             # the original split sequence tokens to count per-position states.
             self.X = None
             gc.collect()
-        # self.one_hot_encode_interactions_todisk(
-        #     max_order = self.max_interaction_order,
-        #     min_observed = self.min_observed,
-        #     features = self.features,
-        #     downsample_interactions = self.downsample_interactions,
-        #     seed = self.seed,
-        #     holdout_minobs = self.holdout_minobs, 
-        #     holdout_orders = self.holdout_orders, 
-        #     holdout_WT = self.holdout_WT)
         #Split into training, validation and test sets
         print("Defining cross-validation groups")
         self.define_cross_validation_groups()
@@ -901,213 +888,9 @@ class MochiData:
             self.Xohi = self.Xohi.loc[:, columns]
             self.feature_names = self.Xohi.columns
 
-    # def write_features(
-    #     self,
-    #     feature_list, 
-    #     feature_chunk_size,
-    #     samples_chunk_size = 100,
-    #     initial_chunk = False,
-    #     final_chunk = False):
-    #     """
-    #     Write features to disk.
-
-    #     :param feature_list: List of features.
-    #     :param feature_chunk_size: Features chunk size in number of features.
-    #     :param samples_chunk_size: Samples chunk size in number of samples (default:100).
-    #     :param initial_chunk: Whether or not the supplied list is the initial chunk (default:False).
-    #     :param final_chunk: Whether or not the supplied list is the final chunk (default:False).
-    #     :returns: feature list.
-    #     """
-    #     #Check if anything to write
-    #     if len(feature_list)==feature_chunk_size or final_chunk or initial_chunk:
-    #         write_df = pd.concat(feature_list, axis = 1)
-    #         self.update_holdout_observations(write_df)
-    #         write_df = write_df.transpose()
-    #         write_count = 0
-    #         #Write feature data in chunks of rows (transposed)
-    #         while write_count < write_df.shape[1]:
-    #             write_file = os.path.join(self.directory, 'data_chunk'+str(write_count)+".csv")
-    #             write_df.iloc[:,list(range(write_count, min([write_count+samples_chunk_size, write_df.shape[1]])))].to_csv(
-    #                 write_file, mode='a', index=False, header=False)
-    #             write_count += samples_chunk_size
-    #         #Reset list and index
-    #         feature_list = []
-    #     return feature_list
-
-    # def transpose_features(
-    #     self):
-    #     """
-    #     Transpose features on disk.
-
-    #     :returns: nothing.
-    #     """
-    #     files = os.listdir(self.directory)
-    #     for f in files:
-    #         if f.startswith("data_chunk"):
-    #             pd.read_csv(
-    #                 os.path.join(self.directory, f), header=None).transpose().to_csv(
-    #                 os.path.join(self.directory, f), index=False, header=False)
-
-    # def one_hot_encode_interactions_todisk(
-    #     self, 
-    #     max_order = 2,
-    #     max_cells = 1e9,
-    #     min_observed = 2,
-    #     features = [],
-    #     downsample_interactions = None,
-    #     seed = 1,
-    #     chunk_size = 100,
-    #     holdout_minobs = 0,
-    #     holdout_orders = [],
-    #     holdout_WT = False):
-    #     """
-    #     Add interaction terms to 1-hot encoding DataFrame.
-
-    #     :param max_order: Maximum interaction order (default:2).
-    #     :param max_cells: Maximum matrix cells permitted (default:1billion).
-    #     :param min_observed: Minimum number of observations required to include interaction term (default:2).
-    #     :param features: list of feature names to filter (default:[] i.e. all  features retained).
-    #     :param downsample_interactions: number (if integer) or proportion (if float) or list of integer numbers (if string) of interaction terms to retain (optional).
-    #     :param seed: Random seed for downsampling interactions (default:1).
-    #     :param chunk_size: Number of features per file (default:100).
-    #     :param holdout_minobs: Minimum number of observations of additive trait weights to be held out (default:0).
-    #     :param holdout_orders: list of mutation orders corresponding to retained variants (default:[] i.e. variants of all mutation orders can be held out).
-    #     :param holdout_WT: list of mutation orders corresponding to retained variants (default:False).
-    #     :returns: Nothing.
-    #     """
-
-    #     #First order interaction features
-    #     #Filter features
-    #     if features!=[]:
-    #         print("Filtering features")
-    #         self.Xoh = self.filter_features(
-    #             input_df = self.Xoh,
-    #             features = features)
-    #     #Write to disk
-    #     int_list = self.write_features(
-    #         feature_list = [self.Xoh[i] for i in self.Xoh.columns], 
-    #         feature_chunk_size = chunk_size,
-    #         initial_chunk = True)
-    #     #Save feature names
-    #     self.feature_names = list(self.Xoh.columns)
-
-    #     #Check if no interactions to add
-    #     if max_order<2:
-    #         #Transpose disk data in place
-    #         print("Transposing features")
-    #         self.transpose_features()
-    #         return
-
-    #     #Check downsample_interactions argument valid
-    #     if downsample_interactions!=None:
-    #         if type(downsample_interactions) == float:
-    #             #Downsample observations by proportion
-    #             if downsample_interactions >= 1 or downsample_interactions <= 0:
-    #                 print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
-    #                 raise ValueError
-    #         elif type(downsample_interactions) == int:
-    #             #Downsample observations by number
-    #             if downsample_interactions < 1:
-    #                 print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
-    #                 raise ValueError
-    #         elif type(downsample_interactions) == str:
-    #             try:
-    #                 downsample_interactions = {(i+2):int(d) for i,d in enumerate(str(downsample_interactions).split(","))}
-    #             except:
-    #                 print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
-    #                 raise ValueError
-    #         else:
-    #             print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
-    #             raise ValueError
-
-    #     #Get all theoretical interactions
-    #     all_features,int_order_dict = self.get_theoretical_interactions(max_order = max_order)
-    #     print("... Total theoretical features (order:count): "+", ".join([str(i)+":"+str(int_order_dict[i]) for i in sorted(int_order_dict.keys())]))
-    #     #Flatten
-    #     all_features_flat = list(itertools.chain(*list(all_features.values())))
-
-    #     #Check if all interaction features exist (i.e. with mutation order>1)
-    #     if len([i for i in features if (i not in all_features_flat) and (len(i.split('_'))>1)]) != 0:
-    #         print("Error: Invalid feature names.")
-    #         raise ValueError
-
-    #     #Select interactions
-    #     int_list = []
-    #     int_order_dict_retained = {}
-    #     int_list_names = []
-    #     #No shuffle if not downsampling
-    #     if downsample_interactions is None:
-    #         all_features_loop = {0: all_features_flat}
-    #     #Shuffle flattened features
-    #     elif type(downsample_interactions) in [float, int]:
-    #         random.seed(seed)
-    #         all_features_loop = {0: random.sample(all_features_flat, len(all_features_flat))}
-    #     #Shuffle features separately per order
-    #     else:
-    #         all_features_loop = {k: random.sample(all_features[k], len(all_features[k])) for k in all_features}
-
-    #     #Loop over all orders
-    #     for n in all_features_loop.keys():
-    #         #Loop over all features of this order
-    #         for c in all_features_loop[n]:
-    #             c_split = c.split("_")
-    #             #Check if feature desired
-    #             if (c in features) or features==[]:
-    #                 int_col = (self.Xoh.loc[:,c_split].sum(axis = 1)==len(c_split)).astype(int)
-    #                 #Check if minimum number of observations satisfied
-    #                 if sum(int_col) >= min_observed:
-    #                     int_list += [int_col]
-    #                     int_list_names += [c]
-    #                     if len(c_split) not in int_order_dict_retained.keys():
-    #                         int_order_dict_retained[len(c_split)] = 1
-    #                     else:
-    #                         int_order_dict_retained[len(c_split)] += 1
-    #                 # else:
-    #                 #     if len(c_split)==3 and sum(int_col)==1:
-    #                 #         print(c)
-    #                 #Check memory footprint
-    #                 if len(int_list_names)*len(self.Xoh) > max_cells:
-    #                     print(f"Error: Too many interaction terms: number of feature matrix cells >{max_cells:>.0e}")
-    #                     raise ValueError
-    #                 #Check if sufficient features obtained
-    #                 if type(downsample_interactions) == float:
-    #                     if len(int_list_names) == int(len(all_features_flat)*downsample_interactions):
-    #                         break
-    #                 elif type(downsample_interactions) == int:
-    #                     if len(int_list_names) == downsample_interactions:
-    #                         break
-    #                 elif type(downsample_interactions) == dict:
-    #                     if len(c_split) in int_order_dict_retained.keys():
-    #                         if int_order_dict_retained[len(c_split)] > downsample_interactions[len(c_split)] and downsample_interactions[len(c_split)]!=(-1):
-    #                             int_list.pop()
-    #                             int_list_names.pop()
-    #                             int_order_dict_retained[len(c_split)] -= 1
-    #                             break
-    #                         elif int_order_dict_retained == downsample_interactions:
-    #                             break
-    #                 #Write chunk to disk
-    #                 int_list = self.write_features(
-    #                     feature_list = int_list, 
-    #                     feature_chunk_size = chunk_size)
-    #     #Write final chunk to disk
-    #     int_list = self.write_features(
-    #         feature_list = int_list, 
-    #         feature_chunk_size = chunk_size,
-    #         final_chunk = True)
-
-    #     print("... Total retained features (order:count): "+", ".join([str(i)+":"+str(int_order_dict_retained[i])+" ("+str(round(int_order_dict_retained[i]/int_order_dict[i]*100, 1))+"%)" for i in sorted(int_order_dict_retained.keys())]))
-
-    #     #Transpose disk data in place
-    #     print("Transposing features")
-    #     self.transpose_features()
-
-    #     #Save interaction feature names
-    #     self.feature_names += int_list_names
-
     def one_hot_encode_interactions(
         self, 
         max_order = 2,
-        max_cells = 1e13,
         min_observed = 2,
         features = [],
         downsample_interactions = None,
@@ -1116,7 +899,6 @@ class MochiData:
         Add interaction terms to 1-hot encoding DataFrame.
 
         :param max_order: Maximum interaction order (default:2).
-        :param max_cells: Maximum matrix cells permitted (default:10trillion).
         :param min_observed: Minimum number of observations required to include interaction term (default:2).
         :param features: list of feature names to filter (default:[] i.e. all  features retained).
         :param downsample_interactions: number (if integer) or proportion (if float) or list of integer numbers (if string) of interaction terms to retain (optional).
@@ -1191,22 +973,18 @@ class MochiData:
             if len(row_indices) >= min_observed
         }
 
-        retained_names = list(interaction_row_index_map.keys())
-        if len(retained_names) * len(self.Xoh) > max_cells:
-            print(f"Error: Too many interaction terms: number of feature matrix cells >{max_cells:>.0e}")
-            raise ValueError
-
         if downsample_interactions is None:
-            int_set = set(retained_names)
+            int_set = set(interaction_row_index_map.keys())
         elif type(downsample_interactions) in [float, int]:
             target_count = (
                 int(len(all_features_flat) * downsample_interactions)
                 if type(downsample_interactions) == float else
                 downsample_interactions)
             if target_count <= 0:
-                int_set = set(retained_names)
+                int_set = set(interaction_row_index_map.keys())
             else:
                 random.seed(seed)
+                retained_names = list(interaction_row_index_map.keys())
                 sampled_names = random.sample(retained_names, min(target_count, len(retained_names)))
                 int_set = set(sampled_names)
         else:
@@ -1838,86 +1616,6 @@ class MochiData:
         """
         return len(self.fdata)
 
-# class MochiDataset(Dataset):
-#     def __init__(
-#         self, 
-#         root, 
-#         data,
-#         dataset_type = 'training', 
-#         fold = 1, 
-#         seed = 1,
-#         training_resample = True,
-#         transform = None):
-#         """
-#         Initialize a MochiDataset object.
-
-#         :param root: Path to data directory (required).
-#         :param data: An instance of the MochiData class (required).
-#         :param dataset_type: One of 'training', 'validation', 'test' (default:'training').
-#         :param fold: Cross-validation fold (default:1).
-#         :param seed: Random seed for both training target data resampling and shuffling training data (default:1).
-#         :param training_resample: Whether or not to add random noise to training target data proportional to target error (default:True).
-#         :param transform: Transform to apply to feature data (default:None).
-#         :returns: MochiTask object.
-#         """ 
-#         self.root = root
-#         self.data = data
-#         self.dataset_type = dataset_type
-#         self.fold_name = "fold_"+str(fold)
-#         self.seed = seed
-#         self.training_resample = training_resample
-#         self.transform = transform
-#         idx_list = list(self.data.cvgroups.loc[self.data.cvgroups[self.fold_name]==self.dataset_type,:].index)
-#         self.idx_dict = {i:idx_list[i] for i in range(len(idx_list))}
-
-#         #Target data
-#         self.y = pd.DataFrame(self.data.fitness.loc[self.data.cvgroups[self.fold_name]==self.dataset_type,'fitness'])
-#         #Add random noise to training target data proportional to target error (if specified)
-#         if self.dataset_type=="training" and self.training_resample:
-#             np.random.seed(self.seed)
-#             self.y['noise'] = [np.random.normal(scale = i) for i in list(self.data.fitness.loc[self.data.cvgroups[self.fold_name]==self.dataset_type,'sigma'])]
-#             self.y['y'] = pd.DataFrame(self.y.sum(axis = 1))
-
-#     def __getitem__(self, idx):
-#         #Observation
-#         obs_number = self.idx_dict[idx]
-
-#         #Feature tensor
-#         file_name = "data_chunk"+str(obs_number - obs_number % 100)+".csv"
-#         line_number = obs_number % 100
-#         line = linecache.getline(os.path.join(self.root, file_name), line_number)
-#         csv_line = csv.reader([line])
-#         X = torch.tensor(np.asarray([int(x) for x in next(csv_line)]), dtype=torch.float32)
-
-#         #Target tensor
-#         y = self.y.loc[obs_number,'fitness']
-#         y = torch.reshape(torch.tensor(np.asarray(y), dtype=torch.float32), (-1, 1))
-
-#         return X,y
-
-#     def __len__(self):
-#         return len(self.idx_dict)
-
-# class CustomImageDataset(Dataset):
-#     def __init__(self, annotations_file, img_dir, transform=None, target_transform=None):
-#         self.img_labels = pd.read_csv(annotations_file)
-#         self.img_dir = img_dir
-#         self.transform = transform
-#         self.target_transform = target_transform
-
-#     def __len__(self):
-#         return len(self.img_labels)
-
-#     def __getitem__(self, idx):
-#         img_path = os.path.join(self.img_dir, self.img_labels.iloc[idx, 0])
-#         image = read_image(img_path)
-#         label = self.img_labels.iloc[idx, 1]
-#         if self.transform:
-#             image = self.transform(image)
-#         if self.target_transform:
-#             label = self.target_transform(label)
-#         return image, label
-        
 class FastTensorDataLoader:
     """
     A DataLoader-like object for a set of tensors that can be much faster than
