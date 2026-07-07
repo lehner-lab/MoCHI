@@ -209,7 +209,7 @@ def test_MochiData_sparse_feature_store_materializes_expected_values():
         downsample_observations = 0.02,
         seed = 1)
     assert mochi_data.feature_matrix_mode == "sparse"
-    assert sp.issparse(mochi_data.get_xohi_values())
+    assert sp.issparse(mochi_data.feature_sparse_matrix)
     feature_names = list(mochi_data.get_feature_names())
     interaction_names = [i for i in feature_names if "_" in i]
     interaction_indices = [feature_names.index(i) for i in interaction_names]

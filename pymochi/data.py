@@ -1026,9 +1026,6 @@ class MochiData:
                     input_df = self.Xohi,
                     features = features)
 
-        #Save interaction feature names
-        self.feature_names = self.get_feature_names()
-
         # Drop temporary builders before later preprocessing stages allocate
         # additional wide matrices over the same feature set.
         del all_features
@@ -1040,17 +1037,6 @@ class MochiData:
         if 'ordered_interactions' in locals():
             del ordered_interactions
         gc.collect()
-
-    def get_xohi_values(
-        self):
-        """
-        Return an array-like feature matrix view without forcing DataFrame copies.
-
-        :returns: numpy-compatible 2D array.
-        """
-        if self.is_sparse_feature_matrix():
-            return self.feature_sparse_matrix
-        return self.Xohi.to_numpy(copy = False)
 
     def filter_features(
         self, 
