@@ -11,6 +11,7 @@ import numpy as np
 import pathlib
 from pathlib import Path
 from scipy import sparse as sp
+import torch
 
 import pytest
 
@@ -223,6 +224,43 @@ def test_MochiData_sparse_feature_store_materializes_expected_values():
             axis = 1).astype(np.uint8, copy = False)
         for name in interaction_names])
     assert np.array_equal(materialized, expected)
+
+
+def test_MochiData_ensemble_dense_features_keep_float_values():
+    """Test ensemble dense features are not coerced to uint8."""
+    mochi_data = MochiData.__new__(MochiData)
+    mochi_data.ensemble = True
+    mochi_data.activate_dense_feature_matrix(pd.DataFrame({
+        "WT": np.array([1.0, -0.5], dtype = np.float32),
+        "A1B": np.array([0.25, 0.0], dtype = np.float32)}))
+    mochi_data.phenotypes = pd.DataFrame({"phenotype_1": np.array([1, 1], dtype = np.uint8)})
+    mochi_data.fitness = pd.DataFrame({"fitness": np.array([0.1, 0.2], dtype = np.float32)})
+
+    materialized = mochi_data.materialize_feature_matrix(row_indices = [0, 1])
+    data_dict = mochi_data.get_data_index([0, 1])
+
+    assert materialized.dtype == np.float32
+    assert np.array_equal(materialized, mochi_data.Xohi.to_numpy(dtype = np.float32))
+    assert data_dict['X'].dtype == torch.float32
+
+
+def test_MochiData_dense_float_coefficient_groups_use_nonzero_activity():
+    """Test fractional ensemble-like dense values count as active features."""
+    mochi_data = MochiData.__new__(MochiData)
+    mochi_data.ensemble = True
+    mochi_data.activate_dense_feature_matrix(pd.DataFrame({
+        "WT": np.array([0.25, 0.0], dtype = np.float32),
+        "A1B": np.array([0.0, -0.5], dtype = np.float32)}))
+    mochi_data.phenotypes = pd.DataFrame({"phenotype_1": np.array([1, 1], dtype = np.uint8)})
+    mochi_data.cvgroups = pd.DataFrame({"fold_1": np.array(["training", "training"])})
+    mochi_data.additive_trait_names = ["trait"]
+    mochi_data.features_trait = {}
+
+    mochi_data.define_coefficient_groups(k_folds = 1)
+
+    assert np.array_equal(
+        mochi_data.coefficients["phenotype_1"][:, 0],
+        np.array([1, 1], dtype = np.uint8))
 
 
 def test_MochiData_define_coefficient_groups_matches_materialized_training_activity():

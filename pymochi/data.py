@@ -469,7 +469,7 @@ class MochiData:
         #Ensemble encode features
         if self.ensemble:
             print("Ensemble encoding features")
-            self.Xohi = self.ensemble_encode_features()
+            self.activate_dense_feature_matrix(self.ensemble_encode_features())
             # Ensemble encoding is the last stage that needs self.X.
             self.X = None
             gc.collect()
@@ -822,6 +822,37 @@ class MochiData:
         self.Xohi = FeatureMatrixMetadata(
             index = self.Xoh.index,
             columns = columns)
+
+    def activate_dense_feature_matrix(
+        self,
+        feature_matrix):
+        """
+        Activate a dense feature matrix backend.
+
+        :param feature_matrix: Dense feature DataFrame (required).
+        :returns: Nothing.
+        """
+        self.feature_matrix_mode = "dense"
+        self.feature_sparse_matrix = None
+        self.Xohi = feature_matrix
+        self.feature_names = pd.Index(feature_matrix.columns)
+
+    def get_feature_numpy_dtype(
+        self):
+        """
+        Return the numpy dtype used for dense feature materialization.
+
+        Ensemble encoding produces real-valued features, so it must not use
+        uint8. The sparse-native path keeps binary features in uint8 CSR.
+        """
+        return np.float32 if getattr(self, "ensemble", False) else np.uint8
+
+    def get_feature_tensor_dtype(
+        self):
+        """
+        Return the torch dtype used for dense feature tensors.
+        """
+        return torch.float32 if getattr(self, "ensemble", False) else torch.uint8
 
     def build_sparse_feature_matrix(
         self,
@@ -1223,7 +1254,9 @@ class MochiData:
             str_coef = ceof_list, 
             num_states = state_list, 
             invert = True)
-        return pd.DataFrame(np.matmul(hmat_inv, vmat_inv), columns = self.get_feature_names())
+        return pd.DataFrame(
+            np.matmul(hmat_inv, vmat_inv).astype(np.float32, copy = False),
+            columns = self.get_feature_names())
 
     def update_holdout_observations(
         self, 
@@ -1303,10 +1336,11 @@ class MochiData:
                         dtype = np.int64).ravel()
                 else:
                     phenotype_features = self.Xohi.iloc[phenotype_indices, :].to_numpy(
-                        dtype = np.uint8,
+                        dtype = self.get_feature_numpy_dtype(),
                         copy = True)
+                    phenotype_feature_activity = phenotype_features != 0
                     Xohp_colsum = np.sum(
-                        phenotype_features,
+                        phenotype_feature_activity,
                         axis = 0,
                         dtype = np.int64)
                 #Indices of coefficients that do not meet required threshold
@@ -1320,7 +1354,7 @@ class MochiData:
                         dtype = np.int64).ravel()
                 else:
                     Xohp_noholdout_rowsum = np.sum(
-                        phenotype_features[:, Xohp_noholdout],
+                        phenotype_feature_activity[:, Xohp_noholdout],
                         axis = 1,
                         dtype = np.int64)
                 #WT variants for these phenotypes
@@ -1388,7 +1422,9 @@ class MochiData:
                         dtype = np.uint8).ravel()
                 else:
                     self.coefficients[p][:, i] = np.any(
-                        self.Xohi.iloc[row_indices, :].to_numpy(dtype = np.uint8, copy = True) != 0,
+                        self.Xohi.iloc[row_indices, :].to_numpy(
+                            dtype = self.get_feature_numpy_dtype(),
+                            copy = True) != 0,
                         axis = 0).astype(np.uint8, copy = False)
 
         # Coefficients specified to be fit (for each additive trait)
@@ -1510,8 +1546,8 @@ class MochiData:
             seed = seed,
             training_resample = training_resample)
         data_dict = {}
-        feature_numpy_dtype = np.uint8
-        feature_tensor_dtype = torch.uint8
+        feature_numpy_dtype = self.get_feature_numpy_dtype()
+        feature_tensor_dtype = self.get_feature_tensor_dtype()
         for g in list(set(self.cvgroups[fold_name])):
             row_indices = split_data[g]['row_indices']
             sind = list(range(len(row_indices)))
@@ -1544,8 +1580,8 @@ class MochiData:
             indices = list(self.phenotypes.index)
 
         data_dict = {}
-        feature_numpy_dtype = np.uint8
-        feature_tensor_dtype = torch.uint8
+        feature_numpy_dtype = self.get_feature_numpy_dtype()
+        feature_tensor_dtype = self.get_feature_tensor_dtype()
         #Select tensor
         data_dict['select'] = torch.tensor(
             self.phenotypes.iloc[indices,:].to_numpy(dtype = np.float32, copy = True),
@@ -1570,15 +1606,17 @@ class MochiData:
         self,
         row_indices,
         feature_indices = None,
-        dtype = np.uint8):
+        dtype = None):
         """
         Materialize a dense feature matrix for a selected row subset.
 
         :param row_indices: Row indices to materialize (required).
         :param feature_indices: Feature indices to materialize (default:None i.e. all).
-        :param dtype: Output dtype (default:uint8).
+        :param dtype: Output dtype (default:feature storage dtype).
         :returns: ndarray.
         """
+        if dtype is None:
+            dtype = self.get_feature_numpy_dtype()
         row_indices = np.asarray(row_indices, dtype = np.int64)
         if feature_indices is None:
             feature_indices = np.arange(len(self.get_feature_names()), dtype = np.int64)
@@ -1695,8 +1733,8 @@ class MaterializingRowDataLoader:
         self.batch_size = batch_size
         self.shuffle = shuffle
         self.sparse_native = self.data.is_sparse_feature_matrix()
-        self.feature_numpy_dtype = np.uint8
-        self.feature_tensor_dtype = torch.uint8
+        self.feature_numpy_dtype = self.data.get_feature_numpy_dtype()
+        self.feature_tensor_dtype = self.data.get_feature_tensor_dtype()
         self.prefetch_blocks = max(1, int(os.environ.get("MOCHI_PREFETCH_BLOCKS", "2")))
         self.prefetch_batches = max(1, int(os.environ.get("MOCHI_PREFETCH_BATCHES", "8")))
         self.block_rows = max(

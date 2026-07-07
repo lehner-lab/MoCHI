@@ -1947,8 +1947,8 @@ class MochiTask():
                 "MOCHI_PREDICT_BLOCK_ROWS",
                 os.environ.get("MOCHI_FEATURE_BLOCK_ROWS", "8192"))))
         batch_size = 1024
-        feature_numpy_dtype = np.uint8
-        feature_tensor_dtype = torch.uint8
+        feature_numpy_dtype = data.get_feature_numpy_dtype()
+        feature_tensor_dtype = data.get_feature_tensor_dtype()
         sparse_native = data.is_sparse_feature_matrix()
 
         #Predictions on all data

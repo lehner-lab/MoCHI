@@ -1277,10 +1277,6 @@ class MochiProject():
         #Define coefficients to fit (for each phenotype and trait)
         mochi_data.define_coefficient_groups(
             k_folds = mochi_task.data.k_folds)
-        #Ensemble encode features
-        if mochi_task.data.ensemble:
-            mochi_data.Xohi = mochi_data.ensemble_encode_features()
-
         #Predictions on all variants for all models
         result_df = mochi_task.predict_all(
             data = mochi_data,
