@@ -157,35 +157,6 @@ class DevicePrefetchLoader:
     def __len__(self):
         return len(self.dataloader)
 
-def tensors_fit_in_device_memory(
-    tensors,
-    device,
-    memory_fraction = 0.25):
-    """
-    Check whether a tensor collection is small enough to preload to device.
-
-    :param tensors: Iterable of tensors to consider (required).
-    :param device: Target torch device (required).
-    :param memory_fraction: Fraction of total device memory to reserve for preload (default:0.25).
-    :returns: Boolean.
-    """
-    if device.type != "cuda":
-        return False
-    total_bytes = 0
-    for tensor in tensors:
-        if feature_tensor_is_sparse_native(tensor):
-            total_bytes += sum([
-                tensor[key].nelement() * tensor[key].element_size()
-                for key in ["indices", "offsets", "values"]
-                if key in tensor])
-        else:
-            total_bytes += tensor.nelement() * tensor.element_size()
-    try:
-        max_preload_bytes = int(torch.cuda.get_device_properties(device).total_memory * memory_fraction)
-    except Exception:
-        return False
-    return total_bytes <= max_preload_bytes
-
 def estimate_training_batches_per_epoch(
     data,
     batch_sizes):
@@ -503,37 +474,6 @@ class MochiModel(torch.nn.Module):
             # self.linears[i].bias.data.fill_(0)
             self.linears[i].weight.data.fill_(linear_weight[i])
             self.linears[i].bias.data.fill_(linear_bias[i])
-
-    def get_data_loaders(
-        self, 
-        data, 
-        batch_size):
-        """
-        Get list of dataloaders.
-
-        :param data: Dictionary of dictionaries of tensors as output by MochiData.get_data (required).
-        :param batch_size: Minibatch size (required).
-        :returns: Tuple of dataloaders.
-        """ 
-        device = self.mask.device
-        split_names = ['training', 'validation', 'test']
-        preload_tensors = [
-            data[k][field]
-            for k in split_names
-            for field in ["select", "X", "y", "y_wt"]]
-        should_preload = tensors_fit_in_device_memory(
-            tensors = preload_tensors,
-            device = device)
-        dataloader_list = []
-        for k in split_names:
-            dataloader_list.append(FastTensorDataLoader(
-                move_tensor_to_device(data[k]["select"], device) if should_preload else data[k]["select"], 
-                prepare_feature_tensor(data[k]["X"], device) if should_preload else data[k]["X"], 
-                move_tensor_to_device(data[k]["y"], device) if should_preload else data[k]["y"], 
-                move_tensor_to_device(data[k]["y_wt"], device) if should_preload else data[k]["y_wt"],
-                batch_size = batch_size,
-                shuffle = (k == "training")))
-        return tuple(dataloader_list)
 
     def calculate_l1l2_norm(self):      
         """
@@ -957,19 +897,14 @@ class MochiTask():
 
     def new_model(
         self,
-        data_or_mask):
+        mask):
         """
         Create a new MochiModel object.
 
-        :param data_or_mask: Either a legacy data dictionary or a fold-specific mask tensor (required).
+        :param mask: Fold-specific mask tensor (required).
         :returns: A new MochiModel object.
         """ 
-        if isinstance(data_or_mask, dict):
-            input_shape = data_or_mask['training']['X'].shape[1]
-            mask = data_or_mask['training']['mask']
-        else:
-            input_shape = len(self.data.get_feature_names())
-            mask = data_or_mask
+        input_shape = len(self.data.get_feature_names())
         #Create a new model
         model = MochiModel(
             input_shape = input_shape,
@@ -1766,9 +1701,23 @@ class MochiTask():
             seed = seed,
             training_resample = training_resample)
 
-        #Load WT model data
-        model_data_WT = self.data.get_data_index(
-            indices = list(self.data.fdata.vtable.loc[self.data.fdata.vtable['WT']==True,:].index))
+        # Load WT model data for validation-history diagnostics. This is a
+        # small selected-row dense materialization, not the main training path.
+        wt_indices = list(self.data.fdata.vtable.loc[self.data.fdata.vtable['WT']==True,:].index)
+        model_data_WT = {
+            'select': torch.tensor(
+                self.data.phenotypes.iloc[wt_indices,:].to_numpy(dtype = np.float32, copy = True),
+                dtype = torch.float32),
+            'X': torch.tensor(
+                self.data.materialize_feature_matrix(
+                    row_indices = wt_indices,
+                    dtype = self.data.get_feature_numpy_dtype()),
+                dtype = self.data.get_feature_tensor_dtype()),
+            'y': torch.reshape(
+                torch.tensor(
+                    self.data.fitness.iloc[wt_indices,:]['fitness'].to_numpy(dtype = np.float32, copy = True),
+                    dtype = torch.float32),
+                (-1, 1))}
 
         #Set random seeds
         torch.manual_seed(seed)

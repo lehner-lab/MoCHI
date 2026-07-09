@@ -237,11 +237,11 @@ def test_MochiData_ensemble_dense_features_keep_float_values():
     mochi_data.fitness = pd.DataFrame({"fitness": np.array([0.1, 0.2], dtype = np.float32)})
 
     materialized = mochi_data.materialize_feature_matrix(row_indices = [0, 1])
-    data_dict = mochi_data.get_data_index([0, 1])
+    feature_tensor = torch.tensor(materialized, dtype = mochi_data.get_feature_tensor_dtype())
 
     assert materialized.dtype == np.float32
     assert np.array_equal(materialized, mochi_data.Xohi.to_numpy(dtype = np.float32))
-    assert data_dict['X'].dtype == torch.float32
+    assert feature_tensor.dtype == torch.float32
 
 
 def test_MochiData_dense_float_coefficient_groups_use_nonzero_activity():
@@ -700,11 +700,10 @@ def test_fit_best_exploded_grid_search_models(capsys):
     """Test fit_best function when all grid search models have gradient explosion"""
     #Create dummy task
     mochi_task = MochiTask(directory = str(Path(__file__).parent / "temp"))
-    #Load model data
-    model_data = mochi_task.data.get_data()
+    model_mask = mochi_task.data.get_mask_tensor(fold = 1)
     #Add 3 grid search models
     for i in range(3):
-        mochi_task.models += [mochi_task.new_model(model_data)]
+        mochi_task.models += [mochi_task.new_model(model_mask)]
         model = mochi_task.models[-1]
         model.metadata = MochiModelMetadata(
             fold = 1,
@@ -734,13 +733,13 @@ def test_fit_best_handles_small_num_epochs_grid(monkeypatch):
     """Test fit_best still selects a model when grid-search epochs are very small."""
     create_dummy_task()
     mochi_task = MochiTask(directory = str(Path(__file__).parent / "temp"))
-    model_data = mochi_task.data.get_data()
+    model_mask = mochi_task.data.get_mask_tensor(fold = 1)
     recorded_fit = {}
 
     for batch_size, learn_rate, val_loss in [
         (64, 0.05, [2.0, 1.8, 1.6, 1.4, 1.2]),
         (128, 0.01, [2.0, 1.7, 1.5, 1.2, 0.2])]:
-        mochi_task.models += [mochi_task.new_model(model_data)]
+        mochi_task.models += [mochi_task.new_model(model_mask)]
         model = mochi_task.models[-1]
         model.metadata = MochiModelMetadata(
             fold = 1,

@@ -1523,85 +1523,10 @@ class MochiData:
                 (-1, 1))
         return data_dict
 
-    def get_data(
-        self, 
-        fold = 1,
-        seed = 1,
-        training_resample = True):
-        """
-        Get data for a specified cross-validation fold.
-
-        :param fold: Cross-validation fold (default:1).
-        :param seed: Random seed for both training target data resampling and shuffling training data (default:1).
-        :param training_resample: Whether or not to add random noise to training target data proportional to target error (default:True).
-        :returns: Dictionary of dictionaries of tensors.
-        """
-        #Check for fitness data
-        if not self.is_valid_instance():
-            print("Error: Invalid MochiData instance.")
-            raise ValueError
-        fold_name = "fold_"+str(fold)
-        split_data = self.get_split_observation_data(
-            fold = fold,
-            seed = seed,
-            training_resample = training_resample)
-        data_dict = {}
-        feature_numpy_dtype = self.get_feature_numpy_dtype()
-        feature_tensor_dtype = self.get_feature_tensor_dtype()
-        for g in list(set(self.cvgroups[fold_name])):
-            row_indices = split_data[g]['row_indices']
-            sind = list(range(len(row_indices)))
-            if g=="training":
-                random.seed(seed+fold*1000000)
-                random.shuffle(sind)
-            data_dict[g] = {}
-            data_dict[g]['select'] = split_data[g]['select'][sind,:]
-            data_dict[g]['mask'] = split_data[g]['mask']
-            #Feature tensor
-            feature_values = self.materialize_feature_matrix(
-                row_indices = row_indices,
-                dtype = feature_numpy_dtype)
-            data_dict[g]['X'] = torch.tensor(feature_values[sind,:], dtype = feature_tensor_dtype)
-            data_dict[g]['y'] = split_data[g]['y'][sind,:]
-            data_dict[g]['y_wt'] = split_data[g]['y_wt'][sind,:]
-        return data_dict
-
-    def get_data_index(
-        self, 
-        indices = []):
-        """
-        Get data corresponding to specific variants (by index).
-
-        :param indices: Variant/observation indices (default:None i.e. all indices).
-        :returns: Dictionary of dictionary of tensors (select, feature and target tensors only).
-        """
-        #Set to all indices if empty list
-        if indices == []:
-            indices = list(self.phenotypes.index)
-
-        data_dict = {}
-        feature_numpy_dtype = self.get_feature_numpy_dtype()
-        feature_tensor_dtype = self.get_feature_tensor_dtype()
-        #Select tensor
-        data_dict['select'] = torch.tensor(
-            self.phenotypes.iloc[indices,:].to_numpy(dtype = np.float32, copy = True),
-            dtype = torch.float32)
-        #Feature tensor
-        data_dict['X'] = torch.tensor(
-            self.materialize_feature_matrix(
-                row_indices = indices,
-                dtype = feature_numpy_dtype),
-            dtype = feature_tensor_dtype)
-        #Target tensor
-        data_dict['y'] = torch.reshape(
-            torch.tensor(
-                self.fitness.iloc[indices,:]['fitness'].to_numpy(dtype = np.float32, copy = True),
-                dtype = torch.float32),
-            (-1, 1))
-        return data_dict
-
-    # Dense materialization helper for tests and legacy dense APIs. Sparse-native
-    # training should read feature_sparse_matrix directly.
+    # Dense materialization helper for narrow compatibility APIs and tests.
+    # Sparse-native training should read feature_sparse_matrix directly for the
+    # main train/validation/test batches; small callers such as WT validation
+    # can still request selected dense rows.
     def materialize_feature_matrix(
         self,
         row_indices,
