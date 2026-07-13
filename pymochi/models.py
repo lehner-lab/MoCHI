@@ -141,10 +141,7 @@ class DevicePrefetchLoader:
         batch = self.next_batch
         if self.enabled:
             for tensor in batch:
-                if feature_tensor_is_sparse_native(tensor):
-                    record_feature_tensor_stream(tensor, current_stream)
-                else:
-                    tensor.record_stream(current_stream)
+                record_feature_tensor_stream(tensor, current_stream)
         self._preload()
         return batch
 
