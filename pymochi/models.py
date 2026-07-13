@@ -62,11 +62,14 @@ def prepare_feature_tensor(
     tensor,
     device):
     """
-    Move feature tensor to device and cast to float32 if needed.
+    Prepare dense or sparse-native feature payload for model execution.
 
-    :param tensor: Feature tensor (required).
+    Dense features are moved and converted to float32. Sparse-native payload
+    tensors are moved while retaining integer CSR indices and offsets.
+
+    :param tensor: Dense feature tensor or sparse-native payload (required).
     :param device: Target torch device (required).
-    :returns: Float32 tensor on target device.
+    :returns: Prepared dense float32 tensor or sparse-native payload.
     """
     if feature_tensor_is_sparse_native(tensor):
         prepared = {
