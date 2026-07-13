@@ -19,10 +19,6 @@ import math
 import uuid
 from sklearn.cluster import KMeans
 
-def running_in_parallel_mode():
-    """Return True when invoked from the phase-split Nextflow workflow."""
-    return os.environ.get("MOCHI_PARALLEL_MODE", "").lower() in {"1", "true", "yes"}
-
 def move_tensor_to_device(
     tensor,
     device):
@@ -782,7 +778,7 @@ class MochiTask():
             os.mkdir(directory)
         except FileExistsError:
             if overwrite==True:
-                if not running_in_parallel_mode():
+                if os.environ.get("MOCHI_PARALLEL_MODE", "").lower() not in {"1", "true", "yes"}:
                     print("Warning: Saved models directory already exists. Previous models will be overwritten.")
             else:
                 print("Error: Saved models directory already exists. Set 'overwrite'=True to overwrite previous models.")
