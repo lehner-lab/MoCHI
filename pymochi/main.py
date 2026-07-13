@@ -17,17 +17,40 @@ from loguru import logger
 from pymochi.project import MochiProject
 
 ORIGINAL_PRINT = builtins.print
+BOOLEAN_OPTIONS = {
+    "--holdout_WT",
+    "--ensemble",
+    "--training_resample",
+    "--early_stopping",
+    "--sos_outputlinear"}
+TRUE_VALUES = {"true", "t", "yes", "y", "1"}
+FALSE_VALUES = {"false", "f", "no", "n", "0"}
 
 
-def str_to_bool(value):
-    if isinstance(value, bool):
-        return value
-    value = value.lower()
-    if value == "true":
-        return True
-    if value == "false":
-        return False
-    raise argparse.ArgumentTypeError(f"Expected boolean value 'true' or 'false', got {value!r}")
+def normalize_boolean_option_values(arguments):
+    """
+    Support legacy boolean values while using argparse boolean flags.
+    """
+    normalized = []
+    i = 0
+    while i < len(arguments):
+        argument = arguments[i]
+        if "=" in argument:
+            option, value = argument.split("=", 1)
+            value_lower = value.lower()
+            if option in BOOLEAN_OPTIONS and value_lower in TRUE_VALUES | FALSE_VALUES:
+                normalized.append(option if value_lower in TRUE_VALUES else "--no-" + option[2:])
+                i += 1
+                continue
+        if argument in BOOLEAN_OPTIONS and i + 1 < len(arguments):
+            value_lower = arguments[i + 1].lower()
+            if value_lower in TRUE_VALUES | FALSE_VALUES:
+                normalized.append(argument if value_lower in TRUE_VALUES else "--no-" + argument[2:])
+                i += 2
+                continue
+        normalized.append(argument)
+        i += 1
+    return normalized
 
 
 def configure_logging():
@@ -80,9 +103,9 @@ def init_argparse(
     parser.add_argument('--validation_factor', type = int, default = 2, help = "validation factor where validation set%% = 100/k_folds*validation_factor (default: 2 i.e. 20%%)")
     parser.add_argument('--holdout_minobs', type = int, default = 0, help = "minimum number of observations of additive trait weights to be held out (default: 0)")
     parser.add_argument('--holdout_orders', type = str, help = "comma-separated list of integer mutation orders corresponding to retained variants (default: variants of all mutation orders can be held out)")
-    parser.add_argument('--holdout_WT', nargs = '?', const = True, type = str_to_bool, default = False, help = "WT variant can be held out (default: False)")
+    parser.add_argument('--holdout_WT', action = argparse.BooleanOptionalAction, default = False, help = "WT variant can be held out (default: False)")
     parser.add_argument('--features', type = pathlib.Path, default = None, help = "path to features file (default: None)")
-    parser.add_argument('--ensemble', nargs = '?', const = True, type = str_to_bool, default = False, help = "use ensemble feature encoding (default: False)")
+    parser.add_argument('--ensemble', action = argparse.BooleanOptionalAction, default = False, help = "use ensemble feature encoding (default: False)")
     parser.add_argument('--custom_transformations', type = pathlib.Path, default = None, help = "path to custom transformations file (default: None)")
     #MochiTask arguments
     parser.add_argument('--batch_size', default = "512,1024,2048", help = "comma-separated list of minibatch sizes to consider during grid search (default: '512,1024,2048')")
@@ -91,12 +114,12 @@ def init_argparse(
     parser.add_argument('--num_epochs_grid', type = int, default = 100, help = "number of grid search epochs (default: 100)")
     parser.add_argument('--l1_regularization_factor', default = 0, help = "lambda factor applied to L1 norm (default: 0)")
     parser.add_argument('--l2_regularization_factor', default = 0.000001, help = "lambda factor applied to L2 norm (default: 0.000001)")
-    parser.add_argument('--training_resample', default = True, help = "whether or not to add random noise to training target data proportional to target error (default:True)")
-    parser.add_argument('--early_stopping', default = True, help = "whether or not to stop training early if validation loss not decreasing (default:True)")
+    parser.add_argument('--training_resample', action = argparse.BooleanOptionalAction, default = True, help = "whether or not to add random noise to training target data proportional to target error (default:True)")
+    parser.add_argument('--early_stopping', action = argparse.BooleanOptionalAction, default = True, help = "whether or not to stop training early if validation loss not decreasing (default:True)")
     parser.add_argument('--scheduler_gamma', type = float, default = 0.98, help = "multiplicative factor of learning rate decay (default:0.98)")
     parser.add_argument('--loss_function_name', type = str, default = 'WeightedL1', help = "loss function name: one of 'WeightedL1', 'GaussianNLL' (default:'WeightedL1')")
     parser.add_argument('--sos_architecture', type = str, default = '20', help = "comma-separated list of integers corresponding to number of neurons per fully-connected sumOfSigmoids hidden layer (default: '20')")
-    parser.add_argument('--sos_outputlinear', nargs = '?', const = True, type = str_to_bool, default = False, help = "final sumOfSigmoids should be linear rather than sigmoidal (default:False)")
+    parser.add_argument('--sos_outputlinear', action = argparse.BooleanOptionalAction, default = False, help = "final sumOfSigmoids should be linear rather than sigmoidal (default:False)")
     parser.add_argument('--init_weights_directory', type = pathlib.Path, default = None, help = "path to project directory for model weight initialization (default: random model weight initialization)")
     parser.add_argument('--init_weights_task_id', type = int, default = 1, help = "task identifier to use for model weight initialization (default:1)")
     parser.add_argument('--fix_weights', type = pathlib.Path, default = None, help = "path to file of layer names to fix weights (default: no layers fixed)")
@@ -122,7 +145,8 @@ def main(
 
     #Get command line arguments
     parser = init_argparse(demo_mode = demo_mode)
-    args, unknown_args = parser.parse_known_args()
+    args, unknown_args = parser.parse_known_args(
+        normalize_boolean_option_values(sys.argv[1:]))
     if unknown_args:
         logger.warning("Ignoring unknown command line arguments: {}", " ".join(unknown_args))
 
