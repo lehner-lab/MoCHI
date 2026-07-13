@@ -176,19 +176,24 @@ def choose_amp_enabled(
     """
     Decide whether CUDA automatic mixed precision should be enabled.
 
-    Set MOCHI_AMP=0|1|auto to override. Defaults to auto on CUDA.
+    Set MOCHI_AMP=0|1|auto to override. Defaults to auto on CUDA. Invalid
+    values raise ValueError.
 
     :param device: Active torch device (required).
     :returns: Tuple of boolean and human-readable reason.
     """
     amp_override = os.environ.get("MOCHI_AMP", "auto").lower()
+    if amp_override not in ["0", "1", "auto"]:
+        raise ValueError(
+            "MOCHI_AMP must be one of: 0, 1, auto "
+            f"(got {amp_override!r})")
     if device.type != "cuda":
         return (False, "AMP disabled on non-CUDA device")
-    if amp_override in ["1", "true", "yes", "on"]:
-        return (True, "forced by MOCHI_AMP")
+    if amp_override == "1":
+        return (True, "forced by MOCHI_AMP=1")
     if amp_override == "auto":
         return (True, "auto-selected CUDA AMP")
-    return (False, "AMP disabled by configuration")
+    return (False, "disabled by MOCHI_AMP=0")
 
 class ConstrainedLinear(torch.nn.Linear):
     """
