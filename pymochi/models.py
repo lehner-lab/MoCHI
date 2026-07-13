@@ -29,8 +29,6 @@ def move_tensor_to_device(
     :param device: Target torch device (required).
     :returns: Tensor on target device.
     """
-    if tensor.device == device:
-        return tensor
     return tensor.to(device, non_blocking = (device.type == "cuda"))
 
 def feature_tensor_is_sparse_native(
