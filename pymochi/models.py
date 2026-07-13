@@ -15,7 +15,6 @@ from pymochi.transformation import get_transformation
 import itertools
 import shutil
 import functools
-import math
 import uuid
 from sklearn.cluster import KMeans
 
@@ -151,37 +150,13 @@ class DevicePrefetchLoader:
     def __len__(self):
         return len(self.dataloader)
 
-def estimate_training_batches_per_epoch(
-    data,
-    batch_sizes):
-    """
-    Estimate the number of training batches processed each epoch.
-
-    :param data: MochiData instance (required).
-    :param batch_sizes: Iterable of batch sizes to consider (required).
-    :returns: Integer estimate or None.
-    """
-    if data is None or not hasattr(data, "k_folds"):
-        return None
-    if len(batch_sizes) == 0:
-        return None
-    training_fraction = 1 - ((1 + data.validation_factor) / data.k_folds)
-    if training_fraction <= 0:
-        return None
-    approx_training_rows = max(1, int(len(data) * training_fraction))
-    return math.ceil(approx_training_rows / max(batch_sizes))
-
-def choose_compute_device(
-    data = None,
-    batch_sizes = None):
+def choose_compute_device():
     """
     Choose compute device for the current task.
 
-    By default this uses CPU for tiny workloads where GPU launch/transfer
-    overhead tends to dominate. Set MOCHI_DEVICE=cpu|cuda|auto to override.
+    Set MOCHI_DEVICE=cpu|cuda|auto to override. Auto selects CUDA when
+    available.
 
-    :param data: Optional MochiData instance (default:None).
-    :param batch_sizes: Optional iterable of batch sizes (default:None).
     :returns: Tuple of torch.device and human-readable reason.
     """
     device_override = os.environ.get("MOCHI_DEVICE", "auto").lower()
@@ -194,13 +169,6 @@ def choose_compute_device(
         return (torch.device("cpu"), "MOCHI_DEVICE=cuda requested but CUDA unavailable")
     if not cuda_available:
         return (torch.device("cpu"), "CUDA unavailable")
-    if batch_sizes is None:
-        batch_sizes = []
-    approx_batches = estimate_training_batches_per_epoch(
-        data = data,
-        batch_sizes = batch_sizes)
-    if approx_batches is not None and approx_batches <= 2:
-        return (torch.device("cpu"), f"auto-selected CPU for small workload (~{approx_batches} training batch(es)/epoch)")
     return (torch.device("cuda"), "auto-selected CUDA")
 
 def choose_amp_enabled(
@@ -729,9 +697,7 @@ class MochiTask():
             self.models = []
             self.data = data
             self.batch_size = [int(i) for i in str(batch_size).split(",")]
-            self.device, self.device_reason = choose_compute_device(
-                data = self.data,
-                batch_sizes = self.batch_size)
+            self.device, self.device_reason = choose_compute_device()
             self.use_amp, self.amp_reason = choose_amp_enabled(self.device)
             print(f"Using {self.device} device ({self.device_reason})")
             if self.device.type == "cuda":
@@ -862,10 +828,7 @@ class MochiTask():
         for i in load_dict.keys():
             exec("self."+i+" = load_dict['"+i+"']")
         #Get CPU or GPU device (to undo loading of this attribute)
-        batch_sizes = self.batch_size if isinstance(self.batch_size, list) else [self.batch_size]
-        self.device, self.device_reason = choose_compute_device(
-            data = self.data,
-            batch_sizes = batch_sizes)
+        self.device, self.device_reason = choose_compute_device()
         self.use_amp, self.amp_reason = choose_amp_enabled(self.device)
 
         #Restore custom transformations
