@@ -313,11 +313,8 @@ class MochiModel(torch.nn.Module):
             for trait_list in self.model_design['trait']]
         self._forward_transformations = list(self.model_design['transformation'])
         self._forward_sos_indices = []
-        has_sos_index = 'sos_index' in self.model_design.columns
         for phenotype_index in range(len(self.model_design)):
-            if (
-                has_sos_index and
-                self._forward_transformations[phenotype_index] == "SumOfSigmoids"):
+            if self._forward_transformations[phenotype_index] == "SumOfSigmoids":
                 self._forward_sos_indices.append(
                     int(self.model_design.loc[phenotype_index, 'sos_index']))
             else:
