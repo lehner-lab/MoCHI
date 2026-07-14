@@ -258,16 +258,6 @@ class MochiModel(torch.nn.Module):
         self.globalparams = torch.nn.ModuleList(
             [torch.nn.ParameterDict({j:torch.nn.Parameter(torch.tensor(1.0), requires_grad=True) for j in get_transformation(i, custom = self.custom_transformations)().keys()}) for i in self.model_design.transformation])
 
-        # #Shared global parameters
-        # #Identify shared global parameters
-        # shared_globalparams = {}
-        # for i in self.globalparams:
-        #     shared_globalparams = shared_globalparams|{k:v for k,v in i if k.endswith("_shared")}
-        # #Set pointers to shared global parameters
-        # for i in self.globalparams:
-        #     for j in i.keys():
-        #         if j.endswith("_shared"):
-        #             i[j] = shared_globalparams[j]
 
         #Arbitrary non-linear transformations (arbitrary architecture) - SumOfSigmoids
         #Additive trait dimensionality of SOS phenotypes
@@ -481,23 +471,24 @@ class MochiModel(torch.nn.Module):
         :param dataloader: Dataloader (required).
         :param loss_function: Loss function (required).
         :param optimizer: Optimizer (required).
-        :param device: cpu or cuda (required).
+        :param device: Target torch device for batch preparation (required).
+        :param scaler: CUDA AMP gradient scaler; required when `use_amp` is True (default:None).
+        :param use_amp: Whether to use automatic mixed precision during forward and loss computation (default:False).
         :param l1_lambda: Lambda factor applied to L1 norm (default:0).
         :param l2_lambda: Lambda factor applied to L2 norm (default:0).
+        :raises ValueError: If AMP is enabled without a gradient scaler.
         :returns: Nothing.
         """ 
-        size = dataloader.dataset_len
+        if use_amp and scaler is None:
+            raise ValueError("A gradient scaler is required when AMP is enabled.")
         self.train()
-        batch = 0
-        mask = self.mask
         for select, X, y, y_wt in DevicePrefetchLoader(dataloader, device):
-            batch += 1
             optimizer.zero_grad()
             with torch.amp.autocast(device_type = device.type, enabled = use_amp):
                 # Regularisation of additive trait parameters (excluding WT)
                 l1_norm, l2_norm = self.calculate_l1l2_norm()
                 # Compute prediction error (weighted by measurement error) + regularization terms
-                pred = self(select, X, mask)
+                pred = self(select, X)
                 loss = sum(loss_function(pred, y, y_wt))/len(y) + l1_lambda * l1_norm + l2_lambda * l2_norm
             # Backpropagation
             if use_amp:
