@@ -669,6 +669,32 @@ def test_validate_model_flattens_wt_residual_arrays(monkeypatch):
     assert model.training_history["residual1_WT"] == [pytest.approx(0.6)]
     assert model.training_history["residual2_WT"] == [pytest.approx(0.8)]
 
+def test_get_additive_trait_weights_aggregates_interaction_positions():
+    """Aggregate weights sort single and interaction reference positions numerically."""
+    task = MochiTask.__new__(MochiTask)
+    task.directory = ""
+    feature_names = ["WT", "A2B", "A2B_A3B", "A2B_A10B", "A13B", "A13B_A54B"]
+    task.data = type("Data", (), {
+        "k_folds": 1,
+        "model_design": pd.DataFrame({
+            "trait": [[1]],
+            "transformation": ["Identity"]}),
+        "additive_trait_names": ["trait"],
+        "get_feature_names": lambda self: pd.Index(feature_names)})()
+    trait = torch.nn.Linear(len(feature_names), 1, bias = False)
+    model = type("Model", (), {
+        "metadata": type("Metadata", (), {"grid_search": False, "fold": 1})(),
+        "additivetraits": [trait],
+        "mask": torch.ones((1, 1, len(feature_names)))})()
+    task.models = [model]
+
+    aggregated_weights = task.get_additive_trait_weights(
+        aggregate = True,
+        save = False)
+
+    assert aggregated_weights[0]["Pos_ref"].tolist() == [
+        "2", "2_3", "2_10", "13", "13_54"]
+
 def create_dummy_task():
     #Delete entire directory contents
     shutil.rmtree(str(Path(__file__).parent / "temp"), ignore_errors=True)

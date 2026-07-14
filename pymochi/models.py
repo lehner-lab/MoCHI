@@ -1229,7 +1229,9 @@ class MochiTask():
                 ).reset_index()]
                 agg_list[-1] = agg_list[-1].sort_values(
                     by="Pos_ref",
-                    key=lambda x: np.array([int(i) for i in x]))
+                    key=lambda positions: positions.map(
+                        lambda position: tuple(
+                            int(component) for component in position.split("_"))))
             #Save aggregated model weights
             file_prefix = ["weights_agg_", "weights_agg_abs_"][int(aggregate_absolute_value)]
             for i in range(len(agg_list)):
