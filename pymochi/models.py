@@ -511,36 +511,42 @@ class MochiModel(torch.nn.Module):
         """
         Validate model.
 
-        :param dataloader: Dataloader (required).
+        Evaluate every validation batch without computing gradients, then record
+        mean validation loss, WT additive-trait coefficients, and optional WT
+        residuals in ``training_history``.
+
+        :param dataloader: Validation dataloader yielding ``select``, ``X``,
+            ``y``, and ``y_wt`` batches (required).
         :param loss_function: Loss function (required).
-        :param optimizer: Optimizer (required).
-        :param device: cpu or cuda (required).
+        :param device: Target torch device for batch preparation (required).
+        :param use_amp: Whether to use automatic mixed precision for inference
+            and loss computation (default:False).
         :param l1_lambda: Lambda factor applied to L1 norm (default:0).
         :param l2_lambda: Lambda factor applied to L2 norm (default:0).
-        :param data_WT: Dictionary of tensors corresponding to WT sequences only (default:0).
+        :param data_WT: Optional dictionary containing ``select``, ``X``, and
+            ``y`` tensors for WT sequences used to record residuals
+            (default:None).
         :returns: Nothing.
         """ 
-        size = dataloader.dataset_len
         num_batches = len(dataloader)
         self.eval()
         val_loss = 0
-        val_WT_resid = []
+        val_WT_resid = None
         with torch.no_grad():
-            mask = self.mask
             for select, X, y, y_wt in DevicePrefetchLoader(dataloader, device):
                 with torch.amp.autocast(device_type = device.type, enabled = use_amp):
                     # Regularisation of additive trait parameters (excluding WT)
                     l1_norm, l2_norm = self.calculate_l1l2_norm()
                     # Compute prediction error (weighted by measurement error) + regularization terms
-                    pred = self(select, X, mask)
+                    pred = self(select, X)
                     val_loss += (sum(loss_function(pred, y, y_wt))/len(y) + l1_lambda * l1_norm + l2_lambda * l2_norm).item()
             #Training history - WT residuals
-            if data_WT!=None:
+            if data_WT is not None:
                 select_WT = move_tensor_to_device(data_WT['select'], device)
                 X_WT = prepare_feature_tensor(data_WT['X'], device)
                 y_WT = move_tensor_to_device(data_WT['y'], device)
                 with torch.amp.autocast(device_type = device.type, enabled = use_amp):
-                    pred_WT = self(select_WT, X_WT, mask)
+                    pred_WT = self(select_WT, X_WT)
                 val_WT_resid = np.asarray((y_WT - pred_WT).detach().cpu()).reshape(-1).tolist()
         val_loss /= num_batches
         #Save training history - validation loss
@@ -549,7 +555,7 @@ class MochiModel(torch.nn.Module):
         for i in range(len(self.additivetraits)):
             self.training_history['additivetrait'+str(i+1)+"_WT"].append(self.additivetraits[i].weight.detach().cpu().numpy().flatten()[0])
         #Save training history - WT residuals
-        if val_WT_resid != []:
+        if val_WT_resid is not None:
             for i in range(len(self.model_design)):
                 self.training_history['residual'+str(i+1)+"_WT"].append(float(val_WT_resid[i]))
 

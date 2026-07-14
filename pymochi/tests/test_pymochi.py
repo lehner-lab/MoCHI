@@ -633,7 +633,7 @@ def test_validate_model_flattens_wt_residual_arrays(monkeypatch):
         def calculate_l1l2_norm(self):
             return torch.tensor(0.0), torch.tensor(0.0)
 
-        def __call__(self, select, X, mask):
+        def __call__(self, select, X, mask = None):
             self._call_count += 1
             if self._call_count == 1:
                 return torch.zeros((1, 1), dtype = torch.float32)
