@@ -606,6 +606,57 @@ def test_MochiModel_sparse_native_forward_matches_dense():
     assert torch.allclose(sparse_default, dense_default)
     assert torch.allclose(sparse_override, dense_override)
 
+def test_MochiTask_predict_all_handles_sparse_blocks_and_nondefault_indexes(
+        tmp_path,
+        monkeypatch):
+    """Predict sparse rows in small blocks without relying on index labels."""
+    data = get_demo_mochi_data(
+        max_interaction_order = 2,
+        downsample_observations = 0.02,
+        seed = 1)
+    original_index = data.phenotypes.index
+    data.phenotypes.index = pd.Index(
+        np.arange(1000, 1000 + len(data.phenotypes)))
+    try:
+        task = MochiTask(directory = str(tmp_path / "task"), data = data)
+        model = task.new_model(data.get_mask_tensor(fold = 1))
+        model.metadata = type("Metadata", (), {
+            "fold": 1,
+            "grid_search": False})()
+        task.models = [model]
+        inference_mode_calls = []
+        original_forward = model.forward
+
+        def record_inference_mode(*args, **kwargs):
+            inference_mode_calls.append(torch.is_inference_mode_enabled())
+            return original_forward(*args, **kwargs)
+
+        model.forward = record_inference_mode
+        monkeypatch.setenv("MOCHI_PREDICT_BLOCK_ROWS", "1")
+        result = task.predict_all(save = False)
+
+        with torch.inference_mode():
+            expected = original_forward(
+                select = torch.tensor(
+                    data.phenotypes.iloc[:,:].to_numpy(
+                        dtype = np.float32,
+                        copy = True),
+                    dtype = torch.float32),
+                X = build_sparse_feature_batch(data.feature_sparse_matrix),
+                mask = model.mask).cpu().numpy().flatten()
+
+        assert len(result) == len(data.phenotypes)
+        assert np.allclose(result["fold_1"].to_numpy(), expected)
+        assert inference_mode_calls and all(inference_mode_calls)
+        assert result.loc[:, data.phenotype_names].equals(
+            pd.DataFrame(
+                data.phenotypes.iloc[:,:].to_numpy(
+                    dtype = np.float32,
+                    copy = True),
+                columns = data.phenotype_names))
+    finally:
+        data.phenotypes.index = original_index
+
 def test_MochiTask_init_no_MochiData_empty_directory(capsys):
     """Test MochiTask initialization when no MochiData nor saved MochiTask in directory supplied"""
     with pytest.raises(ValueError) as e_info:

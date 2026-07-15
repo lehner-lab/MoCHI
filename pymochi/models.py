@@ -1797,6 +1797,7 @@ class MochiTask():
                 print(f"Epoch {epoch+1}; "+model_status)    
         print("Done!")
 
+    @torch.inference_mode()
     def predict_all(
         self,
         folds = None,
@@ -1806,12 +1807,16 @@ class MochiTask():
         """
         Model predictions on all data.
 
-        :param output_path: Output file path (required).
         :param folds: list of cross-validation folds (default:None i.e. all).
         :param grid_search: Whether or not to include grid_search models (default:False).
-        :param data: Optional MochiData object to use for prediction (default:model data).
+        :param data: Optional MochiData object with a feature schema compatible
+            with the fitted models (default:model data).
         :param save: Save DataFrame to "predictions/predicted_phenotypes_all.txt" (default:True).
         :returns: DataFrame of variants with phenotypes predictions.
+
+        Features are processed in bounded blocks to avoid materializing the
+        complete feature matrix. Sparse feature matrices remain sparse through
+        batch preparation. This method runs in PyTorch inference mode.
         """ 
 
         #Check if valid MochiTask
@@ -1847,7 +1852,7 @@ class MochiTask():
         #Model data
         if data is None:
             data = self.data
-        row_indices_all = np.asarray(list(data.phenotypes.index), dtype = np.int64)
+        row_indices_all = np.arange(len(data.phenotypes), dtype = np.int64)
         block_rows = max(
             1,
             int(os.environ.get(
@@ -1864,7 +1869,6 @@ class MochiTask():
         for i in range(len(models_subset)):
             model = models_subset[i]
             model.eval()
-            model._ensure_forward_metadata()
             #Model predictions
             max_at = max([len(j) for j in model.model_design.trait])
             mask = model.mask
