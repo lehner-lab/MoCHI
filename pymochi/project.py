@@ -15,10 +15,6 @@ from pymochi.data import *
 from pymochi.models import *
 from pymochi.report import *
 
-def running_in_parallel_mode():
-    """Return True when invoked from the phase-split Nextflow workflow."""
-    return os.environ.get("MOCHI_PARALLEL_MODE", "").lower() in {"1", "true", "yes"}
-
 class MochiProject():
     """
     A class for the management of an inference project/campaign (one or more inference tasks).
@@ -172,7 +168,7 @@ class MochiProject():
             try:
                 os.mkdir(self.directory)
             except FileExistsError:
-                if not running_in_parallel_mode():
+                if os.environ.get("MOCHI_PARALLEL_MODE") != "1":
                     print("Warning: Project directory already exists.")
 
             if not self.auto_run:
@@ -409,7 +405,8 @@ class MochiProject():
         features = self.features
         if stage_index > 1:
             prev_task_directory = self.get_task_directory(stage_index - 1)
-            if not os.path.exists(os.path.join(prev_task_directory, "saved_models")) and running_in_parallel_mode():
+            if (not os.path.exists(os.path.join(prev_task_directory, "saved_models"))
+                    and os.environ.get("MOCHI_PARALLEL_MODE") == "1"):
                 prev_task_directory = os.path.join(
                     self.get_parallel_canonical_project_directory(),
                     "task_"+str(stage_index - 1))
