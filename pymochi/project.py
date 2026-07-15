@@ -217,7 +217,7 @@ class MochiProject():
 
             #Load saved tasks
             for seedi in [int(i) for i in str(self.seed).split(",")]:
-                task_directory = os.path.join(self.directory, "task_"+str(seedi))
+                task_directory = self.get_task_directory(seedi)
                 print("Loading task "+str(seedi))
                 #Check if task directory exists
                 if not os.path.exists(task_directory):
@@ -249,40 +249,6 @@ class MochiProject():
         """
         return os.path.join(self.get_task_directory(seed), "fold_"+str(fold))
 
-    def get_grid_condition_directory(
-        self,
-        seed,
-        condition_index):
-        """
-        Return the per-condition grid-search directory for a task seed.
-
-        :param seed: Task seed identifier (required).
-        :param condition_index: One-based grid-condition identifier (required).
-        :returns: Condition directory path string.
-        """
-        return os.path.join(self.get_task_directory(seed), "grid_condition_"+str(condition_index))
-
-    def list_grid_condition_directories(
-        self,
-        seed):
-        """
-        Return sorted grid-condition directories for a task seed.
-
-        :param seed: Task seed identifier (required).
-        :returns: List of condition directory path strings.
-        """
-        task_directory = self.get_task_directory(seed)
-        if not os.path.exists(task_directory):
-            return []
-        condition_dirs = []
-        for entry in os.listdir(task_directory):
-            if not entry.startswith("grid_condition_"):
-                continue
-            suffix = entry.split("grid_condition_", 1)[1]
-            if suffix.isdigit():
-                condition_dirs.append((int(suffix), os.path.join(task_directory, entry)))
-        return [path for _, path in sorted(condition_dirs)]
-
     def list_grid_condition_task_directories(
         self,
         seed,
@@ -294,21 +260,6 @@ class MochiProject():
         :param stage_index: Optional sparse stage identifier (default:None).
         :returns: List of task directory path strings.
         """
-        condition_task_dirs = []
-
-        # First support the canonical in-task layout.
-        canonical_condition_dirs = self.list_grid_condition_directories(seed)
-        for condition_dir in canonical_condition_dirs:
-            if os.path.exists(os.path.join(condition_dir, "saved_models")):
-                condition_task_dirs.append(condition_dir)
-                continue
-            condition_task_dir = os.path.join(condition_dir, "task_"+str(seed))
-            if os.path.exists(os.path.join(condition_task_dir, "saved_models")):
-                condition_task_dirs.append(condition_task_dir)
-        if len(condition_task_dirs) != 0:
-            return condition_task_dirs
-
-        # Fall back to the Nextflow per-condition run layout.
         run_directory = os.path.dirname(self.directory)
         project_name = os.path.basename(self.directory)
         if stage_index is None:

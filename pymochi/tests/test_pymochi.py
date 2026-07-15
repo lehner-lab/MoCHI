@@ -1283,56 +1283,6 @@ def test_run_fit_fold_task_reuses_existing_fold_models(tmp_path, monkeypatch):
     assert calls == [project.get_fold_directory(1, 2)]
 
 
-def test_merge_grid_search_conditions_combines_condition_models(tmp_path, monkeypatch):
-    """Test merging grid condition directories rebuilds the canonical task artifacts."""
-    finalized = []
-
-    def make_model(grid_search, fold, tag):
-        return type("ModelInfo", (), {
-            "metadata": type("Metadata", (), {"grid_search": grid_search, "fold": fold})(),
-            "tag": tag,
-        })()
-
-    class FakeTask:
-        def __init__(self, directory = None, **kwargs):
-            self.directory = directory
-            self.models = []
-            self.data = object()
-            self.custom_transformations = None
-            if str(directory).endswith("grid_condition_1"):
-                self.models = [make_model(True, 1, "a")]
-            elif str(directory).endswith("grid_condition_2"):
-                self.models = [make_model(True, 1, "b")]
-            elif str(directory).endswith("task_1"):
-                self.models = []
-
-    monkeypatch.setattr(mochi_project_module, "MochiTask", FakeTask)
-    project = MochiProject(
-        directory = str(tmp_path / "project"),
-        model_design = make_demo_model_design(),
-        auto_run = False)
-
-    Path(project.get_grid_condition_directory(1, 1), "saved_models").mkdir(parents = True)
-    Path(project.get_grid_condition_directory(1, 2), "saved_models").mkdir(parents = True)
-
-    def fake_finalize(mochi_task, **kwargs):
-        finalized.append((mochi_task.directory, [model.tag for model in mochi_task.models], kwargs))
-        return mochi_task
-
-    monkeypatch.setattr(project, "finalize_task_outputs", fake_finalize)
-
-    merged_task = project.merge_grid_search_conditions(seed = 1)
-
-    assert [model.tag for model in merged_task.models] == ["a", "b"]
-    assert finalized == [
-        (
-            project.get_task_directory(1),
-            ["a", "b"],
-            {"save_model": True, "save_report": False, "save_weights": False},
-        )
-    ]
-
-
 def test_merge_sparse_grid_search_conditions_discovers_nextflow_condition_layout(tmp_path, monkeypatch):
     """Test sparse grid merge discovers task outputs saved under Nextflow condition directories."""
     finalized = []
