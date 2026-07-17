@@ -375,10 +375,6 @@ class MochiProject():
                         'id'])
                 else:
                     features[at_name] = list(at_list[i]['id'])
-            features = self.load_features(features)
-            if type(features) != dict:
-                print("Error: Invalid features file path: does not exist.")
-                raise ValueError
 
         mochi_data_args = copy.deepcopy({
             'model_design' : self.model_design,
