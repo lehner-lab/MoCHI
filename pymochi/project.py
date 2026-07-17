@@ -666,7 +666,7 @@ class MochiProject():
                 break
             #Run
             try:
-                self.tasks[seedi] = self.run_full_task(
+                self.run_full_task(
                     seed = seedi,
                     init_weights = init_weights,
                     fix_weights = self.fix_weights)
