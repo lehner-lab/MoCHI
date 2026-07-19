@@ -3,6 +3,7 @@
 MoCHI report module
 """
 
+from loguru import logger
 import os
 import torch
 from torch import Tensor
@@ -54,7 +55,7 @@ class MochiReport:
         models_subset = [i for i in self.task.models if ((i.metadata.grid_search==grid_search) & (i.metadata.fold in folds))]
         #Check if at least one model remaining
         if len(models_subset)==0:
-            print("No models satisfying criteria.")
+            logger.info("No models satisfying criteria.")
             return
         #Plot
         fig, ax = plt.subplots()  # Create a figure containing a single axis.
@@ -100,7 +101,7 @@ class MochiReport:
         models_subset = [i for i in self.task.models if ((i.metadata.grid_search==grid_search) & (i.metadata.fold in folds))]
         #Check if at least one model remaining
         if len(models_subset)==0:
-            print("No models satisfying criteria.")
+            logger.info("No models satisfying criteria.")
             return
 
         fig, ax = plt.subplots()  # Create a figure containing a single axiss.
@@ -142,7 +143,7 @@ class MochiReport:
         models_subset = [i for i in self.task.models if ((i.metadata.grid_search==grid_search) & (i.metadata.fold in folds))]
         #Check if at least one model remaining
         if len(models_subset)==0:
-            print("No models satisfying criteria.")
+            logger.info("No models satisfying criteria.")
             return
 
         fig, ax = plt.subplots()  # Create a figure containing a single axes.
@@ -291,12 +292,12 @@ class MochiReport:
 
         #Check if valid MochiTask
         if 'models' not in dir(self.task):
-            print("Error: Cannot produce report. Invalid MochiTask instance.")
+            logger.info("Error: Cannot produce report. Invalid MochiTask instance.")
             raise ValueError
 
         #Check if valid MochiTask with at least one model
         if self.task.models==[]:
-            print("Error: Cannot produce report. Invalid MochiTask instance. No fit models.")
+            logger.info("Error: Cannot produce report. Invalid MochiTask instance. No fit models.")
             raise ValueError
 
         #Output report directory

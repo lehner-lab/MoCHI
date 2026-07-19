@@ -5,7 +5,6 @@ main() module -- MoCHI Command Line tool
 """
 
 import argparse
-import builtins
 import os
 import pathlib
 import sys
@@ -16,7 +15,6 @@ from loguru import logger
 
 from pymochi.project import MochiProject
 
-ORIGINAL_PRINT = builtins.print
 BOOLEAN_OPTIONS = {
     "--holdout_WT",
     "--ensemble",
@@ -55,23 +53,13 @@ def normalize_boolean_option_values(arguments):
 
 def configure_logging():
     """
-    Route existing CLI print output through loguru with timestamps.
+    Configure CLI Loguru output with timestamps.
     """
     logger.remove()
     logger.add(
         sys.stdout,
         format="{time:YYYY-MM-DD HH:mm:ss} | {message}",
-        colorize = False)
-
-    def timestamped_print(*args, **kwargs):
-        output_file = kwargs.get("file", sys.stdout)
-        if output_file not in (None, sys.stdout, sys.stderr):
-            ORIGINAL_PRINT(*args, **kwargs)
-            return
-        message = kwargs.get("sep", " ").join(str(arg) for arg in args)
-        logger.info(message)
-
-    builtins.print = timestamped_print
+        colorize=False)
 
 def init_argparse(
     demo_mode = False

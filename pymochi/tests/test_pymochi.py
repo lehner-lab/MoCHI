@@ -14,6 +14,7 @@ from scipy import sparse as sp
 import torch
 
 import pytest
+from loguru import logger
 
 import pymochi
 import pymochi.main as mochi_main
@@ -22,6 +23,15 @@ from pymochi.data import *
 from pymochi.models import *
 from pymochi.project import *
 from pymochi.report import *
+
+
+@pytest.fixture
+def loguru_messages():
+    """Capture unformatted Loguru messages for assertions."""
+    messages = []
+    sink_id = logger.add(lambda message: messages.append(message.record["message"]))
+    yield messages
+    logger.remove(sink_id)
 
 
 def make_demo_model_design():
@@ -54,14 +64,13 @@ def test_pymochi_imported():
     """Sample test, will always pass so long as import statement worked."""
     assert "pymochi" in sys.modules
 
-def test_MochiData_init_model_design_not_DataFrame(capsys):
+def test_MochiData_init_model_design_not_DataFrame(loguru_messages):
     """Test MochiData initialization when model design not a pandas DataFrame"""
     with pytest.raises(ValueError) as e_info:
         MochiData("Hello World!")
-    captured = capsys.readouterr()
-    assert captured.out == "Error: Model design is not a pandas DataFrame.\n" and e_info
+    assert loguru_messages[-1] == "Error: Model design is not a pandas DataFrame." and e_info
 
-def test_MochiData_init_all_files_nonexistant(capsys):
+def test_MochiData_init_all_files_nonexistant(loguru_messages):
     """Test MochiData initialization when only non-existant files supplied"""
     #Create a problematic model design
     model_design = pd.read_csv(Path(__file__).parent.parent / "data/model_design.txt", sep = "\t", index_col = False)
@@ -70,10 +79,9 @@ def test_MochiData_init_all_files_nonexistant(capsys):
         "Hello World!2"]
     with pytest.raises(ValueError) as e_info:
         MochiData(model_design = model_design)
-    captured = capsys.readouterr()
-    assert captured.out.split("\n")[-2] == "Error: Fitness file not found." and e_info
+    assert loguru_messages[-1] == "Error: Fitness file not found." and e_info
 
-def test_MochiData_init_one_file_nonexistant(capsys):
+def test_MochiData_init_one_file_nonexistant(loguru_messages):
     """Test MochiData initialization when one non-existant file supplied"""
     #Create a problematic model design
     model_design = pd.read_csv(Path(__file__).parent.parent / "data/model_design.txt", sep = "\t", index_col = False)
@@ -82,10 +90,9 @@ def test_MochiData_init_one_file_nonexistant(capsys):
         "Hello World!"]
     with pytest.raises(ValueError) as e_info:
         MochiData(model_design = model_design)
-    captured = capsys.readouterr()
-    assert captured.out.split("\n")[-2] == "Error: Fitness file not found." and e_info
+    assert loguru_messages[-1] == "Error: Fitness file not found." and e_info
 
-def test_MochiData_init_duplicate_files(capsys):
+def test_MochiData_init_duplicate_files(loguru_messages):
     """Test MochiData initialization with duplicated file"""
     #Create a problematic model design
     model_design = pd.read_csv(Path(__file__).parent.parent / "data/model_design.txt", sep = "\t", index_col = False)
@@ -94,10 +101,9 @@ def test_MochiData_init_duplicate_files(capsys):
         "Hello World!"]
     with pytest.raises(ValueError) as e_info:
         MochiData(model_design = model_design)
-    captured = capsys.readouterr()
-    assert captured.out == "Error: Duplicated fitness files.\n" and e_info
+    assert loguru_messages[-1] == "Error: Duplicated fitness files." and e_info
 
-def test_MochiData_invalid_features_argument_type(capsys):
+def test_MochiData_invalid_features_argument_type(loguru_messages):
     """Test MochiData initialization with invalid features argument type"""
     model_design = pd.read_csv(Path(__file__).parent.parent / "data/model_design.txt", sep = "\t", index_col = False)
     model_design['file'] = [
@@ -107,10 +113,9 @@ def test_MochiData_invalid_features_argument_type(capsys):
         MochiData(
             model_design = model_design, 
             features = "Hello World!")
-    captured = capsys.readouterr()
-    assert captured.out == "Error: 'features' argument is not a dictionary.\n" and e_info
+    assert loguru_messages[-1] == "Error: 'features' argument is not a dictionary." and e_info
 
-def test_MochiData_invalid_features_argument_trait_names(capsys):
+def test_MochiData_invalid_features_argument_trait_names(loguru_messages):
     """Test MochiData initialization with invalid features argument trait names"""
     model_design = pd.read_csv(Path(__file__).parent.parent / "data/model_design.txt", sep = "\t", index_col = False)
     model_design['file'] = [
@@ -124,10 +129,9 @@ def test_MochiData_invalid_features_argument_trait_names(capsys):
         MochiData(
             model_design = model_design, 
             features = features)
-    captured = capsys.readouterr()
-    assert captured.out == "Error: One or more invalid trait names in 'features' argument.\n" and e_info
+    assert loguru_messages[-1] == "Error: One or more invalid trait names in 'features' argument." and e_info
 
-# def test_MochiData_invalid_features_argument_features(capsys):
+# def test_MochiData_invalid_features_argument_features(loguru_messages):
 #     """Test MochiData initialization with invalid features argument features"""
 #     model_design = pd.read_csv(Path(__file__).parent.parent / "data/model_design.txt", sep = "\t", index_col = False)
 #     model_design['file'] = [
@@ -141,11 +145,9 @@ def test_MochiData_invalid_features_argument_trait_names(capsys):
 #         MochiData(
 #             model_design = model_design, 
 #             features = features)
-#     captured = capsys.readouterr()
-#     print(captured.out)
-#     assert captured.out.split("\n")[-2] == "Warning: Invalid feature names: Hello World!" and e_info
+# #     assert loguru_messages[-1] == "Warning: Invalid feature names: Hello World!" and e_info
 
-def test_MochiData_invalid_features_argument_missingWT(capsys):
+def test_MochiData_invalid_features_argument_missingWT(loguru_messages):
     """Test MochiData initialization with invalid features argument missing WT"""
     model_design = pd.read_csv(Path(__file__).parent.parent / "data/model_design.txt", sep = "\t", index_col = False)
     model_design['file'] = [
@@ -159,11 +161,9 @@ def test_MochiData_invalid_features_argument_missingWT(capsys):
         MochiData(
             model_design = model_design, 
             features = features)
-    captured = capsys.readouterr()
-    print(captured.out)
-    assert captured.out.split("\n")[-2] == "Error: 'WT' missing for one or more traits in 'features' argument." and e_info
+    assert loguru_messages[-1] == "Error: 'WT' missing for one or more traits in 'features' argument." and e_info
 
-def test_MochiData_features_argument_Nonekey(capsys):
+def test_MochiData_features_argument_Nonekey(loguru_messages):
     """Test MochiData initialization with features argument None key"""
     model_design = pd.read_csv(Path(__file__).parent.parent / "data/model_design.txt", sep = "\t", index_col = False)
     model_design['file'] = [
@@ -175,9 +175,7 @@ def test_MochiData_features_argument_Nonekey(capsys):
     mochi_data = MochiData(
         model_design = model_design, 
         features = features)
-    captured = capsys.readouterr()
-    print(captured.out)
-    assert captured.out.split("\n")[-2] == "Done!" and mochi_data.Xohi.shape[1] == 1
+    assert loguru_messages[-1] == "Done!" and mochi_data.Xohi.shape[1] == 1
 
 
 def test_MochiData_max_interaction_order_1_preserves_additive_features():
@@ -354,10 +352,15 @@ def test_MochiData_sparse_select_feature_columns_preserves_selected_values():
 
 def test_MaterializingRowDataLoader_cpu_batches_match_materialized_split():
     """Test row loader matches the expected CPU split tensors without shuffling."""
-    mochi_data = get_demo_mochi_data(
+    mochi_data = MochiData(
+        model_design = make_demo_model_design(),
         max_interaction_order = 2,
         downsample_observations = 0.02,
         seed = 1)
+    mochi_data.activate_dense_feature_matrix(pd.DataFrame(
+        mochi_data.feature_sparse_matrix.toarray(),
+        index = mochi_data.Xoh.index,
+        columns = mochi_data.get_feature_names()))
     split_data = mochi_data.get_split_observation_data(
         fold = 1,
         seed = 1,
@@ -657,12 +660,11 @@ def test_MochiTask_predict_all_handles_sparse_blocks_and_nondefault_indexes(
     finally:
         data.phenotypes.index = original_index
 
-def test_MochiTask_init_no_MochiData_empty_directory(capsys):
+def test_MochiTask_init_no_MochiData_empty_directory(loguru_messages):
     """Test MochiTask initialization when no MochiData nor saved MochiTask in directory supplied"""
     with pytest.raises(ValueError) as e_info:
         MochiTask(directory = str(Path(__file__).parent))
-    captured = capsys.readouterr()
-    assert captured.out == "Error: Saved models directory does not exist.\n" and e_info
+    assert loguru_messages[-1] == "Error: Saved models directory does not exist." and e_info
 
 def test_validate_model_flattens_wt_residual_arrays(monkeypatch):
     """Regression test for WT residual tracking with 2D prediction tensors."""
@@ -762,7 +764,7 @@ def create_dummy_task():
     mochi_task.save()
     # return mochi_task
 
-def test_fit_best_no_grid_search_models(capsys):
+def test_fit_best_no_grid_search_models(loguru_messages):
     """Test fit_best function when no grid search models available"""
     #Create dummy task
     create_dummy_task()
@@ -770,10 +772,9 @@ def test_fit_best_no_grid_search_models(capsys):
     #Fit best model
     with pytest.raises(ValueError) as e_info:
         mochi_task.fit_best(fold = 1, seed = 1)
-    captured = capsys.readouterr()
-    assert captured.out.split("\n")[-2] == "Error: No grid search models available." and e_info
+    assert loguru_messages[-1] == "Error: No grid search models available." and e_info
 
-def test_fit_best_exploded_grid_search_models(capsys):
+def test_fit_best_exploded_grid_search_models(loguru_messages):
     """Test fit_best function when all grid search models have gradient explosion"""
     #Create dummy task
     mochi_task = MochiTask(directory = str(Path(__file__).parent / "temp"))
@@ -803,8 +804,7 @@ def test_fit_best_exploded_grid_search_models(capsys):
     #Fit best model
     with pytest.raises(ValueError) as e_info:
         mochi_task.fit_best(fold = 1, seed = 1)
-    captured = capsys.readouterr()
-    assert captured.out.split("\n")[-2] == "Error: No valid grid search models available." and e_info
+    assert loguru_messages[-1] == "Error: No valid grid search models available." and e_info
 
 def test_fit_best_handles_small_num_epochs_grid(monkeypatch):
     """Test fit_best still selects a model when grid-search epochs are very small."""
@@ -849,7 +849,7 @@ def test_fit_best_handles_small_num_epochs_grid(monkeypatch):
     assert recorded_fit["batch_size"] == 128
     assert recorded_fit["learn_rate"] == 0.01
 
-def test_parallel_mode_suppresses_project_directory_warning(tmp_path, monkeypatch, capsys):
+def test_parallel_mode_suppresses_project_directory_warning(tmp_path, monkeypatch, loguru_messages):
     """Test phase-split parallel runs do not warn when reusing the project directory."""
     project_dir = tmp_path / "project"
     project_dir.mkdir()
@@ -860,59 +860,51 @@ def test_parallel_mode_suppresses_project_directory_warning(tmp_path, monkeypatc
         model_design = make_demo_model_design(),
         auto_run = False)
 
-    captured = capsys.readouterr()
-    assert "Warning: Project directory already exists." not in captured.out
+    assert "Warning: Project directory already exists." not in loguru_messages
 
-def test_parallel_mode_suppresses_saved_models_overwrite_warning(monkeypatch, capsys):
+def test_parallel_mode_suppresses_saved_models_overwrite_warning(monkeypatch, loguru_messages):
     """Test phase-split parallel runs do not warn when overwriting saved_models."""
     create_dummy_task()
-    capsys.readouterr()
     mochi_task = MochiTask(directory = str(Path(__file__).parent / "temp"))
-    capsys.readouterr()
     monkeypatch.setenv("MOCHI_PARALLEL_MODE", "1")
 
     mochi_task.save(overwrite = True)
 
-    captured = capsys.readouterr()
-    assert "Warning: Saved models directory already exists." not in captured.out
+    assert "Warning: Saved models directory already exists." not in loguru_messages
 
-def test_MochiProject_model_design_invalid_string_path(capsys):
+def test_MochiProject_model_design_invalid_string_path(loguru_messages):
     """Test MochiProject initialization when invalid model design string path supplied"""
     #Create invalid project
     mochi_project = MochiProject(
         directory = str(Path(__file__).parent / "temp"),
         model_design = "invalid_string_path")
-    captured = capsys.readouterr()
-    assert captured.out.split("\n")[-2] == "Error: Invalid model_design file path: does not exist."
+    assert loguru_messages[-1] == "Error: Invalid model_design file path: does not exist."
 
-def test_MochiProject_model_design_invalid_type(capsys):
+def test_MochiProject_model_design_invalid_type(loguru_messages):
     """Test MochiProject initialization when invalid model design argument supplied"""
     #Create invalid project
     mochi_project = MochiProject(
         directory = str(Path(__file__).parent / "temp"),
         model_design = [])
-    captured = capsys.readouterr()
-    assert captured.out.split("\n")[-2] == "Error: Invalid model_design file path: does not exist."
+    assert loguru_messages[-1] == "Error: Invalid model_design file path: does not exist."
 
-def test_MochiProject_features_invalid_string_path(capsys):
+def test_MochiProject_features_invalid_string_path(loguru_messages):
     """Test MochiProject initialization when invalid features string path supplied"""
     #Create invalid project
     mochi_project = MochiProject(
         directory = str(Path(__file__).parent / "temp"),
         model_design = str(Path(__file__).parent.parent / "data/model_design.txt"),
         features = "invalid_string_path")
-    captured = capsys.readouterr()
-    assert captured.out.split("\n")[-2] == "Error: Invalid features file path: does not exist."
+    assert loguru_messages[-1] == "Error: Invalid features file path: does not exist."
 
-def test_MochiProject_features_invalid_type(capsys):
+def test_MochiProject_features_invalid_type(loguru_messages):
     """Test MochiProject initialization when invalid features argument supplied"""
     #Create invalid project
     mochi_project = MochiProject(
         directory = str(Path(__file__).parent / "temp"),
         model_design = str(Path(__file__).parent.parent / "data/model_design.txt"),
         features = 1)
-    captured = capsys.readouterr()
-    assert captured.out.split("\n")[-2] == "Error: Invalid features file path: does not exist."
+    assert loguru_messages[-1] == "Error: Invalid features file path: does not exist."
 
 
 def test_main_grid_search_phase_dispatches_project_method(tmp_path, monkeypatch):

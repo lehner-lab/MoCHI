@@ -3,6 +3,7 @@
 MoCHI data module
 """
 
+from loguru import logger
 import os
 import re
 import copy
@@ -89,7 +90,7 @@ class CustomTransformations:
         #Check functions valid
         invalid_functions = self.check_transformations()
         if invalid_functions!=[]:
-            print("Error: Invalid custom transformations: "+",".join(invalid_functions))
+            logger.info("Error: Invalid custom transformations: "+",".join(invalid_functions))
             raise ValueError                  
 
     def import_code(
@@ -178,11 +179,11 @@ class FitnessData:
         try:
             vtable = pyreadr.read_r(file_path)
         except:
-            print("Error: Invalid RData fitness file: cannot read file.")
+            logger.info("Error: Invalid RData fitness file: cannot read file.")
             raise ValueError
         #Check variant fitness object exists
         if 'all_variants' not in vtable.keys():
-            print("Error: Invalid RData fitness file: variant data not found.")
+            logger.info("Error: Invalid RData fitness file: variant data not found.")
             raise ValueError
         return vtable['all_variants']
 
@@ -200,7 +201,7 @@ class FitnessData:
         try:
             vtable = pd.read_csv(file_path, sep = None, engine='python', na_values = [''], keep_default_na = False)
         except:
-            print("Error: Invalid plain text fitness file: cannot read file.")
+            logger.info("Error: Invalid plain text fitness file: cannot read file.")
             raise ValueError
         return vtable
 
@@ -224,7 +225,7 @@ class FitnessData:
 
         #Check file exists
         if not exists(file_path):
-            print("Error: Fitness file not found.")
+            logger.info("Error: Fitness file not found.")
             raise ValueError
 
         #Automatically detect file type
@@ -265,7 +266,7 @@ class FitnessData:
             'WT', 
             'fitness',
             'sigma']])!=0:
-            print("Error: Invalid fitness data: required columns not found.")
+            logger.info("Error: Invalid fitness data: required columns not found.")
             raise ValueError
 
         #Remove variants with STOP or STOP_readthrough (if columns present)
@@ -281,7 +282,7 @@ class FitnessData:
 
         #Check single WT variant present
         if sum(self.vtable['WT']==True)!=1:
-            print("Error: Invalid fitness data: WT variant missing or ambiguous.")
+            logger.info("Error: Invalid fitness data: WT variant missing or ambiguous.")
             raise ValueError
 
         #Remove synonymous variants (if present)
@@ -306,7 +307,7 @@ class FitnessData:
                         self.vtable.loc[self.vtable['WT']!=True,:].sample(frac = downsample_observations, random_state = seed)])
                     self.vtable.reset_index(drop = True, inplace = True)
                 else:
-                    print("Error: downsample_observations argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
+                    logger.info("Error: downsample_observations argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
                     raise ValueError
             elif type(downsample_observations) == int:
                 #Downsample observations by number
@@ -317,7 +318,7 @@ class FitnessData:
                         self.vtable.loc[self.vtable['WT']!=True,:].sample(n = downsample_observations, random_state = seed)])
                     self.vtable.reset_index(drop = True, inplace = True)
                 else:
-                    print("Error: downsample_observations argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
+                    logger.info("Error: downsample_observations argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
                     raise ValueError
 
     def __len__(self):
@@ -411,7 +412,7 @@ class MochiData:
         # try:
         #     os.makedirs(self.directory)
         # except FileExistsError:
-        #     print("Error: Data directory already exists.")
+        #     logger.info("Error: Data directory already exists.")
         #     raise ValueError
 
         #Check and save custom transformations
@@ -421,7 +422,7 @@ class MochiData:
         #Check features
         self.features, self.features_trait = self.check_features(self.features)
         #Load all datasets
-        print("Loading fitness data")
+        logger.info("Loading fitness data")
         filepath_list = list(self.model_design['file'])
         fdatalist = [FitnessData(
             file_path = filepath_list[i], 
@@ -442,10 +443,10 @@ class MochiData:
         #Sequence features
         self.X = self.fdata.vtable[self.fdata.variantCol].str.split('', expand=True).iloc[:, 1:-1]
         #One hot encode sequence features
-        print("One-hot encoding sequence features")
+        logger.info("One-hot encoding sequence features")
         self.Xoh = self.one_hot_encode_features()
         #One-hot encode interaction features
-        print("One-hot encoding interaction features")
+        logger.info("One-hot encoding interaction features")
         self.one_hot_encode_interactions(
             max_order = self.max_interaction_order,
             min_observed = self.min_observed,
@@ -460,20 +461,20 @@ class MochiData:
             self.X = None
             gc.collect()
         #Split into training, validation and test sets
-        print("Defining cross-validation groups")
+        logger.info("Defining cross-validation groups")
         self.define_cross_validation_groups()
         #Define coefficients to fit (for each phenotype and trait)
-        print("Defining coefficient groups")
+        logger.info("Defining coefficient groups")
         self.define_coefficient_groups(
             k_folds = self.k_folds)
         #Ensemble encode features
         if self.ensemble:
-            print("Ensemble encoding features")
+            logger.info("Ensemble encoding features")
             self.activate_dense_feature_matrix(self.ensemble_encode_features())
             # Ensemble encoding is the last stage that needs self.X.
             self.X = None
             gc.collect()
-        print("Done!")
+        logger.info("Done!")
 
     def check_custom_transformations(
         self, 
@@ -492,11 +493,11 @@ class MochiData:
             input_obj = pathlib.Path(input_obj)
         #Object not a path
         elif type(input_obj) != pathlib.PosixPath:
-            print("Error: custom_transformations argument invalid.")
+            logger.info("Error: custom_transformations argument invalid.")
             raise ValueError
         #Object does not exist or not a file
         if not (input_obj.exists() and input_obj.is_file()):
-            print("Error: Custom transformations file not found.")
+            logger.info("Error: Custom transformations file not found.")
             raise ValueError
         else:
             #Read input file
@@ -540,14 +541,14 @@ class MochiData:
             'weight']
         #Check if model_design is a pandas DataFrame
         if not isinstance(model_design, pd.DataFrame):
-            print("Error: Model design is not a pandas DataFrame.")
+            logger.info("Error: Model design is not a pandas DataFrame.")
             raise ValueError
         #Add unity weights if not supplied
         if 'weight' not in model_design.keys():
             model_design['weight'] = 1
         #Check if all keys present
         if sum([i not in model_design.keys() for i in model_design_keys])!=0:
-            print("Error: Model design missing required keys.")
+            logger.info("Error: Model design missing required keys.")
             raise ValueError
         #Split trait column items into list if necessary
         model_design['trait'] = [i.split(',') if type(i)==str else i for i in model_design['trait']]
@@ -564,7 +565,7 @@ class MochiData:
         all_phenotypes_unique = []
         [all_phenotypes_unique.append(i) for i in all_phenotypes if i not in all_phenotypes_unique]
         if len(all_phenotypes_unique)!=len(all_phenotypes):
-            print("Error: Duplicated phenotype names.")
+            logger.info("Error: Duplicated phenotype names.")
             raise ValueError
         #Translate phenotypes to integers
         self.phenotype_names = all_phenotypes_unique
@@ -572,12 +573,12 @@ class MochiData:
         #Check phenotype names
         forbidden_pnames = ['nt_seq', 'aa_seq', 'Nham_nt', 'Nham_aa', 'WT', 'fitness', 'sigma', 'phenotype', 'mean', 'std', 'ci95', 'Fold']
         if sum([(i in forbidden_pnames) or (i.startswith('fold_')) for i in self.phenotype_names])!=0:
-            print("Error: Forbidden phenotype names.")
+            logger.info("Error: Forbidden phenotype names.")
             raise ValueError
         #Check files not duplicated
         all_files = list(model_design['file'])
         if len(all_files)!=len(list(set(all_files))):
-            print("Error: Duplicated fitness files.")
+            logger.info("Error: Duplicated fitness files.")
             raise ValueError
         return model_design
 
@@ -592,7 +593,7 @@ class MochiData:
         """
         #Check dictionary
         if type(features) != dict:
-            print("Error: 'features' argument is not a dictionary.")
+            logger.info("Error: 'features' argument is not a dictionary.")
             raise ValueError
         #Filter applied to all traits (original input = list or single column of feature identifiers without header)
         if len(features)==1:
@@ -608,12 +609,12 @@ class MochiData:
 
         #Check all dictionary keys are trait names
         if sum([1 for i in features.keys() if i in self.additive_trait_names])!=len(features):
-            print("Error: One or more invalid trait names in 'features' argument.")
+            logger.info("Error: One or more invalid trait names in 'features' argument.")
             raise ValueError
 
         #Check all dictionary values include WT
         if sum([1 for i in features.keys() if 'WT' in features[i]])!=len(features):
-            print("Error: 'WT' missing for one or more traits in 'features' argument.")
+            logger.info("Error: 'WT' missing for one or more traits in 'features' argument.")
             raise ValueError        
 
         #Copy features dictionary
@@ -633,7 +634,7 @@ class MochiData:
         """
         #Check if data to merge
         if sum([len(i) for i in data_list]) == 0:
-            print("Error: No Fitness datasets to merge.")
+            logger.info("Error: No Fitness datasets to merge.")
             raise ValueError
         #Check if same WT and sequence type
         if len(set([i.wildtype for i in data_list]))==1 & len(set([i.sequenceType for i in data_list]))==1:
@@ -642,7 +643,7 @@ class MochiData:
             fdata.vtable.reset_index(drop = True, inplace = True)
             return fdata
         else:
-            print("Error: Fitness datasets cannot be merged: WT variants do not match.")
+            logger.info("Error: Fitness datasets cannot be merged: WT variants do not match.")
             raise ValueError
 
     def one_hot_encode_phenotypes(self):
@@ -908,7 +909,7 @@ class MochiData:
         columns = list(columns)
         missing = [i for i in columns if i not in self.get_feature_names()]
         if len(missing) != 0:
-            print("Error: Invalid feature names.")
+            logger.info("Error: Invalid feature names.")
             raise ValueError
         if self.is_sparse_feature_matrix():
             feature_index = {name:i for i, name in enumerate(self.get_feature_names())}
@@ -942,7 +943,7 @@ class MochiData:
             self.Xohi = copy.deepcopy(self.Xoh)
             #Filter features
             if features!=[]:
-                print("Filtering features")
+                logger.info("Filtering features")
                 self.Xohi = self.filter_features(
                     input_df = self.Xohi,
                     features = features)
@@ -953,26 +954,26 @@ class MochiData:
             if type(downsample_interactions) == float:
                 #Downsample observations by proportion
                 if downsample_interactions >= 1 or downsample_interactions <= 0:
-                    print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
+                    logger.info("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
                     raise ValueError
             elif type(downsample_interactions) == int:
                 #Downsample observations by number
                 if downsample_interactions < 1:
-                    print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
+                    logger.info("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
                     raise ValueError
             elif type(downsample_interactions) == str:
                 try:
                     downsample_interactions = {(i+2):int(d) for i,d in enumerate(str(downsample_interactions).split(","))}
                 except:
-                    print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
+                    logger.info("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
                     raise ValueError
             else:
-                print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
+                logger.info("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
                 raise ValueError
 
         #Get all theoretical interactions
         all_features,int_order_dict = self.get_theoretical_interactions(max_order = max_order)
-        print("... Total theoretical features (order:count): "+", ".join([str(i)+":"+str(int_order_dict[i]) for i in sorted(int_order_dict.keys())]))
+        logger.info("... Total theoretical features (order:count): "+", ".join([str(i)+":"+str(int_order_dict[i]) for i in sorted(int_order_dict.keys())]))
         #Flatten
         all_features_flat = list(itertools.chain(*list(all_features.values())))
         xoh_values = self.Xoh.to_numpy(dtype = np.uint8, copy = False)
@@ -981,8 +982,8 @@ class MochiData:
         #Check if all interaction features exist (i.e. with mutation order>1)
         invalid_features = [i for i in features if (i not in all_features_flat) and (len(i.split('_'))>1)]
         if len(invalid_features) != 0:
-            # print("Error: Invalid feature names.")
-            print("Warning: Invalid feature names: "+",".join(invalid_features))
+            # logger.info("Error: Invalid feature names.")
+            logger.info("Warning: Invalid feature names: "+",".join(invalid_features))
             # raise ValueError
 
         allowed_interaction_names = None
@@ -1038,7 +1039,7 @@ class MochiData:
         int_order_dict_retained = collections.Counter(
             [len(name.split("_")) for name in int_list_names])
 
-        print("... Total retained features (order:count): "+", ".join([str(i)+":"+str(int_order_dict_retained[i])+" ("+str(round(int_order_dict_retained[i]/int_order_dict[i]*100, 1))+"%)" for i in sorted(int_order_dict_retained.keys())]))
+        logger.info("... Total retained features (order:count): "+", ".join([str(i)+":"+str(int_order_dict_retained[i])+" ("+str(round(int_order_dict_retained[i]/int_order_dict[i]*100, 1))+"%)" for i in sorted(int_order_dict_retained.keys())]))
 
         ordered_interactions = [i for i in all_features_flat if i in int_set]
         self.build_sparse_feature_matrix(
@@ -1048,7 +1049,7 @@ class MochiData:
 
         #Filter features
         if features!=[]:
-            print("Filtering features")
+            logger.info("Filtering features")
             if self.is_sparse_feature_matrix():
                 self.select_feature_columns(
                     [i for i in self.get_feature_names() if i in features])
@@ -1083,8 +1084,8 @@ class MochiData:
         #Check if all features exist 
         invalid_features = [i for i in features if i not in input_df.columns]
         if len(invalid_features) != 0:
-            # print("Error: Invalid feature names.")
-            print("Warning: Invalid feature names: "+",".join(invalid_features))
+            # logger.info("Error: Invalid feature names.")
+            logger.info("Warning: Invalid feature names: "+",".join(invalid_features))
             # raise ValueError
         #Filter features
         features_order = [i for i in input_df.columns if i in features]
@@ -1249,7 +1250,7 @@ class MochiData:
             num_states = state_list, 
             invert = True)
         end = time.time()
-        print("Construction time for H_matrix :", end-start)
+        logger.info("Construction time for H_matrix :", end-start)
         vmat_inv = self.V_matrix(
             str_coef = ceof_list, 
             num_states = state_list, 
@@ -1495,7 +1496,7 @@ class MochiData:
         :returns: Dictionary keyed by split name.
         """
         if not self.is_valid_instance():
-            print("Error: Invalid MochiData instance.")
+            logger.info("Error: Invalid MochiData instance.")
             raise ValueError
         fold_name = "fold_"+str(fold)
         data_dict = {}

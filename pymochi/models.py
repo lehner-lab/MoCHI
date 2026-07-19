@@ -3,6 +3,7 @@
 MoCHI model module
 """
 
+from loguru import logger
 import os
 import bz2
 import pickle
@@ -691,16 +692,16 @@ class MochiTask():
                 os.mkdir(self.directory)
             except FileExistsError:
                 if os.path.exists(os.path.join(self.directory, 'saved_models')):
-                    print("Error: Task directory with saved models already exists.")
+                    logger.info("Error: Task directory with saved models already exists.")
                     raise ValueError
             self.models = []
             self.data = data
             self.batch_size = [int(i) for i in str(batch_size).split(",")]
             self.device, self.device_reason = choose_compute_device()
             self.use_amp, self.amp_reason = choose_amp_enabled(self.device)
-            print(f"Using {self.device} device ({self.device_reason})")
+            logger.info(f"Using {self.device} device ({self.device_reason})")
             if self.device.type == "cuda":
-                print(f"AMP {'enabled' if self.use_amp else 'disabled'} ({self.amp_reason})")
+                logger.info(f"AMP {'enabled' if self.use_amp else 'disabled'} ({self.amp_reason})")
             self.learn_rate = [float(i) for i in str(learn_rate).split(",")]
             self.num_epochs = num_epochs
             self.num_epochs_grid = num_epochs_grid
@@ -714,7 +715,7 @@ class MochiTask():
             self.sos_outputlinear = sos_outputlinear
         else:
             #Load saved models
-            # print("Loading task.")
+            # logger.info("Loading task.")
             self.load()
 
     def save(
@@ -729,7 +730,7 @@ class MochiTask():
 
         #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Task cannot be saved. Invalid MochiTask instance.")
+            logger.info("Error: Task cannot be saved. Invalid MochiTask instance.")
             raise ValueError
 
         #Output models directory
@@ -742,9 +743,9 @@ class MochiTask():
         except FileExistsError:
             if overwrite==True:
                 if os.environ.get("MOCHI_PARALLEL_MODE", "").lower() not in {"1", "true", "yes"}:
-                    print("Warning: Saved models directory already exists. Previous models will be overwritten.")
+                    logger.info("Warning: Saved models directory already exists. Previous models will be overwritten.")
             else:
-                print("Error: Saved models directory already exists. Set 'overwrite'=True to overwrite previous models.")
+                logger.info("Error: Saved models directory already exists. Set 'overwrite'=True to overwrite previous models.")
                 raise ValueError
 
         temp_suffix = uuid.uuid4().hex
@@ -764,7 +765,7 @@ class MochiTask():
         try:
             #Save models using torch.save
             if len(self.models)==0:
-                print("Warning: No fit models. Saving metadata only.")
+                logger.info("Warning: No fit models. Saving metadata only.")
             for i in range(len(self.models)):
                 self.models[i].custom_transformations = None
                 torch.save(self.models[i], os.path.join(temp_directory, 'model_'+str(i)+'.pth'))
@@ -803,7 +804,7 @@ class MochiTask():
 
         #Check if model directory exists
         if not os.path.exists(directory):
-            print("Error: Saved models directory does not exist.")
+            logger.info("Error: Saved models directory does not exist.")
             raise ValueError
 
         #All files in directory
@@ -811,7 +812,7 @@ class MochiTask():
 
         #Check data exists (no models required)
         if not ('data.pyc' in files or 'data.pbz2' in files):
-            print("Error: Saved models directory structure incorrect.")
+            logger.info("Error: Saved models directory structure incorrect.")
             raise ValueError
 
         #Load (non-built-in) attributes except models
@@ -839,7 +840,7 @@ class MochiTask():
             if i.startswith("model_"):
                 model_index = int(i[6:(len(i)-4)])
                 if model_index >= len(self.models) or model_index < 0:
-                    print("Error: Saved models index format incorrect.")
+                    logger.info("Error: Saved models index format incorrect.")
                     raise ValueError
                 self.models[model_index] = torch.load(
                     os.path.join(directory, i),
@@ -913,7 +914,7 @@ class MochiTask():
 
         #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Cannot get global weights. Invalid MochiTask instance.")
+            logger.info("Error: Cannot get global weights. Invalid MochiTask instance.")
             raise ValueError
 
         #Output weights directory
@@ -933,7 +934,7 @@ class MochiTask():
         models_subset = [i for i in self.models if ((i.metadata.grid_search==grid_search) & (i.metadata.fold in folds))]
         #Check if at least one model remaining
         if len(models_subset)==0:
-            print("No models satisfying criteria.")
+            logger.info("No models satisfying criteria.")
             return
 
         #Construct weight list
@@ -964,7 +965,7 @@ class MochiTask():
 
         #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Cannot get linear weights. Invalid MochiTask instance.")
+            logger.info("Error: Cannot get linear weights. Invalid MochiTask instance.")
             raise ValueError
 
         #Output weights directory
@@ -984,7 +985,7 @@ class MochiTask():
         models_subset = [i for i in self.models if ((i.metadata.grid_search==grid_search) & (i.metadata.fold in folds))]
         #Check if at least one model remaining
         if len(models_subset)==0:
-            print("No models satisfying criteria.")
+            logger.info("No models satisfying criteria.")
             return
 
         #Construct weight list
@@ -1062,7 +1063,7 @@ class MochiTask():
         try:
             labels = np.array([trans_dict[i] for i in labels])
         except KeyError:
-            print(f"Warning: Aligning additive traits using K-means clustering failed.")
+            logger.info(f"Warning: Aligning additive traits using K-means clustering failed.")
             return []
 
         #Assign columns to DataFrames, preserving original order
@@ -1072,10 +1073,10 @@ class MochiTask():
 
         #Check each DataFrame is complete
         if sum([i.shape[1]!=n for i in optimized_dfs]) != 0:
-            print(f"Warning: Aligning additive traits using K-means clustering failed.")
+            logger.info(f"Warning: Aligning additive traits using K-means clustering failed.")
             return []
 
-        print(f"Aligning additive traits using K-means clustering succeeded.")
+        logger.info(f"Aligning additive traits using K-means clustering succeeded.")
 
         #Sort columns by name
         for i in range(len(optimized_dfs)):
@@ -1149,7 +1150,7 @@ class MochiTask():
 
         #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Cannot get additive trait weights. Invalid MochiTask instance.")
+            logger.info("Error: Cannot get additive trait weights. Invalid MochiTask instance.")
             raise ValueError
 
         #Output weights directory
@@ -1178,7 +1179,7 @@ class MochiTask():
         models_subset = [i for i in self.models if ((i.metadata.grid_search==grid_search) & (i.metadata.fold in folds))]
         #Check if at least one model remaining
         if len(models_subset)==0:
-            print("No models satisfying criteria.")
+            logger.info("No models satisfying criteria.")
             return
 
         #Construct weight list
@@ -1279,25 +1280,25 @@ class MochiTask():
 
         #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Grid search cannot be performed. Invalid MochiTask instance.")
+            logger.info("Error: Grid search cannot be performed. Invalid MochiTask instance.")
             raise ValueError
 
         #Check if valid MochiData
         if not self.data.is_valid_instance():
-            print("Error: Grid search cannot be performed. Invalid MochiData instance.")
+            logger.info("Error: Grid search cannot be performed. Invalid MochiData instance.")
             raise ValueError
 
         #Check if grid search has already been performed
         grid_search_models = [i for i in self.models if (i.grid_search==True) and (i.fold==fold)]
         if len(grid_search_models)!=0:
             if overwrite==False:
-                print("Grid search already performed. Set 'overwrite'=True to overwrite previous grid search results.")
+                logger.info("Grid search already performed. Set 'overwrite'=True to overwrite previous grid search results.")
                 return
             else:
-                print("Deleting previous grid search results.")
+                logger.info("Deleting previous grid search results.")
                 [self.models.remove(i) for i in grid_search_models]
 
-        print("Performing grid search...")
+        logger.info("Performing grid search...")
         #List of hyperparameter combinations
         batch_params = list(itertools.product(
             self.batch_size,
@@ -1326,7 +1327,7 @@ class MochiTask():
                     init_weights = init_weights,
                     fix_weights = fix_weights)
         except ValueError:
-            print("Error: Grid search failed.")
+            logger.info("Error: Grid search failed.")
             raise ValueError
 
     def adjust_WT_phenotype(
@@ -1342,13 +1343,13 @@ class MochiTask():
         :returns: Nothing.
         """ 
         if len(self.models)>0 and (model_id in range(len(self.models)) or model_id == -1):
-            print("Adjusting WT using model: "+str(model_id))
+            logger.info("Adjusting WT using model: "+str(model_id))
             for i in range(len(self.data.model_design)):
                 num_epochs_avg = max(1, int(self.models[model_id].metadata.num_epochs*epoch_proportion))
                 WT_correct = sum(self.models[model_id].training_history['residual'+str(i+1)+'_WT'][-num_epochs_avg:])/num_epochs_avg
                 self.data.fitness.loc[(self.data.fdata.vtable['WT']==True) & self.data.phenotypes['phenotype_'+str(i+1)]==True,'fitness'] += (-WT_correct)
         else:
-            print("Error: Invalid model index for WT adjustment.")
+            logger.info("Error: Invalid model index for WT adjustment.")
             raise ValueError
 
     def fit_best(
@@ -1375,18 +1376,18 @@ class MochiTask():
 
         #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Model cannot be fit. Invalid MochiTask instance.")
+            logger.info("Error: Model cannot be fit. Invalid MochiTask instance.")
             raise ValueError
 
         #Check if valid MochiData
         if not self.data.is_valid_instance():
-            print("Error: Model cannot be fit. Invalid MochiData instance.")
+            logger.info("Error: Model cannot be fit. Invalid MochiData instance.")
             raise ValueError
 
         #Check if grid search models present
         grid_search_models = [i for i in self.models if (i.metadata.grid_search==True) and (i.metadata.fold==grid_search_fold)]
         if len(grid_search_models)==0:
-            print("Error: No grid search models available.")
+            logger.info("Error: No grid search models available.")
             raise ValueError
 
         #Grid search model with best performance
@@ -1398,12 +1399,12 @@ class MochiTask():
         if len(perf_list[~np.isnan(perf_list)])!=0:
             best_model_index = [i for i in range(len(perf_list)) if perf_list[i]==np.nanmin(perf_list)][0]
         else:
-            print("Error: No valid grid search models available.")
+            logger.info("Error: No valid grid search models available.")
             raise ValueError
 
         #Print best grid search model
-        print("Best model:")
-        print(grid_search_models[best_model_index].metadata)
+        logger.info("Best model:")
+        logger.info(grid_search_models[best_model_index].metadata)
 
         #Fit model using best hyperparameters
         self.fit(
@@ -1440,7 +1441,7 @@ class MochiTask():
 
         #Check if valid MochiTask
         if 'models' not in dir(input_task):
-            print("Error: Cannot initialize weights using supplied MochiTask. Invalid MochiTask instance.")
+            logger.info("Error: Cannot initialize weights using supplied MochiTask. Invalid MochiTask instance.")
             raise ValueError
 
         #Model subset
@@ -1448,12 +1449,12 @@ class MochiTask():
 
         #Check if at least one model remaining
         if len(models_subset)==0:
-            print("Error: Cannot initialize weights using supplied MochiTask. No models satisfying criteria.")
+            logger.info("Error: Cannot initialize weights using supplied MochiTask. No models satisfying criteria.")
             raise ValueError
 
         #Check if more than one model remaining
         if len(models_subset)>1:
-            print("Warning: Initialising weights using first model satisfying criteria.")
+            logger.info("Warning: Initialising weights using first model satisfying criteria.")
 
         #Model to use for model weight initialization 
         input_model = models_subset[0]
@@ -1503,7 +1504,7 @@ class MochiTask():
                     shared_keys = [k for k in model_glob[model_pi].keys() if k in input_glob[input_pi].keys()]
                     #Check if at least one global parameter matches
                     if len(shared_keys) == 0:
-                        print("Warning: No shared global parameters for phenotype: "+pname)
+                        logger.info("Warning: No shared global parameters for phenotype: "+pname)
                     #Copy all shared parameters
                     for k in shared_keys:
                         with torch.no_grad():
@@ -1546,8 +1547,8 @@ class MochiTask():
                     n_init_lins += 1
 
         #Total number of weights initialized
-        print("Weights initialized from MochiTask:")
-        print("Additive layers = "+str(n_init_addt)+"\nGlobal parameters = "+str(n_init_glob)+"\nSigmoidal layers = "+str(n_init_sigm)+"\nLinear layers = "+str(n_init_lins))
+        logger.info("Weights initialized from MochiTask:")
+        logger.info("Additive layers = "+str(n_init_addt)+"\nGlobal parameters = "+str(n_init_glob)+"\nSigmoidal layers = "+str(n_init_sigm)+"\nLinear layers = "+str(n_init_lins))
 
     def weights_require_grad(
         self,
@@ -1563,24 +1564,24 @@ class MochiTask():
 
         #Check if dictionary has valid keys
         if sum([i for i in fix_weights.keys() if i not in ['phenotype', 'trait', 'global']])!=0:
-            print("Error: Invalid fix_weights argument: layer types must be either 'phenotype', 'trait' or 'global'.")
+            logger.info("Error: Invalid fix_weights argument: layer types must be either 'phenotype', 'trait' or 'global'.")
             raise ValueError
 
         #Check if dictionary has valid values
         #Phenotypes
         if 'phenotype' in fix_weights.keys():
             if sum([i for i in fix_weights['phenotype'] if i not in self.data.phenotype_names])!=0:
-                print("Error: Invalid fix_weights phenotype names.")
+                logger.info("Error: Invalid fix_weights phenotype names.")
                 raise ValueError
         #Traits
         if 'trait' in fix_weights.keys():
             if sum([i for i in fix_weights['trait'] if i not in self.data.additive_trait_names])!=0:
-                print("Error: Invalid fix_weights trait names.")
+                logger.info("Error: Invalid fix_weights trait names.")
                 raise ValueError
         # #Global parameters
         # fix_weights['global']
         # if sum([i for i in fix_weights['global'] if i not in self.data.phenotype_names])!=0:
-        #     print("Error: Invalid fix_weights phenotype names.")
+        #     logger.info("Error: Invalid fix_weights phenotype names.")
         #     raise ValueError
 
         #Linear parameters
@@ -1645,12 +1646,12 @@ class MochiTask():
 
         #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Model cannot be fit. Invalid MochiTask instance.")
+            logger.info("Error: Model cannot be fit. Invalid MochiTask instance.")
             raise ValueError
 
         #Check if valid MochiData
         if not self.data.is_valid_instance():
-            print("Error: Model cannot be fit. Invalid MochiData instance.")
+            logger.info("Error: Model cannot be fit. Invalid MochiData instance.")
             raise ValueError
 
         #Load split metadata without materializing full fold feature tensors.
@@ -1724,8 +1725,8 @@ class MochiTask():
             loss_function_name = loss_function_name,
             sos_architecture = sos_architecture,
             sos_outputlinear = sos_outputlinear)
-        print("Fitting model:")
-        print(model.metadata)
+        logger.info("Fitting model:")
+        logger.info(model.metadata)
 
         train_dataloader = MaterializingRowDataLoader(
             data = self.data,
@@ -1786,7 +1787,7 @@ class MochiTask():
                     #...and WT coefficients not changing, stop training
                     if sum([np.std(model.training_history['additivetrait'+str(i+1)+"_WT"][-scheduler_epochs:])>0.001 for i in range(len(model.additivetraits))])==0:
                         if early_stopping:
-                            print("Stopping early: coefficients not changing and validation loss not decreasing.")
+                            logger.info("Stopping early: coefficients not changing and validation loss not decreasing.")
                             break
                     #Decrease learning rate by gamma
                     scheduler.step()
@@ -1794,8 +1795,8 @@ class MochiTask():
             #Status
             if epoch % epoch_status == 0: 
                 model_status = model.get_status()
-                print(f"Epoch {epoch+1}; "+model_status)    
-        print("Done!")
+                logger.info(f"Epoch {epoch+1}; "+model_status)
+        logger.info("Done!")
 
     @torch.inference_mode()
     def predict_all(
@@ -1821,12 +1822,12 @@ class MochiTask():
 
         #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Cannot make predictions. Invalid MochiTask instance.")
+            logger.info("Error: Cannot make predictions. Invalid MochiTask instance.")
             raise ValueError
 
         #Check if valid MochiData
         if not self.data.is_valid_instance():
-            print("Error: Cannot make predictions. Invalid MochiData instance.")
+            logger.info("Error: Cannot make predictions. Invalid MochiData instance.")
             raise ValueError
 
         #Output predictions directory
@@ -1846,7 +1847,7 @@ class MochiTask():
         models_subset = [i for i in self.models if ((i.metadata.grid_search==grid_search) & (i.metadata.fold in folds))]
         #Check if at least one model remaining
         if len(models_subset)==0:
-            print("No models satisfying criteria.")
+            logger.info("No models satisfying criteria.")
             return
 
         #Model data
