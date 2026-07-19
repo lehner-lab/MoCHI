@@ -634,7 +634,7 @@ class MochiProject():
                 break
             try:
                 mochi_data_args, mochi_task_args, stage_settings = self.build_sparse_stage_inputs(stage_index)
-                self.tasks[stage_index] = self.run_cv_task(
+                self.tasks[stage_index] = self.run_serial_cv_task(
                     mochi_data_args = mochi_data_args,
                     mochi_task_args = mochi_task_args,
                     RT = self.RT,
@@ -694,7 +694,7 @@ class MochiProject():
         :returns: MochiTask object.
         """
         mochi_data_args, mochi_task_args = self.build_cv_task_inputs(seed)
-        mochi_task = self.run_cv_task(
+        mochi_task = self.run_serial_cv_task(
             mochi_data_args = mochi_data_args,
             mochi_task_args = mochi_task_args,
             RT = self.RT,
@@ -1107,7 +1107,7 @@ class MochiProject():
         self.tasks[stage_index] = merged_task
         return merged_task
 
-    def run_cv_task(
+    def run_serial_cv_task(
         self,
         mochi_data_args,
         mochi_task_args,
@@ -1138,15 +1138,15 @@ class MochiProject():
             mochi_task_args = mochi_task_args)
 
         #Grid search
-        print("run_cv_task: Starting grid search")
+        print("run_serial_cv_task: Starting grid search")
         mochi_task.grid_search(
             seed = mochi_data_args['seed'],
             init_weights = init_weights,
             fix_weights = fix_weights)
         #Fit model using best hyperparameters
-        print("run_cv_task: Starting fit_best loop")
+        print("run_serial_cv_task: Starting fit_best loop")
         for i in range(mochi_data_args['k_folds']):
-            print(f"run_cv_task: Fitting best model for fold {i+1}/{mochi_data_args['k_folds']}")
+            print(f"run_serial_cv_task: Fitting best model for fold {i+1}/{mochi_data_args['k_folds']}")
             mochi_task.fit_best(
                 fold = i+1, 
                 seed = mochi_data_args['seed'],
