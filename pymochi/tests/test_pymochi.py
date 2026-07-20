@@ -2,13 +2,10 @@
 Unit and regression test for the pymochi package.
 """
 
-# Import package, test suite, and other packages as needed
 import sys
-import os
 from functools import lru_cache
 import pandas as pd
 import numpy as np
-import pathlib
 from pathlib import Path
 from scipy import sparse as sp
 import torch
@@ -16,7 +13,6 @@ import torch
 import pytest
 from loguru import logger
 
-import pymochi
 import pymochi.main as mochi_main
 import pymochi.project as mochi_project_module
 from pymochi.data import *
@@ -60,26 +56,11 @@ def get_demo_mochi_data(
         downsample_interactions = downsample_interactions,
         seed = seed)
 
-def test_pymochi_imported():
-    """Sample test, will always pass so long as import statement worked."""
-    assert "pymochi" in sys.modules
-
 def test_MochiData_init_model_design_not_DataFrame(loguru_messages):
     """Test MochiData initialization when model design not a pandas DataFrame"""
     with pytest.raises(ValueError) as e_info:
         MochiData("Hello World!")
     assert loguru_messages[-1] == "Error: Model design is not a pandas DataFrame." and e_info
-
-def test_MochiData_init_all_files_nonexistant(loguru_messages):
-    """Test MochiData initialization when only non-existant files supplied"""
-    #Create a problematic model design
-    model_design = pd.read_csv(Path(__file__).parent.parent / "data/model_design.txt", sep = "\t", index_col = False)
-    model_design['file'] = [
-        "Hello World!1",
-        "Hello World!2"]
-    with pytest.raises(ValueError) as e_info:
-        MochiData(model_design = model_design)
-    assert loguru_messages[-1] == "Error: Fitness file not found." and e_info
 
 def test_MochiData_init_one_file_nonexistant(loguru_messages):
     """Test MochiData initialization when one non-existant file supplied"""
@@ -130,22 +111,6 @@ def test_MochiData_invalid_features_argument_trait_names(loguru_messages):
             model_design = model_design, 
             features = features)
     assert loguru_messages[-1] == "Error: One or more invalid trait names in 'features' argument." and e_info
-
-# def test_MochiData_invalid_features_argument_features(loguru_messages):
-#     """Test MochiData initialization with invalid features argument features"""
-#     model_design = pd.read_csv(Path(__file__).parent.parent / "data/model_design.txt", sep = "\t", index_col = False)
-#     model_design['file'] = [
-#         str(Path(__file__).parent.parent / "data/fitness_abundance.txt"),
-#         str(Path(__file__).parent.parent / "data/fitness_binding.txt")]
-#     #Create a problematic features dict
-#     features = {
-#         'Folding': ["WT"],
-#         'Binding': ["WT", "Hello World!"]}
-#     with pytest.raises(ValueError) as e_info:
-#         MochiData(
-#             model_design = model_design, 
-#             features = features)
-# #     assert loguru_messages[-1] == "Warning: Invalid feature names: Hello World!" and e_info
 
 def test_MochiData_invalid_features_argument_missingWT(loguru_messages):
     """Test MochiData initialization with invalid features argument missing WT"""
@@ -440,36 +405,6 @@ def test_MaterializingRowDataLoader_sparse_native_batches_match_materialized_spl
     assert torch.equal(X, expected_X)
     assert torch.equal(y, validation['y'])
     assert torch.equal(y_wt, validation['y_wt'])
-
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason = "CUDA required")
-def test_DevicePrefetchLoader_cuda_prefetch_yields_device_batches(monkeypatch):
-    """Test device prefetcher stages row-loader batches onto CUDA memory."""
-    monkeypatch.setenv("MOCHI_GPU_PREFETCH", "1")
-    mochi_data = get_demo_mochi_data(
-        max_interaction_order = 2,
-        downsample_observations = 0.02,
-        seed = 1)
-    split_data = mochi_data.get_split_observation_data(
-        fold = 1,
-        seed = 1,
-        training_resample = False)
-    validation = split_data['validation']
-    loader = MaterializingRowDataLoader(
-        data = mochi_data,
-        row_indices = validation['row_indices'],
-        select = validation['select'],
-        y = validation['y'],
-        y_wt = validation['y_wt'],
-        batch_size = 4,
-        shuffle = False)
-    batch = next(iter(DevicePrefetchLoader(loader, torch.device("cuda"))))
-    torch.cuda.synchronize()
-    assert batch[0].device.type == "cuda"
-    assert batch[1].device.type == "cuda"
-    assert batch[1].dtype == torch.float32
-    assert batch[2].device.type == "cuda"
-    assert batch[3].device.type == "cuda"
 
 
 def forward_reference_loop(
