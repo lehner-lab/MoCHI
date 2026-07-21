@@ -51,13 +51,11 @@ This directory contains OS agnostic helper scripts which don't fall in any of th
    *  `git tag -a X.Y.Z [latest pushed commit] && git push --follow-tags`
 - [ ] Get the PR merged in
 
-## Versioneer Auto-version
-[Versioneer](https://github.com/warner/python-versioneer) will automatically infer what version 
-is installed by looking at the `git` tags and how many commits ahead this version is. The format follows 
-[PEP 440](https://www.python.org/dev/peps/pep-0440/) and has the regular expression of:
-```regexp
-\d+.\d+.\d+(?\+\d+-[a-z0-9]+)
-```
-If the version of this commit is the same as a `git` tag, the installed version is the same as the tag, 
-e.g. `pymochi-0.1.2`, otherwise it will be appended with `+X` where `X` is the number of commits 
-ahead from the last tag, and then `-YYYYYY` where the `Y`'s are replaced with the `git` commit hash.
+## Git-tag Auto-version
+[setuptools-scm](https://github.com/pypa/setuptools-scm) automatically infers the installed version
+from the repository's `git` tags and how many commits ahead the working tree is. The format follows
+[PEP 440](https://peps.python.org/pep-0440/).
+
+If the current commit matches a release tag, the installed version matches that tag, for example
+`pymochi-1.1`. Otherwise the installed version becomes a development version derived from the most
+recent tag and the current commit, for example `pymochi-1.2.dev24+gbc15a0cb7.d20260407`.

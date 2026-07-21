@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools-scm>=8", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pymochi"
+description = "A tool to fit mechanistic models to deep mutational scanning data"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "Andre J Faure", email = "ajfaure@gmail.com" },
+    { name = "Eric Hidari", email = "feedbackeric@gmail.com" },
+]
+requires-python = ">=3.11"
+dynamic = ["version"]
+dependencies = [
+    "loguru",
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "pyreadr",
+    "scikit-learn",
+    "scipy",
+    "seaborn",
+    "setuptools",
+    "torch",
+    "wheel",
+]
+
+[tool.setuptools]
+include-package-data = true
+script-files = [
+    "pymochi/bin/run_mochi.py",
+    "pymochi/bin/demo_mochi.py",
+]
+
+[tool.setuptools.packages.find]
+include = ["pymochi*"]
+
+[tool.setuptools.package-data]
+pymochi = [
+    "data/model_design.txt",
+    "data/fitness_abundance.txt",
+    "data/fitness_binding.txt",
+]
+
+[tool.setuptools_scm]
+fallback_version = "0+unknown"
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu124" }
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

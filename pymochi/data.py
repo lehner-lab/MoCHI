@@ -3,24 +3,25 @@
 MoCHI data module
 """
 
+from loguru import logger
 import os
 import re
 import copy
 import random
 import math
 import time
-import csv
-import linecache
+import gc
+import queue
+import threading
 from os.path import exists
 import pyreadr
 import torch
-from torch.utils.data import Dataset
-from torch.utils.data import DataLoader
 import pathlib
 from pathlib import Path
 from pymochi.transformation import get_transformation
 import numpy as np
 import pandas as pd
+from scipy import sparse as sp
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.preprocessing import PolynomialFeatures
 import itertools
@@ -28,6 +29,46 @@ import collections, functools, operator
 
 import types
 from inspect import getmembers, isfunction
+
+def build_sparse_feature_batch(
+    csr_rows):
+    """
+    Convert CSR rows into a compact batch payload of indices and offsets.
+
+    :param csr_rows: CSR matrix containing one batch of feature rows (required).
+    :returns: Dictionary payload for sparse-native model paths.
+    """
+    csr_rows = csr_rows.tocsr()
+    payload = {
+        "layout": "csr_indices",
+        "indices": torch.tensor(
+            csr_rows.indices.astype(np.int64, copy = False),
+            dtype = torch.int64),
+        "offsets": torch.tensor(
+            csr_rows.indptr[:-1].astype(np.int64, copy = False),
+            dtype = torch.int64),
+        "shape": csr_rows.shape}
+    if csr_rows.nnz != 0 and not np.all(csr_rows.data == 1):
+        payload["values"] = torch.tensor(
+            csr_rows.data.astype(np.float32, copy = False),
+            dtype = torch.float32)
+    return payload
+
+class FeatureMatrixMetadata:
+    """
+    Lightweight metadata wrapper for a feature matrix.
+    """
+    def __init__(
+        self,
+        index,
+        columns):
+        self.index = index
+        self.columns = pd.Index(columns)
+        self.shape = (len(index), len(self.columns))
+
+    def __len__(
+        self):
+        return self.shape[0]
 
 class CustomTransformations:
     """
@@ -49,7 +90,7 @@ class CustomTransformations:
         #Check functions valid
         invalid_functions = self.check_transformations()
         if invalid_functions!=[]:
-            print("Error: Invalid custom transformations: "+",".join(invalid_functions))
+            logger.info("Error: Invalid custom transformations: "+",".join(invalid_functions))
             raise ValueError                  
 
     def import_code(
@@ -138,11 +179,11 @@ class FitnessData:
         try:
             vtable = pyreadr.read_r(file_path)
         except:
-            print("Error: Invalid RData fitness file: cannot read file.")
+            logger.info("Error: Invalid RData fitness file: cannot read file.")
             raise ValueError
         #Check variant fitness object exists
         if 'all_variants' not in vtable.keys():
-            print("Error: Invalid RData fitness file: variant data not found.")
+            logger.info("Error: Invalid RData fitness file: variant data not found.")
             raise ValueError
         return vtable['all_variants']
 
@@ -160,7 +201,7 @@ class FitnessData:
         try:
             vtable = pd.read_csv(file_path, sep = None, engine='python', na_values = [''], keep_default_na = False)
         except:
-            print("Error: Invalid plain text fitness file: cannot read file.")
+            logger.info("Error: Invalid plain text fitness file: cannot read file.")
             raise ValueError
         return vtable
 
@@ -184,7 +225,7 @@ class FitnessData:
 
         #Check file exists
         if not exists(file_path):
-            print("Error: Fitness file not found.")
+            logger.info("Error: Fitness file not found.")
             raise ValueError
 
         #Automatically detect file type
@@ -225,7 +266,7 @@ class FitnessData:
             'WT', 
             'fitness',
             'sigma']])!=0:
-            print("Error: Invalid fitness data: required columns not found.")
+            logger.info("Error: Invalid fitness data: required columns not found.")
             raise ValueError
 
         #Remove variants with STOP or STOP_readthrough (if columns present)
@@ -241,7 +282,7 @@ class FitnessData:
 
         #Check single WT variant present
         if sum(self.vtable['WT']==True)!=1:
-            print("Error: Invalid fitness data: WT variant missing or ambiguous.")
+            logger.info("Error: Invalid fitness data: WT variant missing or ambiguous.")
             raise ValueError
 
         #Remove synonymous variants (if present)
@@ -266,7 +307,7 @@ class FitnessData:
                         self.vtable.loc[self.vtable['WT']!=True,:].sample(frac = downsample_observations, random_state = seed)])
                     self.vtable.reset_index(drop = True, inplace = True)
                 else:
-                    print("Error: downsample_observations argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
+                    logger.info("Error: downsample_observations argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
                     raise ValueError
             elif type(downsample_observations) == int:
                 #Downsample observations by number
@@ -277,7 +318,7 @@ class FitnessData:
                         self.vtable.loc[self.vtable['WT']!=True,:].sample(n = downsample_observations, random_state = seed)])
                     self.vtable.reset_index(drop = True, inplace = True)
                 else:
-                    print("Error: downsample_observations argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
+                    logger.info("Error: downsample_observations argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
                     raise ValueError
 
     def __len__(self):
@@ -359,6 +400,8 @@ class MochiData:
         self.X = None
         self.Xoh = None
         self.Xohi = None
+        self.feature_matrix_mode = "dense"
+        self.feature_sparse_matrix = None
         self.cvgroups = None
         self.coefficients = None
         self.coefficients_userspec = None
@@ -369,7 +412,7 @@ class MochiData:
         # try:
         #     os.makedirs(self.directory)
         # except FileExistsError:
-        #     print("Error: Data directory already exists.")
+        #     logger.info("Error: Data directory already exists.")
         #     raise ValueError
 
         #Check and save custom transformations
@@ -379,7 +422,7 @@ class MochiData:
         #Check features
         self.features, self.features_trait = self.check_features(self.features)
         #Load all datasets
-        print("Loading fitness data")
+        logger.info("Loading fitness data")
         filepath_list = list(self.model_design['file'])
         fdatalist = [FitnessData(
             file_path = filepath_list[i], 
@@ -400,37 +443,38 @@ class MochiData:
         #Sequence features
         self.X = self.fdata.vtable[self.fdata.variantCol].str.split('', expand=True).iloc[:, 1:-1]
         #One hot encode sequence features
-        print("One-hot encoding sequence features")
+        logger.info("One-hot encoding sequence features")
         self.Xoh = self.one_hot_encode_features()
         #One-hot encode interaction features
-        print("One-hot encoding interaction features")
+        logger.info("One-hot encoding interaction features")
         self.one_hot_encode_interactions(
             max_order = self.max_interaction_order,
             min_observed = self.min_observed,
             features = self.features,
             downsample_interactions = self.downsample_interactions,
             seed = self.seed)
-        # self.one_hot_encode_interactions_todisk(
-        #     max_order = self.max_interaction_order,
-        #     min_observed = self.min_observed,
-        #     features = self.features,
-        #     downsample_interactions = self.downsample_interactions,
-        #     seed = self.seed,
-        #     holdout_minobs = self.holdout_minobs, 
-        #     holdout_orders = self.holdout_orders, 
-        #     holdout_WT = self.holdout_WT)
+        if not self.ensemble:
+            # self.X is only needed to build self.Xoh in the non-ensemble path.
+            # Drop it before later wide-matrix passes to reduce peak memory.
+            # Keep it for ensemble=True because ensemble_encode_features() uses
+            # the original split sequence tokens to count per-position states.
+            self.X = None
+            gc.collect()
         #Split into training, validation and test sets
-        print("Defining cross-validation groups")
+        logger.info("Defining cross-validation groups")
         self.define_cross_validation_groups()
         #Define coefficients to fit (for each phenotype and trait)
-        print("Defining coefficient groups")
+        logger.info("Defining coefficient groups")
         self.define_coefficient_groups(
             k_folds = self.k_folds)
         #Ensemble encode features
         if self.ensemble:
-            print("Ensemble encoding features")
-            self.Xohi = self.ensemble_encode_features()
-        print("Done!")
+            logger.info("Ensemble encoding features")
+            self.activate_dense_feature_matrix(self.ensemble_encode_features())
+            # Ensemble encoding is the last stage that needs self.X.
+            self.X = None
+            gc.collect()
+        logger.info("Done!")
 
     def check_custom_transformations(
         self, 
@@ -449,11 +493,11 @@ class MochiData:
             input_obj = pathlib.Path(input_obj)
         #Object not a path
         elif type(input_obj) != pathlib.PosixPath:
-            print("Error: custom_transformations argument invalid.")
+            logger.info("Error: custom_transformations argument invalid.")
             raise ValueError
         #Object does not exist or not a file
         if not (input_obj.exists() and input_obj.is_file()):
-            print("Error: Custom transformations file not found.")
+            logger.info("Error: Custom transformations file not found.")
             raise ValueError
         else:
             #Read input file
@@ -497,14 +541,14 @@ class MochiData:
             'weight']
         #Check if model_design is a pandas DataFrame
         if not isinstance(model_design, pd.DataFrame):
-            print("Error: Model design is not a pandas DataFrame.")
+            logger.info("Error: Model design is not a pandas DataFrame.")
             raise ValueError
         #Add unity weights if not supplied
         if 'weight' not in model_design.keys():
             model_design['weight'] = 1
         #Check if all keys present
         if sum([i not in model_design.keys() for i in model_design_keys])!=0:
-            print("Error: Model design missing required keys.")
+            logger.info("Error: Model design missing required keys.")
             raise ValueError
         #Split trait column items into list if necessary
         model_design['trait'] = [i.split(',') if type(i)==str else i for i in model_design['trait']]
@@ -521,7 +565,7 @@ class MochiData:
         all_phenotypes_unique = []
         [all_phenotypes_unique.append(i) for i in all_phenotypes if i not in all_phenotypes_unique]
         if len(all_phenotypes_unique)!=len(all_phenotypes):
-            print("Error: Duplicated phenotype names.")
+            logger.info("Error: Duplicated phenotype names.")
             raise ValueError
         #Translate phenotypes to integers
         self.phenotype_names = all_phenotypes_unique
@@ -529,12 +573,12 @@ class MochiData:
         #Check phenotype names
         forbidden_pnames = ['nt_seq', 'aa_seq', 'Nham_nt', 'Nham_aa', 'WT', 'fitness', 'sigma', 'phenotype', 'mean', 'std', 'ci95', 'Fold']
         if sum([(i in forbidden_pnames) or (i.startswith('fold_')) for i in self.phenotype_names])!=0:
-            print("Error: Forbidden phenotype names.")
+            logger.info("Error: Forbidden phenotype names.")
             raise ValueError
         #Check files not duplicated
         all_files = list(model_design['file'])
         if len(all_files)!=len(list(set(all_files))):
-            print("Error: Duplicated fitness files.")
+            logger.info("Error: Duplicated fitness files.")
             raise ValueError
         return model_design
 
@@ -549,7 +593,7 @@ class MochiData:
         """
         #Check dictionary
         if type(features) != dict:
-            print("Error: 'features' argument is not a dictionary.")
+            logger.info("Error: 'features' argument is not a dictionary.")
             raise ValueError
         #Filter applied to all traits (original input = list or single column of feature identifiers without header)
         if len(features)==1:
@@ -565,12 +609,12 @@ class MochiData:
 
         #Check all dictionary keys are trait names
         if sum([1 for i in features.keys() if i in self.additive_trait_names])!=len(features):
-            print("Error: One or more invalid trait names in 'features' argument.")
+            logger.info("Error: One or more invalid trait names in 'features' argument.")
             raise ValueError
 
         #Check all dictionary values include WT
         if sum([1 for i in features.keys() if 'WT' in features[i]])!=len(features):
-            print("Error: 'WT' missing for one or more traits in 'features' argument.")
+            logger.info("Error: 'WT' missing for one or more traits in 'features' argument.")
             raise ValueError        
 
         #Copy features dictionary
@@ -590,7 +634,7 @@ class MochiData:
         """
         #Check if data to merge
         if sum([len(i) for i in data_list]) == 0:
-            print("Error: No Fitness datasets to merge.")
+            logger.info("Error: No Fitness datasets to merge.")
             raise ValueError
         #Check if same WT and sequence type
         if len(set([i.wildtype for i in data_list]))==1 & len(set([i.sequenceType for i in data_list]))==1:
@@ -599,7 +643,7 @@ class MochiData:
             fdata.vtable.reset_index(drop = True, inplace = True)
             return fdata
         else:
-            print("Error: Fitness datasets cannot be merged: WT variants do not match.")
+            logger.info("Error: Fitness datasets cannot be merged: WT variants do not match.")
             raise ValueError
 
     def one_hot_encode_phenotypes(self):
@@ -611,7 +655,7 @@ class MochiData:
         all_phenotypes = [str(i) for i in list(self.model_design['phenotype'])]
         phenotypes_df = pd.DataFrame()
         for i in all_phenotypes:
-            phenotypes_df['phenotype_'+i] = (self.fdata.vtable['phenotype']==i).astype(int)
+            phenotypes_df['phenotype_'+i] = (self.fdata.vtable['phenotype']==i).astype(np.uint8)
         return phenotypes_df
 
     def one_hot_encode_features(
@@ -626,12 +670,12 @@ class MochiData:
         enc = OneHotEncoder(
             handle_unknown='ignore', 
             drop = np.array(self.fdata.wildtype_split), 
-            dtype = int)
+            dtype = np.uint8)
         enc.fit(self.X)
         one_hot_names = [self.fdata.wildtype_split[int(i[1:-2])]+str(int(i[1:-2])+1)+i[-1] for i in enc.get_feature_names_out()]
         one_hot_df = pd.DataFrame(enc.transform(self.X).toarray(), columns = one_hot_names)
         if include_WT:
-            one_hot_df = pd.concat([pd.DataFrame({'WT': [1]*len(one_hot_df)}), one_hot_df], axis=1)
+            one_hot_df.insert(0, 'WT', np.ones(len(one_hot_df), dtype = np.uint8))
         return one_hot_df
 
     def get_theoretical_interactions_phenotype(
@@ -676,9 +720,9 @@ class MochiData:
         """
         for k in dict2:
             if k in dict1:
-                dict1[k] = list(set(dict1[k] + dict2[k]))
+                dict1[k] = sorted(set(dict1[k] + dict2[k]))
             else:
-                dict1[k] = dict2[k]
+                dict1[k] = sorted(dict2[k])
         return dict1
 
     def get_theoretical_interactions(
@@ -700,213 +744,185 @@ class MochiData:
         int_order_dict = {k:len(all_features[k]) for k in all_features}
         return (all_features, int_order_dict)
 
-    # def write_features(
-    #     self,
-    #     feature_list, 
-    #     feature_chunk_size,
-    #     samples_chunk_size = 100,
-    #     initial_chunk = False,
-    #     final_chunk = False):
-    #     """
-    #     Write features to disk.
+    def collect_observed_interaction_rows(
+        self,
+        xoh_values,
+        max_order,
+        allowed_interaction_keys = None):
+        """
+        Collect observed interaction row indices by walking active mutations per row.
 
-    #     :param feature_list: List of features.
-    #     :param feature_chunk_size: Features chunk size in number of features.
-    #     :param samples_chunk_size: Samples chunk size in number of samples (default:100).
-    #     :param initial_chunk: Whether or not the supplied list is the initial chunk (default:False).
-    #     :param final_chunk: Whether or not the supplied list is the final chunk (default:False).
-    #     :returns: feature list.
-    #     """
-    #     #Check if anything to write
-    #     if len(feature_list)==feature_chunk_size or final_chunk or initial_chunk:
-    #         write_df = pd.concat(feature_list, axis = 1)
-    #         self.update_holdout_observations(write_df)
-    #         write_df = write_df.transpose()
-    #         write_count = 0
-    #         #Write feature data in chunks of rows (transposed)
-    #         while write_count < write_df.shape[1]:
-    #             write_file = os.path.join(self.directory, 'data_chunk'+str(write_count)+".csv")
-    #             write_df.iloc[:,list(range(write_count, min([write_count+samples_chunk_size, write_df.shape[1]])))].to_csv(
-    #                 write_file, mode='a', index=False, header=False)
-    #             write_count += samples_chunk_size
-    #         #Reset list and index
-    #         feature_list = []
-    #     return feature_list
+        :param xoh_values: Dense uint8 base feature matrix (required).
+        :param max_order: Maximum interaction order to collect (required).
+        :param allowed_interaction_keys: Optional set of allowed feature-index tuples.
+        :returns: Dictionary mapping canonical interaction names to active-row arrays.
+        """
+        xoh_columns = np.asarray(self.Xoh.columns)
+        mutation_feature_indices = np.flatnonzero(xoh_columns != "WT")
+        interaction_rows = collections.defaultdict(list)
+        for row_index in range(xoh_values.shape[0]):
+            active_feature_indices = mutation_feature_indices[
+                np.flatnonzero(xoh_values[row_index, mutation_feature_indices])]
+            if len(active_feature_indices) < 2:
+                continue
+            active_feature_indices = active_feature_indices.tolist()
+            for order in range(2, min(max_order, len(active_feature_indices)) + 1):
+                for interaction_key in itertools.combinations(active_feature_indices, order):
+                    if (
+                        allowed_interaction_keys is not None and
+                        interaction_key not in allowed_interaction_keys
+                    ):
+                        continue
+                    interaction_rows[interaction_key].append(row_index)
+        return {
+            "_".join(xoh_columns[list(interaction_key)]): np.asarray(row_indices, dtype = np.int32)
+            for interaction_key, row_indices in interaction_rows.items()
+        }
 
-    # def transpose_features(
-    #     self):
-    #     """
-    #     Transpose features on disk.
+    def get_feature_names(
+        self):
+        """
+        Return feature names regardless of whether features are dense or sparse.
 
-    #     :returns: nothing.
-    #     """
-    #     files = os.listdir(self.directory)
-    #     for f in files:
-    #         if f.startswith("data_chunk"):
-    #             pd.read_csv(
-    #                 os.path.join(self.directory, f), header=None).transpose().to_csv(
-    #                 os.path.join(self.directory, f), index=False, header=False)
+        :returns: pandas Index.
+        """
+        # Sparse path sets self.feature_names in activate_sparse_feature_matrix()
+        # before one_hot_encode_interactions() finishes; dense path usually falls
+        # back to self.Xohi.columns when feature_names was never assigned.
+        if self.feature_names is not None:
+            return pd.Index(self.feature_names)
+        if self.Xohi is not None and hasattr(self.Xohi, "columns"):
+            return pd.Index(self.Xohi.columns)
+        return pd.Index([])
 
-    # def one_hot_encode_interactions_todisk(
-    #     self, 
-    #     max_order = 2,
-    #     max_cells = 1e9,
-    #     min_observed = 2,
-    #     features = [],
-    #     downsample_interactions = None,
-    #     seed = 1,
-    #     chunk_size = 100,
-    #     holdout_minobs = 0,
-    #     holdout_orders = [],
-    #     holdout_WT = False):
-    #     """
-    #     Add interaction terms to 1-hot encoding DataFrame.
+    def is_sparse_feature_matrix(
+        self):
+        """
+        Check whether the feature matrix is stored as a sparse matrix.
 
-    #     :param max_order: Maximum interaction order (default:2).
-    #     :param max_cells: Maximum matrix cells permitted (default:1billion).
-    #     :param min_observed: Minimum number of observations required to include interaction term (default:2).
-    #     :param features: list of feature names to filter (default:[] i.e. all  features retained).
-    #     :param downsample_interactions: number (if integer) or proportion (if float) or list of integer numbers (if string) of interaction terms to retain (optional).
-    #     :param seed: Random seed for downsampling interactions (default:1).
-    #     :param chunk_size: Number of features per file (default:100).
-    #     :param holdout_minobs: Minimum number of observations of additive trait weights to be held out (default:0).
-    #     :param holdout_orders: list of mutation orders corresponding to retained variants (default:[] i.e. variants of all mutation orders can be held out).
-    #     :param holdout_WT: list of mutation orders corresponding to retained variants (default:False).
-    #     :returns: Nothing.
-    #     """
+        :returns: Boolean.
+        """
+        return getattr(self, "feature_matrix_mode", "dense") == "sparse"
 
-    #     #First order interaction features
-    #     #Filter features
-    #     if features!=[]:
-    #         print("Filtering features")
-    #         self.Xoh = self.filter_features(
-    #             input_df = self.Xoh,
-    #             features = features)
-    #     #Write to disk
-    #     int_list = self.write_features(
-    #         feature_list = [self.Xoh[i] for i in self.Xoh.columns], 
-    #         feature_chunk_size = chunk_size,
-    #         initial_chunk = True)
-    #     #Save feature names
-    #     self.feature_names = list(self.Xoh.columns)
+    def activate_sparse_feature_matrix(
+        self,
+        columns,
+        sparse_matrix):
+        """
+        Activate a sparse retained-feature matrix backend.
 
-    #     #Check if no interactions to add
-    #     if max_order<2:
-    #         #Transpose disk data in place
-    #         print("Transposing features")
-    #         self.transpose_features()
-    #         return
+        :param columns: Ordered feature names (required).
+        :param sparse_matrix: Sparse feature matrix (required).
+        :returns: Nothing.
+        """
+        columns = pd.Index(columns)
+        self.feature_matrix_mode = "sparse"
+        # Authoritative feature order for sparse storage; get_feature_names() reads this.
+        self.feature_names = columns
+        self.feature_sparse_matrix = sparse_matrix.tocsr().astype(np.uint8, copy = False)
+        self.Xohi = FeatureMatrixMetadata(
+            index = self.Xoh.index,
+            columns = columns)
 
-    #     #Check downsample_interactions argument valid
-    #     if downsample_interactions!=None:
-    #         if type(downsample_interactions) == float:
-    #             #Downsample observations by proportion
-    #             if downsample_interactions >= 1 or downsample_interactions <= 0:
-    #                 print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
-    #                 raise ValueError
-    #         elif type(downsample_interactions) == int:
-    #             #Downsample observations by number
-    #             if downsample_interactions < 1:
-    #                 print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
-    #                 raise ValueError
-    #         elif type(downsample_interactions) == str:
-    #             try:
-    #                 downsample_interactions = {(i+2):int(d) for i,d in enumerate(str(downsample_interactions).split(","))}
-    #             except:
-    #                 print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
-    #                 raise ValueError
-    #         else:
-    #             print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
-    #             raise ValueError
+    def activate_dense_feature_matrix(
+        self,
+        feature_matrix):
+        """
+        Activate a dense feature matrix backend.
 
-    #     #Get all theoretical interactions
-    #     all_features,int_order_dict = self.get_theoretical_interactions(max_order = max_order)
-    #     print("... Total theoretical features (order:count): "+", ".join([str(i)+":"+str(int_order_dict[i]) for i in sorted(int_order_dict.keys())]))
-    #     #Flatten
-    #     all_features_flat = list(itertools.chain(*list(all_features.values())))
+        :param feature_matrix: Dense feature DataFrame (required).
+        :returns: Nothing.
+        """
+        self.feature_matrix_mode = "dense"
+        self.feature_sparse_matrix = None
+        self.Xohi = feature_matrix
+        self.feature_names = pd.Index(feature_matrix.columns)
 
-    #     #Check if all interaction features exist (i.e. with mutation order>1)
-    #     if len([i for i in features if (i not in all_features_flat) and (len(i.split('_'))>1)]) != 0:
-    #         print("Error: Invalid feature names.")
-    #         raise ValueError
+    def get_feature_numpy_dtype(
+        self):
+        """
+        Return the numpy dtype used for dense feature materialization.
 
-    #     #Select interactions
-    #     int_list = []
-    #     int_order_dict_retained = {}
-    #     int_list_names = []
-    #     #No shuffle if not downsampling
-    #     if downsample_interactions is None:
-    #         all_features_loop = {0: all_features_flat}
-    #     #Shuffle flattened features
-    #     elif type(downsample_interactions) in [float, int]:
-    #         random.seed(seed)
-    #         all_features_loop = {0: random.sample(all_features_flat, len(all_features_flat))}
-    #     #Shuffle features separately per order
-    #     else:
-    #         all_features_loop = {k: random.sample(all_features[k], len(all_features[k])) for k in all_features}
+        Ensemble encoding produces real-valued features, so it must not use
+        uint8. The sparse-native path keeps binary features in uint8 CSR.
+        """
+        return np.float32 if getattr(self, "ensemble", False) else np.uint8
 
-    #     #Loop over all orders
-    #     for n in all_features_loop.keys():
-    #         #Loop over all features of this order
-    #         for c in all_features_loop[n]:
-    #             c_split = c.split("_")
-    #             #Check if feature desired
-    #             if (c in features) or features==[]:
-    #                 int_col = (self.Xoh.loc[:,c_split].sum(axis = 1)==len(c_split)).astype(int)
-    #                 #Check if minimum number of observations satisfied
-    #                 if sum(int_col) >= min_observed:
-    #                     int_list += [int_col]
-    #                     int_list_names += [c]
-    #                     if len(c_split) not in int_order_dict_retained.keys():
-    #                         int_order_dict_retained[len(c_split)] = 1
-    #                     else:
-    #                         int_order_dict_retained[len(c_split)] += 1
-    #                 # else:
-    #                 #     if len(c_split)==3 and sum(int_col)==1:
-    #                 #         print(c)
-    #                 #Check memory footprint
-    #                 if len(int_list_names)*len(self.Xoh) > max_cells:
-    #                     print(f"Error: Too many interaction terms: number of feature matrix cells >{max_cells:>.0e}")
-    #                     raise ValueError
-    #                 #Check if sufficient features obtained
-    #                 if type(downsample_interactions) == float:
-    #                     if len(int_list_names) == int(len(all_features_flat)*downsample_interactions):
-    #                         break
-    #                 elif type(downsample_interactions) == int:
-    #                     if len(int_list_names) == downsample_interactions:
-    #                         break
-    #                 elif type(downsample_interactions) == dict:
-    #                     if len(c_split) in int_order_dict_retained.keys():
-    #                         if int_order_dict_retained[len(c_split)] > downsample_interactions[len(c_split)] and downsample_interactions[len(c_split)]!=(-1):
-    #                             int_list.pop()
-    #                             int_list_names.pop()
-    #                             int_order_dict_retained[len(c_split)] -= 1
-    #                             break
-    #                         elif int_order_dict_retained == downsample_interactions:
-    #                             break
-    #                 #Write chunk to disk
-    #                 int_list = self.write_features(
-    #                     feature_list = int_list, 
-    #                     feature_chunk_size = chunk_size)
-    #     #Write final chunk to disk
-    #     int_list = self.write_features(
-    #         feature_list = int_list, 
-    #         feature_chunk_size = chunk_size,
-    #         final_chunk = True)
+    def get_feature_tensor_dtype(
+        self):
+        """
+        Return the torch dtype used for dense feature tensors.
+        """
+        return torch.float32 if getattr(self, "ensemble", False) else torch.uint8
 
-    #     print("... Total retained features (order:count): "+", ".join([str(i)+":"+str(int_order_dict_retained[i])+" ("+str(round(int_order_dict_retained[i]/int_order_dict[i]*100, 1))+"%)" for i in sorted(int_order_dict_retained.keys())]))
+    def build_sparse_feature_matrix(
+        self,
+        columns,
+        interaction_names,
+        interaction_row_indices):
+        """
+        Build a sparse retained-feature matrix from base one-hot columns and
+        retained interaction row indices.
 
-    #     #Transpose disk data in place
-    #     print("Transposing features")
-    #     self.transpose_features()
+        :param columns: Ordered feature names to expose (required).
+        :param interaction_names: Canonical interaction names (required).
+        :param interaction_row_indices: Active-row arrays for interactions (required).
+        :returns: Nothing.
+        """
+        base_sparse = sp.csr_matrix(self.Xoh.to_numpy(dtype = np.uint8, copy = False))
+        if len(interaction_names) == 0:
+            combined = base_sparse
+        else:
+            nnz_per_col = np.asarray([len(i) for i in interaction_row_indices], dtype = np.int64)
+            if int(np.sum(nnz_per_col)) == 0:
+                interaction_sparse = sp.csr_matrix(
+                    (len(self.Xoh), len(interaction_names)),
+                    dtype = np.uint8)
+            else:
+                row_ind = np.concatenate(interaction_row_indices).astype(np.int32, copy = False)
+                col_ind = np.repeat(
+                    np.arange(len(interaction_names), dtype = np.int32),
+                    nnz_per_col)
+                data = np.ones(len(row_ind), dtype = np.uint8)
+                interaction_sparse = sp.csr_matrix(
+                    (data, (row_ind, col_ind)),
+                    shape = (len(self.Xoh), len(interaction_names)),
+                    dtype = np.uint8)
+            combined = sp.hstack([base_sparse, interaction_sparse], format = "csr", dtype = np.uint8)
+        self.activate_sparse_feature_matrix(
+            columns = columns,
+            sparse_matrix = combined)
 
-    #     #Save interaction feature names
-    #     self.feature_names += int_list_names
+    def select_feature_columns(
+        self,
+        columns):
+        """
+        Select feature columns by name in the requested order.
+
+        Subsets and/or permutes the retained feature matrix. The sparse path
+        slices the CSR matrix and re-attaches metadata; the dense path uses
+        DataFrame column selection.
+
+        :param columns: Ordered feature names to retain (required).
+        :returns: Nothing.
+        """
+        columns = list(columns)
+        missing = [i for i in columns if i not in self.get_feature_names()]
+        if len(missing) != 0:
+            logger.info("Error: Invalid feature names.")
+            raise ValueError
+        if self.is_sparse_feature_matrix():
+            feature_index = {name:i for i, name in enumerate(self.get_feature_names())}
+            self.activate_sparse_feature_matrix(
+                columns = columns,
+                sparse_matrix = self.feature_sparse_matrix[:, [feature_index[i] for i in columns]])
+        else:
+            self.Xohi = self.Xohi.loc[:, columns]
+            self.feature_names = self.Xohi.columns
 
     def one_hot_encode_interactions(
         self, 
         max_order = 2,
-        max_cells = 1e9,
         min_observed = 2,
         features = [],
         downsample_interactions = None,
@@ -915,7 +931,6 @@ class MochiData:
         Add interaction terms to 1-hot encoding DataFrame.
 
         :param max_order: Maximum interaction order (default:2).
-        :param max_cells: Maximum matrix cells permitted (default:1billion).
         :param min_observed: Minimum number of observations required to include interaction term (default:2).
         :param features: list of feature names to filter (default:[] i.e. all  features retained).
         :param downsample_interactions: number (if integer) or proportion (if float) or list of integer numbers (if string) of interaction terms to retain (optional).
@@ -928,7 +943,7 @@ class MochiData:
             self.Xohi = copy.deepcopy(self.Xoh)
             #Filter features
             if features!=[]:
-                print("Filtering features")
+                logger.info("Filtering features")
                 self.Xohi = self.filter_features(
                     input_df = self.Xohi,
                     features = features)
@@ -939,112 +954,121 @@ class MochiData:
             if type(downsample_interactions) == float:
                 #Downsample observations by proportion
                 if downsample_interactions >= 1 or downsample_interactions <= 0:
-                    print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
+                    logger.info("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
                     raise ValueError
             elif type(downsample_interactions) == int:
                 #Downsample observations by number
                 if downsample_interactions < 1:
-                    print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
+                    logger.info("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
                     raise ValueError
             elif type(downsample_interactions) == str:
                 try:
                     downsample_interactions = {(i+2):int(d) for i,d in enumerate(str(downsample_interactions).split(","))}
                 except:
-                    print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
+                    logger.info("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
                     raise ValueError
             else:
-                print("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
+                logger.info("Error: downsample_interactions argument invalid: only proportions in range (0,1) or positive integer numbers allowed.")
                 raise ValueError
 
         #Get all theoretical interactions
         all_features,int_order_dict = self.get_theoretical_interactions(max_order = max_order)
-        print("... Total theoretical features (order:count): "+", ".join([str(i)+":"+str(int_order_dict[i]) for i in sorted(int_order_dict.keys())]))
+        logger.info("... Total theoretical features (order:count): "+", ".join([str(i)+":"+str(int_order_dict[i]) for i in sorted(int_order_dict.keys())]))
         #Flatten
         all_features_flat = list(itertools.chain(*list(all_features.values())))
+        xoh_values = self.Xoh.to_numpy(dtype = np.uint8, copy = False)
+        xoh_column_index = {name:i for i,name in enumerate(self.Xoh.columns)}
 
         #Check if all interaction features exist (i.e. with mutation order>1)
         invalid_features = [i for i in features if (i not in all_features_flat) and (len(i.split('_'))>1)]
         if len(invalid_features) != 0:
-            # print("Error: Invalid feature names.")
-            print("Warning: Invalid feature names: "+",".join(invalid_features))
+            # logger.info("Error: Invalid feature names.")
+            logger.info("Warning: Invalid feature names: "+",".join(invalid_features))
             # raise ValueError
 
-        #Select interactions
-        int_list = []
-        int_order_dict_retained = {}
-        int_list_names = []
-        #No shuffle if not downsampling
+        allowed_interaction_names = None
+        allowed_interaction_keys = None
+        if features != []:
+            allowed_interaction_names = {
+                name for name in features
+                if len(name.split("_")) > 1 and name in all_features_flat}
+            allowed_interaction_keys = {
+                tuple(sorted([xoh_column_index[i] for i in name.split("_")]))
+                for name in allowed_interaction_names}
+
+        interaction_row_index_map = {
+            name: row_indices
+            for name, row_indices in self.collect_observed_interaction_rows(
+                xoh_values = xoh_values,
+                max_order = max_order,
+                allowed_interaction_keys = allowed_interaction_keys).items()
+            if len(row_indices) >= min_observed
+        }
+
         if downsample_interactions is None:
-            all_features_loop = {0: all_features_flat}
-        #Shuffle flattened features
+            int_set = set(interaction_row_index_map.keys())
         elif type(downsample_interactions) in [float, int]:
+            target_count = (
+                int(len(all_features_flat) * downsample_interactions)
+                if type(downsample_interactions) == float else
+                downsample_interactions)
+            if target_count <= 0:
+                int_set = set(interaction_row_index_map.keys())
+            else:
+                random.seed(seed)
+                retained_names = list(interaction_row_index_map.keys())
+                sampled_names = random.sample(retained_names, min(target_count, len(retained_names)))
+                int_set = set(sampled_names)
+        else:
+            int_set = set()
             random.seed(seed)
-            all_features_loop = {0: random.sample(all_features_flat, len(all_features_flat))}
-        #Shuffle features separately per order
-        else:
-            all_features_loop = {k:random.sample(all_features[k], len(all_features[k])) for k in all_features}
+            for order, feature_names in all_features.items():
+                retained_for_order = [name for name in feature_names if name in interaction_row_index_map]
+                order_limit = downsample_interactions.get(order, -1)
+                if order_limit == -1 or order_limit >= len(retained_for_order):
+                    int_set.update(retained_for_order)
+                else:
+                    int_set.update(random.sample(retained_for_order, order_limit))
 
-        #Loop over all orders
-        for n in all_features_loop.keys():
-            #Loop over all features of this order
-            for c in all_features_loop[n]:
-                c_split = c.split("_")
-                #Check if feature desired
-                if (c in features) or features==[]:
-                    int_col = (self.Xoh.loc[:,c_split].sum(axis = 1)==len(c_split)).astype(int)
-                    #Check if minimum number of observations satisfied
-                    if sum(int_col) >= min_observed:
-                        int_list += [int_col]
-                        int_list_names += [c]
-                        if len(c_split) not in int_order_dict_retained.keys():
-                            int_order_dict_retained[len(c_split)] = 1
-                        else:
-                            int_order_dict_retained[len(c_split)] += 1
-                    # else:
-                    #     if len(c_split)==3 and sum(int_col)==1:
-                    #         print(c)
-                    #Check memory footprint
-                    if len(int_list)*len(self.Xoh) > max_cells:
-                        print(f"Error: Too many interaction terms: number of feature matrix cells >{max_cells:>.0e}")
-                        raise ValueError
-                    #Check if sufficient features obtained
-                    if type(downsample_interactions) == float:
-                        if len(int_list) == int(len(all_features_flat)*downsample_interactions):
-                            break
-                    elif type(downsample_interactions) == int:
-                        if len(int_list) == downsample_interactions:
-                            break
-                    elif type(downsample_interactions) == dict:
-                        if len(c_split) in int_order_dict_retained.keys():
-                            if int_order_dict_retained[len(c_split)] > downsample_interactions[len(c_split)] and downsample_interactions[len(c_split)]!=(-1):
-                                int_list.pop()
-                                int_list_names.pop()
-                                int_order_dict_retained[len(c_split)] -= 1
-                                break
-                            elif int_order_dict_retained == downsample_interactions:
-                                break
+        interaction_row_index_map = {
+            name: row_indices
+            for name, row_indices in interaction_row_index_map.items()
+            if name in int_set
+        }
+        int_list_names = [name for name in all_features_flat if name in int_set]
+        int_order_dict_retained = collections.Counter(
+            [len(name.split("_")) for name in int_list_names])
 
-        print("... Total retained features (order:count): "+", ".join([str(i)+":"+str(int_order_dict_retained[i])+" ("+str(round(int_order_dict_retained[i]/int_order_dict[i]*100, 1))+"%)" for i in sorted(int_order_dict_retained.keys())]))
+        logger.info("... Total retained features (order:count): "+", ".join([str(i)+":"+str(int_order_dict_retained[i])+" ("+str(round(int_order_dict_retained[i]/int_order_dict[i]*100, 1))+"%)" for i in sorted(int_order_dict_retained.keys())]))
 
-        #Concatenate into dataframe
-        if len(int_list)>0:
-            self.Xohi = pd.concat(int_list, axis=1)
-            self.Xohi.columns = int_list_names
-            #Reorder
-            self.Xohi = self.Xohi.loc[:,[i for i in all_features_flat if i in self.Xohi.columns]]
-            self.Xohi = pd.concat([self.Xoh, self.Xohi], axis=1)
-        else:
-            self.Xohi = copy.deepcopy(self.Xoh)
+        ordered_interactions = [i for i in all_features_flat if i in int_set]
+        self.build_sparse_feature_matrix(
+            columns = list(self.Xoh.columns) + ordered_interactions,
+            interaction_names = ordered_interactions,
+            interaction_row_indices = [interaction_row_index_map[i] for i in ordered_interactions])
 
         #Filter features
         if features!=[]:
-            print("Filtering features")
-            self.Xohi = self.filter_features(
-                input_df = self.Xohi,
-                features = features)
+            logger.info("Filtering features")
+            if self.is_sparse_feature_matrix():
+                self.select_feature_columns(
+                    [i for i in self.get_feature_names() if i in features])
+            else:
+                self.Xohi = self.filter_features(
+                    input_df = self.Xohi,
+                    features = features)
 
-        #Save interaction feature names
-        self.feature_names = self.Xohi.columns
+        # Drop temporary builders before later preprocessing stages allocate
+        # additional wide matrices over the same feature set.
+        del all_features
+        del all_features_flat
+        del int_set
+        del int_list_names
+        del interaction_row_index_map
+        del xoh_values
+        if 'ordered_interactions' in locals():
+            del ordered_interactions
+        gc.collect()
 
     def filter_features(
         self, 
@@ -1060,8 +1084,8 @@ class MochiData:
         #Check if all features exist 
         invalid_features = [i for i in features if i not in input_df.columns]
         if len(invalid_features) != 0:
-            # print("Error: Invalid feature names.")
-            print("Warning: Invalid feature names: "+",".join(invalid_features))
+            # logger.info("Error: Invalid feature names.")
+            logger.info("Warning: Invalid feature names: "+",".join(invalid_features))
             # raise ValueError
         #Filter features
         features_order = [i for i in input_df.columns if i in features]
@@ -1214,7 +1238,7 @@ class MochiData:
         geno_list = list(self.fdata.vtable.apply(lambda row : "".join(x if x!=y else '0' for x,y in zip(str(row[self.fdata.variantCol]),self.fdata.wildtype)),
             axis = 1))
         #Sequence representation of 1-hot encoded coefficients/features
-        ceof_list = [self.coefficient_to_sequence(coef, len(self.fdata.wildtype)) for coef in self.Xohi.columns]
+        ceof_list = [self.coefficient_to_sequence(coef, len(self.fdata.wildtype)) for coef in self.get_feature_names()]
         #Number of states per position
         state_list = (self.X.apply(lambda column: column.value_counts(), axis = 0)>0).apply(lambda column: column.value_counts(), axis = 0)
         state_list = list(np.asarray(state_list)[0])
@@ -1226,12 +1250,14 @@ class MochiData:
             num_states = state_list, 
             invert = True)
         end = time.time()
-        print("Construction time for H_matrix :", end-start)
+        logger.info("Construction time for H_matrix :", end-start)
         vmat_inv = self.V_matrix(
             str_coef = ceof_list, 
             num_states = state_list, 
             invert = True)
-        return pd.DataFrame(np.matmul(hmat_inv, vmat_inv), columns = self.Xohi.columns)
+        return pd.DataFrame(
+            np.matmul(hmat_inv, vmat_inv).astype(np.float32, copy = False),
+            columns = self.get_feature_names())
 
     def update_holdout_observations(
         self, 
@@ -1295,31 +1321,56 @@ class MochiData:
             all_traits_unique = list(set([item for sublist in list(self.model_design['trait']) for item in sublist]))
             #Initialize holdout status (all variants can be held out)
             self.cvgroups = pd.DataFrame({
-                "holdout" : np.array([1]*len(self.Xohi))
+                "holdout" : np.array([1]*len(self))
                 })
             #Consider each additive trait separately
             for t in all_traits_unique:
                 #Phenotypes reporting on this trait
                 relevant_phenotype_columns = ["phenotype_"+str(self.model_design.loc[i,'phenotype']) for i in range(len(self.model_design)) if t in self.model_design.loc[i,'trait']]
+                phenotype_mask = np.asarray(self.phenotypes.loc[:,relevant_phenotype_columns].sum(axis=1)==1)
+                phenotype_indices = np.flatnonzero(phenotype_mask)
                 #Number of observations per coefficient
-                Xohp_colsum = pd.DataFrame(self.Xohi.loc[self.phenotypes.loc[:,relevant_phenotype_columns].sum(axis=1)==1,:].sum(axis=0))
+                if self.is_sparse_feature_matrix():
+                    phenotype_features = self.feature_sparse_matrix[phenotype_indices]
+                    Xohp_colsum = np.asarray(
+                        phenotype_features.sum(axis = 0),
+                        dtype = np.int64).ravel()
+                else:
+                    phenotype_features = self.Xohi.iloc[phenotype_indices, :].to_numpy(
+                        dtype = self.get_feature_numpy_dtype(),
+                        copy = True)
+                    phenotype_feature_activity = phenotype_features != 0
+                    Xohp_colsum = np.sum(
+                        phenotype_feature_activity,
+                        axis = 0,
+                        dtype = np.int64)
                 #Indices of coefficients that do not meet required threshold
-                Xohp_noholdout = list(Xohp_colsum.loc[Xohp_colsum.iloc[:,0]<self.holdout_minobs,:].index)
+                Xohp_noholdout = np.flatnonzero(Xohp_colsum < self.holdout_minobs)
                 #Observations of coefficients that do not meet the required threshold
-                Xohp_noholdout_rowsum = np.array(self.Xohi.loc[self.phenotypes.loc[:,relevant_phenotype_columns].sum(axis=1)==1,Xohp_noholdout].sum(axis=1))
+                if len(Xohp_noholdout) == 0:
+                    Xohp_noholdout_rowsum = np.zeros(len(phenotype_indices), dtype = np.int64)
+                elif self.is_sparse_feature_matrix():
+                    Xohp_noholdout_rowsum = np.asarray(
+                        phenotype_features[:, Xohp_noholdout].sum(axis = 1),
+                        dtype = np.int64).ravel()
+                else:
+                    Xohp_noholdout_rowsum = np.sum(
+                        phenotype_feature_activity[:, Xohp_noholdout],
+                        axis = 1,
+                        dtype = np.int64)
                 #WT variants for these phenotypes
-                Xohp_WT = np.array(self.fdata.vtable.loc[self.phenotypes.loc[:,relevant_phenotype_columns].sum(axis=1)==1,'WT'])
+                Xohp_WT = np.array(self.fdata.vtable.loc[phenotype_mask,'WT'])
                 #Mutation orders for these phenotypes
-                Xohp_mutationOrder = np.array(self.fdata.vtable.loc[self.phenotypes.loc[:,relevant_phenotype_columns].sum(axis=1)==1,self.fdata.mutationOrderCol])
+                Xohp_mutationOrder = np.array(self.fdata.vtable.loc[phenotype_mask,self.fdata.mutationOrderCol])
                 #Current holdout status
-                current_status = list(self.cvgroups.loc[self.phenotypes.loc[:,relevant_phenotype_columns].sum(axis=1)==1,'holdout'])
+                current_status = list(self.cvgroups.loc[phenotype_mask,'holdout'])
                 #Holdout status for this additive trait
                 noholdout_minobs = [Xohp_noholdout_rowsum[i]!=0 for i in range(len(Xohp_noholdout_rowsum))]
                 noholdout_orders = [Xohp_mutationOrder[i] not in self.holdout_orders for i in range(len(Xohp_noholdout_rowsum))]
                 noholdout_WT = [((Xohp_WT[i]==True) & (self.holdout_WT==False)) for i in range(len(Xohp_noholdout_rowsum))]
                 noholdout = [(noholdout_minobs[i] | noholdout_orders[i] | noholdout_WT[i]) for i in range(len(Xohp_noholdout_rowsum))]
                 #New holdout status
-                self.cvgroups.loc[self.phenotypes.loc[:,relevant_phenotype_columns].sum(axis=1)==1,'holdout'] = np.asarray([int((current_status[i]==1) & (noholdout[i]==False)) for i in range(len(Xohp_noholdout_rowsum))])
+                self.cvgroups.loc[phenotype_mask,'holdout'] = np.asarray([int((current_status[i]==1) & (noholdout[i]==False)) for i in range(len(Xohp_noholdout_rowsum))])
         
         #Total number of variants that can be held out
         n_holdout = sum(self.cvgroups.holdout)
@@ -1350,23 +1401,45 @@ class MochiData:
         :param k_folds: Number of cross-validation folds (default:10).
         :returns: Nothing.
         """
-        #Cefficients that can be fit (for each phenotype and fold)
+        # Coefficients that can be fit (for each phenotype and fold).
+        n_features = len(self.get_feature_names())
+        phenotype_values = self.phenotypes.to_numpy(dtype = np.uint8, copy = False)
+        fold_values = {
+            'fold_'+str(i+1): self.cvgroups['fold_'+str(i+1)].to_numpy(copy = False)
+            for i in range(k_folds)}
         self.coefficients = {}
-        for p in self.phenotypes.columns:
-            # self.coefficients[p] = pd.DataFrame({'id': list(self.Xohi.columns)})
-            self.coefficients[p] = pd.DataFrame()
+        for p_index, p in enumerate(self.phenotypes.columns):
+            self.coefficients[p] = np.empty((n_features, k_folds), dtype = np.uint8)
+            phenotype_mask = phenotype_values[:, p_index] == 1
             for i in range(k_folds):
-                Xohp_colsum = pd.DataFrame(self.Xohi.loc[(self.phenotypes[p]==1) & (self.cvgroups['fold_'+str(i+1)]=="training"),:].sum(axis=0))
-                self.coefficients[p]['fold_'+str(i+1)] = np.asarray([int(j!=0) for j in list(Xohp_colsum.iloc[:,0])])
+                row_indices = np.flatnonzero(np.logical_and(phenotype_mask, fold_values['fold_'+str(i+1)] == "training"))
+                if len(row_indices) == 0:
+                    self.coefficients[p][:, i] = 0
+                elif self.is_sparse_feature_matrix():
+                    # The sparse backend already stores retained features as CSR,
+                    # so per-column activity can be read directly without densifying.
+                    self.coefficients[p][:, i] = np.asarray(
+                        self.feature_sparse_matrix[row_indices].getnnz(axis = 0) > 0,
+                        dtype = np.uint8).ravel()
+                else:
+                    self.coefficients[p][:, i] = np.any(
+                        self.Xohi.iloc[row_indices, :].to_numpy(
+                            dtype = self.get_feature_numpy_dtype(),
+                            copy = True) != 0,
+                        axis = 0).astype(np.uint8, copy = False)
 
-        #Coefficients specified to be fit (for each additive trait)
-        self.coefficients_userspec = pd.DataFrame()
+        # Coefficients specified to be fit (for each additive trait)
+        self.coefficients_userspec = np.ones(
+            (n_features, len(self.additive_trait_names)),
+            dtype = np.uint8)
+        xohi_columns = np.asarray(self.get_feature_names())
         for t in range(len(self.additive_trait_names)):
-            tcol = "additive_trait_"+str(t+1)
             if self.additive_trait_names[t] in self.features_trait.keys():
-                self.coefficients_userspec[tcol] = np.asarray([int(i in self.features_trait[self.additive_trait_names[t]]) for i in self.Xohi.columns])
-            else:
-                self.coefficients_userspec[tcol] = np.asarray([1 for i in self.Xohi.columns])
+                allowed_features = set(self.features_trait[self.additive_trait_names[t]])
+                self.coefficients_userspec[:, t] = np.asarray(
+                    [int(i in allowed_features) for i in xohi_columns],
+                    dtype = np.uint8)
+        gc.collect()
 
     def is_valid_instance(
         self):
@@ -1381,7 +1454,6 @@ class MochiData:
             self.phenotype_names,
             self.fitness,
             self.phenotypes,
-            self.X,
             self.Xoh,
             self.Xohi,
             self.cvgroups,
@@ -1389,93 +1461,103 @@ class MochiData:
             self.coefficients_userspec]
         return sum([1 for i in not_none if i is None]) == 0
 
-    def get_data(
-        self, 
+    def get_mask_tensor(
+        self,
+        fold = 1):
+        """
+        Build the fold-specific coefficient mask tensor used by the model.
+
+        :param fold: Cross-validation fold (default:1).
+        :returns: Torch tensor.
+        """
+        mask_tensor = torch.tensor(
+            np.stack(
+                [self.coefficients["phenotype_"+str(i+1)][:, fold-1] for i in range(len(self.coefficients))],
+                axis = 1),
+            dtype = torch.float32)
+        mask_tensor = torch.transpose(mask_tensor, 0, 1)
+        mask_tensor = torch.reshape(mask_tensor, (1, mask_tensor.shape[0], mask_tensor.shape[1]))
+        mask_tensor = mask_tensor.expand(len(self.additive_trait_names), mask_tensor.shape[1], mask_tensor.shape[2])
+        mask_us = torch.transpose(torch.tensor(self.coefficients_userspec, dtype=torch.float32), 0, 1)
+        mask_us = torch.reshape(mask_us, (mask_us.shape[0],1,mask_us.shape[1]))
+        return mask_tensor * mask_us
+
+    def get_split_observation_data(
+        self,
         fold = 1,
         seed = 1,
         training_resample = True):
         """
-        Get data for a specified cross-validation fold.
+        Get fold split metadata without materializing the full feature matrix.
 
         :param fold: Cross-validation fold (default:1).
-        :param seed: Random seed for both training target data resampling and shuffling training data (default:1).
-        :param training_resample: Whether or not to add random noise to training target data proportional to target error (default:True).
-        :returns: Dictionary of dictionaries of tensors.
+        :param seed: Random seed for training target resampling (default:1).
+        :param training_resample: Whether or not to add noise to training targets (default:True).
+        :returns: Dictionary keyed by split name.
         """
-        #Check for fitness data
         if not self.is_valid_instance():
-            print("Error: Invalid MochiData instance.")
+            logger.info("Error: Invalid MochiData instance.")
             raise ValueError
-        #Loop over training, validation and test sets
         fold_name = "fold_"+str(fold)
         data_dict = {}
+        mask_tensor = self.get_mask_tensor(fold = fold)
         for g in list(set(self.cvgroups[fold_name])):
-            #Shuffle indices for training data
-            sind = list(range(sum(self.cvgroups[fold_name]==g)))
-            if g=="training":
-                random.seed(seed+fold*1000000)
-                random.shuffle(sind)
-            data_dict[g] = {}
-            #Select tensor
-            data_dict[g]['select'] = pd.DataFrame(self.phenotypes.loc[self.cvgroups[fold_name]==g,:])
-            data_dict[g]['select'].reset_index(drop = True, inplace = True)
-            data_dict[g]['select'] = torch.tensor(np.asarray(data_dict[g]['select'].loc[sind,:]), dtype=torch.float32)
-            #Mask tensor (n_pheno x n_coef)
-            data_dict[g]['mask'] = torch.tensor(np.asarray(pd.concat([self.coefficients["phenotype_"+str(i+1)].loc[:,fold_name] for i in range(len(self.coefficients))], axis = 1)), dtype=torch.float32)
-            data_dict[g]['mask'] = torch.transpose(data_dict[g]['mask'], 0, 1)
-            #Mask tensor - expand along trait axis (n_trait x n_pheno x n_coef)
-            data_dict[g]['mask'] = torch.reshape(data_dict[g]['mask'], (1, data_dict[g]['mask'].shape[0], data_dict[g]['mask'].shape[1]))
-            data_dict[g]['mask'] = data_dict[g]['mask'].expand(len(self.additive_trait_names), data_dict[g]['mask'].shape[1], data_dict[g]['mask'].shape[2])
-            #Mask tensor - coefficients specified to be fit (n_trait x n_pheno x n_coef)
-            mask_us = torch.transpose(torch.tensor(np.asarray(self.coefficients_userspec), dtype=torch.float32), 0, 1)
-            mask_us = torch.reshape(mask_us, (mask_us.shape[0],1,mask_us.shape[1]))
-            data_dict[g]['mask'] = data_dict[g]['mask']*mask_us
-            #Feature tensor
-            data_dict[g]['X'] = pd.DataFrame(self.Xohi.loc[self.cvgroups[fold_name]==g,:])
-            data_dict[g]['X'].reset_index(drop = True, inplace = True)
-            data_dict[g]['X'] = torch.tensor(np.asarray(data_dict[g]['X'].loc[sind,:]), dtype=torch.float32)
-            #Target tensor
-            data_dict[g]['y'] = pd.DataFrame(self.fitness.loc[self.cvgroups[fold_name]==g,'fitness'])
-            #Add random noise to training target data proportional to target error (if specified)
-            if g=="training" and training_resample:
+            group_mask = np.asarray(self.cvgroups[fold_name] == g)
+            row_indices = np.flatnonzero(group_mask)
+            data_dict[g] = {
+                'row_indices': row_indices,
+                'mask': mask_tensor,
+                'select': torch.tensor(
+                    self.phenotypes.loc[group_mask,:].to_numpy(dtype = np.float32, copy = True),
+                    dtype = torch.float32)}
+            y_values = self.fitness.loc[group_mask,'fitness'].to_numpy(dtype = np.float32, copy = True)
+            if g == "training" and training_resample:
                 np.random.seed(seed+fold*1000000)
-                data_dict[g]['y']['noise'] = [np.random.normal(scale = i) for i in list(self.fitness.loc[self.cvgroups[fold_name]==g,'sigma'])]
-                data_dict[g]['y'] = pd.DataFrame(data_dict[g]['y'].sum(axis = 1))
-            data_dict[g]['y'].reset_index(drop = True, inplace = True)
-            data_dict[g]['y'] = torch.reshape(torch.tensor(np.asarray(data_dict[g]['y'].loc[sind,:]), dtype=torch.float32), (-1, 1))
-            #Target weight tensor
-            data_dict[g]['y_wt'] = pd.DataFrame(self.fitness.loc[self.cvgroups[fold_name]==g,'weight'])
-            data_dict[g]['y_wt'].reset_index(drop = True, inplace = True)
-            data_dict[g]['y_wt'] = torch.reshape(torch.tensor(np.asarray(data_dict[g]['y_wt'].loc[sind,:]), dtype=torch.float32), (-1, 1))
+                y_values = y_values + np.asarray(
+                    [np.random.normal(scale = i) for i in list(self.fitness.loc[group_mask,'sigma'])],
+                    dtype = np.float32)
+            data_dict[g]['y'] = torch.reshape(torch.tensor(y_values, dtype = torch.float32), (-1, 1))
+            data_dict[g]['y_wt'] = torch.reshape(
+                torch.tensor(
+                    self.fitness.loc[group_mask,'weight'].to_numpy(dtype = np.float32, copy = True),
+                    dtype = torch.float32),
+                (-1, 1))
         return data_dict
 
-    def get_data_index(
-        self, 
-        indices = []):
+    # Dense materialization helper for narrow compatibility APIs and tests.
+    # Sparse-native training should read feature_sparse_matrix directly for the
+    # main train/validation/test batches; small callers such as WT validation
+    # can still request selected dense rows.
+    def materialize_feature_matrix(
+        self,
+        row_indices,
+        feature_indices = None,
+        dtype = None):
         """
-        Get data corresponding to specific variants (by index).
+        Materialize a dense feature matrix for a selected row subset.
 
-        :param indices: Variant/observation indices (default:None i.e. all indices).
-        :returns: Dictionary of dictionary of tensors (select, feature and target tensors only).
+        :param row_indices: Row indices to materialize (required).
+        :param feature_indices: Feature indices to materialize (default:None i.e. all).
+        :param dtype: Output dtype (default:feature storage dtype).
+        :returns: ndarray.
         """
-        #Set to all indices if empty list
-        if indices == []:
-            indices = list(self.phenotypes.index)
-
-        data_dict = {}
-        #Select tensor
-        data_dict['select'] = pd.DataFrame(self.phenotypes.iloc[indices,:])
-        data_dict['select'].reset_index(drop = True, inplace = True)
-        data_dict['select'] = torch.tensor(np.asarray(data_dict['select']), dtype=torch.float32)
-        #Feature tensor
-        data_dict['X'] = pd.DataFrame(self.Xohi.iloc[indices,:])
-        data_dict['X'].reset_index(drop = True, inplace = True)
-        data_dict['X'] = torch.tensor(np.asarray(data_dict['X']), dtype=torch.float32)
-        #Target tensor
-        data_dict['y'] = pd.DataFrame(self.fitness.iloc[indices,:]['fitness'])
-        data_dict['y'].reset_index(drop = True, inplace = True)
-        data_dict['y'] = torch.reshape(torch.tensor(np.asarray(data_dict['y']), dtype=torch.float32), (-1, 1))
-        return data_dict
+        if dtype is None:
+            dtype = self.get_feature_numpy_dtype()
+        row_indices = np.asarray(row_indices, dtype = np.int64)
+        if feature_indices is None:
+            feature_indices = np.arange(len(self.get_feature_names()), dtype = np.int64)
+        else:
+            feature_indices = np.asarray(feature_indices, dtype = np.int64)
+        if len(feature_indices) == 0:
+            return np.empty((len(row_indices), 0), dtype = dtype)
+        if self.is_sparse_feature_matrix():
+            matrix = self.feature_sparse_matrix[row_indices][:, feature_indices].toarray()
+            if matrix.dtype != dtype:
+                matrix = matrix.astype(dtype, copy = False)
+            return matrix
+        return self.Xohi.iloc[row_indices, feature_indices].to_numpy(
+            dtype = dtype,
+            copy = True)
 
     def __len__(self):
         """
@@ -1484,86 +1566,6 @@ class MochiData:
         """
         return len(self.fdata)
 
-# class MochiDataset(Dataset):
-#     def __init__(
-#         self, 
-#         root, 
-#         data,
-#         dataset_type = 'training', 
-#         fold = 1, 
-#         seed = 1,
-#         training_resample = True,
-#         transform = None):
-#         """
-#         Initialize a MochiDataset object.
-
-#         :param root: Path to data directory (required).
-#         :param data: An instance of the MochiData class (required).
-#         :param dataset_type: One of 'training', 'validation', 'test' (default:'training').
-#         :param fold: Cross-validation fold (default:1).
-#         :param seed: Random seed for both training target data resampling and shuffling training data (default:1).
-#         :param training_resample: Whether or not to add random noise to training target data proportional to target error (default:True).
-#         :param transform: Transform to apply to feature data (default:None).
-#         :returns: MochiTask object.
-#         """ 
-#         self.root = root
-#         self.data = data
-#         self.dataset_type = dataset_type
-#         self.fold_name = "fold_"+str(fold)
-#         self.seed = seed
-#         self.training_resample = training_resample
-#         self.transform = transform
-#         idx_list = list(self.data.cvgroups.loc[self.data.cvgroups[self.fold_name]==self.dataset_type,:].index)
-#         self.idx_dict = {i:idx_list[i] for i in range(len(idx_list))}
-
-#         #Target data
-#         self.y = pd.DataFrame(self.data.fitness.loc[self.data.cvgroups[self.fold_name]==self.dataset_type,'fitness'])
-#         #Add random noise to training target data proportional to target error (if specified)
-#         if self.dataset_type=="training" and self.training_resample:
-#             np.random.seed(self.seed)
-#             self.y['noise'] = [np.random.normal(scale = i) for i in list(self.data.fitness.loc[self.data.cvgroups[self.fold_name]==self.dataset_type,'sigma'])]
-#             self.y['y'] = pd.DataFrame(self.y.sum(axis = 1))
-
-#     def __getitem__(self, idx):
-#         #Observation
-#         obs_number = self.idx_dict[idx]
-
-#         #Feature tensor
-#         file_name = "data_chunk"+str(obs_number - obs_number % 100)+".csv"
-#         line_number = obs_number % 100
-#         line = linecache.getline(os.path.join(self.root, file_name), line_number)
-#         csv_line = csv.reader([line])
-#         X = torch.tensor(np.asarray([int(x) for x in next(csv_line)]), dtype=torch.float32)
-
-#         #Target tensor
-#         y = self.y.loc[obs_number,'fitness']
-#         y = torch.reshape(torch.tensor(np.asarray(y), dtype=torch.float32), (-1, 1))
-
-#         return X,y
-
-#     def __len__(self):
-#         return len(self.idx_dict)
-
-# class CustomImageDataset(Dataset):
-#     def __init__(self, annotations_file, img_dir, transform=None, target_transform=None):
-#         self.img_labels = pd.read_csv(annotations_file)
-#         self.img_dir = img_dir
-#         self.transform = transform
-#         self.target_transform = target_transform
-
-#     def __len__(self):
-#         return len(self.img_labels)
-
-#     def __getitem__(self, idx):
-#         img_path = os.path.join(self.img_dir, self.img_labels.iloc[idx, 0])
-#         image = read_image(img_path)
-#         label = self.img_labels.iloc[idx, 1]
-#         if self.transform:
-#             image = self.transform(image)
-#         if self.target_transform:
-#             label = self.target_transform(label)
-#         return image, label
-        
 class FastTensorDataLoader:
     """
     A DataLoader-like object for a set of tensors that can be much faster than
@@ -1599,16 +1601,226 @@ class FastTensorDataLoader:
         self.n_batches = n_batches
     def __iter__(self):
         if self.shuffle:
-            r = torch.randperm(self.dataset_len)
-            self.tensors = [t[r] for t in self.tensors]
+            self.indices = torch.randperm(self.dataset_len, device = self.tensors[0].device)
+        else:
+            self.indices = None
         self.i = 0
         return self
 
     def __next__(self):
         if self.i >= self.dataset_len:
             raise StopIteration
-        batch = tuple(t[self.i:self.i+self.batch_size] for t in self.tensors)
+        if self.indices is None:
+            batch = tuple(t[self.i:self.i+self.batch_size] for t in self.tensors)
+        else:
+            batch_indices = self.indices[self.i:self.i+self.batch_size]
+            batch = tuple(t[batch_indices] for t in self.tensors)
         self.i += self.batch_size
+        return batch
+
+    def __len__(self):
+        return self.n_batches
+
+class MaterializingRowDataLoader:
+    """
+    A DataLoader-like object with cached, prefetched feature blocks.
+    """
+    def __init__(
+        self,
+        data,
+        row_indices,
+        select,
+        y,
+        y_wt,
+        device = None,
+        batch_size = 32,
+        shuffle = False):
+        """
+        Initialize an on-demand row loader.
+
+        :param data: MochiData instance (required).
+        :param row_indices: Row indices for this split (required).
+        :param select: Select tensor (required).
+        :param y: Target tensor (required).
+        :param y_wt: Target-weight tensor (required).
+        :param batch_size: Batch size to load (default:32).
+        :param shuffle: Whether to shuffle batches each epoch (default:False).
+        :returns: MaterializingRowDataLoader object.
+        """
+        self.data = data
+        self.row_indices = np.asarray(row_indices, dtype = np.int64)
+        self.select = select
+        self.y = y
+        self.y_wt = y_wt
+        assert self.select.shape[0] == len(self.row_indices)
+        assert self.y.shape[0] == len(self.row_indices)
+        assert self.y_wt.shape[0] == len(self.row_indices)
+        self.dataset_len = len(self.row_indices)
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+        self.sparse_native = self.data.is_sparse_feature_matrix()
+        self.feature_numpy_dtype = self.data.get_feature_numpy_dtype()
+        self.feature_tensor_dtype = self.data.get_feature_tensor_dtype()
+        self.prefetch_blocks = max(1, int(os.environ.get("MOCHI_PREFETCH_BLOCKS", "2")))
+        self.prefetch_batches = max(1, int(os.environ.get("MOCHI_PREFETCH_BATCHES", "8")))
+        self.block_rows = max(
+            self.batch_size,
+            int(os.environ.get("MOCHI_FEATURE_BLOCK_ROWS", str(self.batch_size * self.prefetch_batches))))
+        self.max_cached_blocks = max(1, int(os.environ.get("MOCHI_MAX_CACHED_BLOCKS", "3")))
+        self.pin_memory = torch.cuda.is_available()
+        self.block_slices = [
+            (start, min(start + self.block_rows, self.dataset_len))
+            for start in range(0, self.dataset_len, self.block_rows)]
+        self.block_cache = collections.OrderedDict()
+        self._prefetch_thread = None
+        self._prefetch_queue = None
+        self._current_block = None
+        self._current_block_pos = 0
+        n_batches, remainder = divmod(self.dataset_len, self.batch_size)
+        if remainder > 0:
+            n_batches += 1
+        self.n_batches = n_batches
+
+    def _maybe_pin(
+        self,
+        tensor):
+        """
+        Pin CPU tensor memory when CUDA is available.
+
+        :param tensor: Tensor to pin (required).
+        :returns: Tensor.
+        """
+        if self.pin_memory and tensor.device.type == "cpu":
+            return tensor.pin_memory()
+        return tensor
+
+    def _get_cached_block(
+        self,
+        block_id):
+        """
+        Get or materialize a canonical split-local feature block.
+
+        :param block_id: Canonical block identifier (required).
+        :returns: Tuple of tensors.
+        """
+        if block_id in self.block_cache:
+            self.block_cache.move_to_end(block_id)
+            return self.block_cache[block_id]
+        start, stop = self.block_slices[block_id]
+        if self.sparse_native:
+            feature_block = self.data.feature_sparse_matrix[self.row_indices[start:stop]]
+        else:
+            feature_block = self._maybe_pin(torch.tensor(
+                self.data.materialize_feature_matrix(
+                    row_indices = self.row_indices[start:stop],
+                    dtype = self.feature_numpy_dtype),
+                dtype = self.feature_tensor_dtype))
+        block = (
+            self._maybe_pin(self.select[start:stop].contiguous()),
+            feature_block,
+            self._maybe_pin(self.y[start:stop].contiguous()),
+            self._maybe_pin(self.y_wt[start:stop].contiguous()))
+        self.block_cache[block_id] = block
+        self.block_cache.move_to_end(block_id)
+        while len(self.block_cache) > self.max_cached_blocks:
+            self.block_cache.popitem(last = False)
+        return block
+
+    def _build_sparse_batch(
+        self,
+        csr_block,
+        batch_index):
+        """
+        Convert a cached CSR block slice into one sparse-native batch payload.
+
+        :param csr_block: Cached CSR block (required).
+        :param batch_index: Batch row selector (required).
+        :returns: Dictionary payload.
+        """
+        if torch.is_tensor(batch_index):
+            batch_index = batch_index.detach().cpu().numpy().astype(np.int64, copy = False)
+        batch_csr = csr_block[batch_index]
+        sparse_batch = build_sparse_feature_batch(batch_csr)
+        for key in ["indices", "offsets", "values"]:
+            if key in sparse_batch:
+                sparse_batch[key] = self._maybe_pin(sparse_batch[key])
+        return sparse_batch
+
+    def _prefetch_worker(
+        self):
+        """
+        Materialize upcoming blocks in the background.
+
+        :returns: Nothing.
+        """
+        for block_id, block_order in self._epoch_blocks:
+            block = self._get_cached_block(block_id)
+            self._prefetch_queue.put((block, block_order))
+        self._prefetch_queue.put(None)
+
+    def _next_cpu_batch(
+        self):
+        """
+        Get the next CPU batch from the current prefetched block stream.
+
+        :returns: Tuple of tensors or None when exhausted.
+        """
+        while True:
+            if self._current_block is None or self._current_block_pos >= self._current_block[0].shape[0]:
+                next_item = self._prefetch_queue.get()
+                if next_item is None:
+                    return None
+                self._current_block, self._current_order = next_item
+                self._current_block_pos = 0
+            select_block, X_block, y_block, y_wt_block = self._current_block
+            stop = min(self._current_block_pos + self.batch_size, select_block.shape[0])
+            if self._current_order is None:
+                batch_index = slice(self._current_block_pos, stop)
+            else:
+                batch_index = self._current_order[self._current_block_pos:stop]
+            self._current_block_pos = stop
+            if self.sparse_native:
+                batch = (
+                    self._maybe_pin(select_block[batch_index].contiguous()),
+                    self._build_sparse_batch(X_block, batch_index),
+                    self._maybe_pin(y_block[batch_index].contiguous()),
+                    self._maybe_pin(y_wt_block[batch_index].contiguous()))
+            else:
+                batch = tuple(self._maybe_pin(tensor.contiguous()) for tensor in (
+                    select_block[batch_index],
+                    X_block[batch_index],
+                    y_block[batch_index],
+                    y_wt_block[batch_index]))
+            self._batches_yielded += 1
+            return batch
+
+    def __iter__(self):
+        block_ids = list(range(len(self.block_slices)))
+        if self.shuffle:
+            block_ids = torch.randperm(len(block_ids)).tolist()
+        self._epoch_blocks = []
+        for block_id in block_ids:
+            start, stop = self.block_slices[block_id]
+            block_len = stop - start
+            if self.shuffle:
+                block_order = torch.randperm(block_len)
+            else:
+                block_order = None
+            self._epoch_blocks.append((block_id, block_order))
+        self._prefetch_queue = queue.Queue(maxsize = self.prefetch_blocks)
+        self._prefetch_thread = threading.Thread(
+            target = self._prefetch_worker,
+            daemon = True)
+        self._prefetch_thread.start()
+        self._current_block = None
+        self._current_block_pos = 0
+        self._batches_yielded = 0
+        return self
+
+    def __next__(self):
+        batch = self._next_cpu_batch()
+        if batch is None:
+            raise StopIteration
         return batch
 
     def __len__(self):

@@ -1,3 +1,4 @@
+from loguru import logger
 import argparse
 import os
 import re
@@ -82,10 +83,10 @@ else:
 if conda_path is None:
     raise RuntimeError("Could not find a conda binary in CONDA_EXE variable or in executable search path")
 
-print("CONDA ENV NAME  {}".format(args.name))
-print("PYTHON VERSION  {}".format(args.python))
-print("CONDA FILE NAME {}".format(args.conda_file))
-print("CONDA PATH      {}".format(conda_path))
+logger.info("CONDA ENV NAME  {}".format(args.name))
+logger.info("PYTHON VERSION  {}".format(args.python))
+logger.info("CONDA FILE NAME {}".format(args.conda_file))
+logger.info("CONDA PATH      {}".format(conda_path))
 
 # Write to a temp directory which will always be cleaned up
 with temp_cd():

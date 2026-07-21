@@ -3,6 +3,7 @@
 MoCHI model module
 """
 
+from loguru import logger
 import os
 import bz2
 import pickle
@@ -15,7 +16,185 @@ from pymochi.transformation import get_transformation
 import itertools
 import shutil
 import functools
+import uuid
 from sklearn.cluster import KMeans
+
+def move_tensor_to_device(
+    tensor,
+    device):
+    """
+    Move tensor to target device only when needed.
+
+    :param tensor: Tensor to move (required).
+    :param device: Target torch device (required).
+    :returns: Tensor on target device.
+    """
+    return tensor.to(device, non_blocking = (device.type == "cuda"))
+
+def feature_tensor_is_sparse_native(
+    tensor):
+    """
+    Check whether a feature payload uses sparse-native CSR indices.
+
+    :param tensor: Feature payload (required).
+    :returns: Boolean.
+    """
+    return isinstance(tensor, dict) and tensor.get("layout") == "csr_indices"
+
+def record_feature_tensor_stream(
+    tensor,
+    stream):
+    """
+    Record a CUDA stream on dense or sparse-native feature payloads.
+
+    :param tensor: Feature payload (required).
+    :param stream: CUDA stream (required).
+    :returns: Nothing.
+    """
+    if feature_tensor_is_sparse_native(tensor):
+        for key in ["indices", "offsets", "values"]:
+            if key in tensor:
+                tensor[key].record_stream(stream)
+        return
+    tensor.record_stream(stream)
+
+def prepare_feature_tensor(
+    tensor,
+    device):
+    """
+    Prepare dense or sparse-native feature payload for model execution.
+
+    Dense features are moved and converted to float32. Sparse-native payload
+    tensors are moved while retaining integer CSR indices and offsets.
+
+    :param tensor: Dense feature tensor or sparse-native payload (required).
+    :param device: Target torch device (required).
+    :returns: Prepared dense float32 tensor or sparse-native payload.
+    """
+    if feature_tensor_is_sparse_native(tensor):
+        prepared = {
+            "layout": tensor["layout"],
+            "shape": tensor["shape"],
+            "indices": move_tensor_to_device(tensor["indices"], device),
+            "offsets": move_tensor_to_device(tensor["offsets"], device)}
+        if "values" in tensor:
+            values = move_tensor_to_device(tensor["values"], device)
+            if values.dtype != torch.float32:
+                values = values.to(torch.float32)
+            prepared["values"] = values
+        return prepared
+    tensor = move_tensor_to_device(tensor, device)
+    if tensor.dtype != torch.float32:
+        tensor = tensor.to(torch.float32)
+    return tensor
+
+class DevicePrefetchLoader:
+    """
+    Overlap host-to-device copies of the next batch with current compute.
+    """
+    def __init__(
+        self,
+        dataloader,
+        device):
+        self.dataloader = dataloader
+        self.device = device
+        prefetch_override = os.environ.get("MOCHI_GPU_PREFETCH", "1").lower()
+        self.enabled = (
+            self.device.type == "cuda" and
+            torch.cuda.is_available() and
+            prefetch_override not in ["0", "false", "no", "off"])
+        self.stream = torch.cuda.Stream(device = self.device) if self.enabled else None
+        self.loader_iter = None
+        self.next_batch = None
+
+    def _move_batch_to_device(
+        self,
+        batch):
+        select, X, y, y_wt = batch
+        return (
+            move_tensor_to_device(select, self.device),
+            prepare_feature_tensor(X, self.device),
+            move_tensor_to_device(y, self.device),
+            move_tensor_to_device(y_wt, self.device))
+
+    def _preload(self):
+        try:
+            batch = next(self.loader_iter)
+        except StopIteration:
+            self.next_batch = None
+            return
+        if not self.enabled:
+            self.next_batch = self._move_batch_to_device(batch)
+            return
+        with torch.cuda.stream(self.stream):
+            self.next_batch = self._move_batch_to_device(batch)
+
+    def __iter__(self):
+        self.loader_iter = iter(self.dataloader)
+        self.next_batch = None
+        self._preload()
+        return self
+
+    def __next__(self):
+        if self.next_batch is None:
+            raise StopIteration
+        if self.enabled:
+            current_stream = torch.cuda.current_stream(device = self.device)
+            current_stream.wait_stream(self.stream)
+        batch = self.next_batch
+        if self.enabled:
+            for tensor in batch:
+                record_feature_tensor_stream(tensor, current_stream)
+        self._preload()
+        return batch
+
+    def __len__(self):
+        return len(self.dataloader)
+
+def choose_compute_device():
+    """
+    Choose compute device for the current task.
+
+    Set MOCHI_DEVICE=cpu|cuda|auto to override. Auto selects CUDA when
+    available.
+
+    :returns: Tuple of torch.device and human-readable reason.
+    """
+    device_override = os.environ.get("MOCHI_DEVICE", "auto").lower()
+    cuda_available = torch.cuda.is_available()
+    if device_override == "cpu":
+        return (torch.device("cpu"), "forced by MOCHI_DEVICE=cpu")
+    if device_override == "cuda":
+        if cuda_available:
+            return (torch.device("cuda"), "forced by MOCHI_DEVICE=cuda")
+        return (torch.device("cpu"), "MOCHI_DEVICE=cuda requested but CUDA unavailable")
+    if not cuda_available:
+        return (torch.device("cpu"), "CUDA unavailable")
+    return (torch.device("cuda"), "auto-selected CUDA")
+
+def choose_amp_enabled(
+    device):
+    """
+    Decide whether CUDA automatic mixed precision should be enabled.
+
+    Set MOCHI_AMP=0|1|auto to override. Defaults to auto on CUDA. Invalid
+    values raise ValueError.
+
+    :param device: Active torch device (required).
+    :returns: Tuple of boolean and human-readable reason.
+    """
+    amp_override = os.environ.get("MOCHI_AMP", "auto").lower()
+    if amp_override not in ["0", "1", "auto"]:
+        raise ValueError(
+            "MOCHI_AMP must be one of: 0, 1, auto "
+            f"(got {amp_override!r})")
+    if device.type != "cuda":
+        return (False, "AMP disabled on non-CUDA device")
+    if amp_override == "1":
+        return (True, "forced by MOCHI_AMP=1")
+    if amp_override == "auto":
+        return (True, "auto-selected CUDA AMP")
+    return (False, "disabled by MOCHI_AMP=0")
 
 class ConstrainedLinear(torch.nn.Linear):
     """
@@ -80,16 +259,6 @@ class MochiModel(torch.nn.Module):
         self.globalparams = torch.nn.ModuleList(
             [torch.nn.ParameterDict({j:torch.nn.Parameter(torch.tensor(1.0), requires_grad=True) for j in get_transformation(i, custom = self.custom_transformations)().keys()}) for i in self.model_design.transformation])
 
-        # #Shared global parameters
-        # #Identify shared global parameters
-        # shared_globalparams = {}
-        # for i in self.globalparams:
-        #     shared_globalparams = shared_globalparams|{k:v for k,v in i if k.endswith("_shared")}
-        # #Set pointers to shared global parameters
-        # for i in self.globalparams:
-        #     for j in i.keys():
-        #         if j.endswith("_shared"):
-        #             i[j] = shared_globalparams[j]
 
         #Arbitrary non-linear transformations (arbitrary architecture) - SumOfSigmoids
         #Additive trait dimensionality of SOS phenotypes
@@ -120,55 +289,118 @@ class MochiModel(torch.nn.Module):
         for i in range(len(self.model_design)):
             self.training_history['residual'+str(i+1)+"_WT"] = []
         #Mask coefficients that are impossible to fit
-        self.mask = mask
+        self.register_buffer("mask", mask)
+
+    def _ensure_forward_metadata(self):
+        """
+        Cache phenotype metadata used repeatedly in forward passes.
+
+        :returns: Nothing.
+        """
+        if hasattr(self, "_forward_trait_indices"):
+            return
+        self._forward_trait_indices = [
+            tuple([trait_index - 1 for trait_index in trait_list])
+            for trait_list in self.model_design['trait']]
+        self._forward_transformations = list(self.model_design['transformation'])
+        self._forward_sos_indices = []
+        for phenotype_index in range(len(self.model_design)):
+            if self._forward_transformations[phenotype_index] == "SumOfSigmoids":
+                self._forward_sos_indices.append(
+                    int(self.model_design.loc[phenotype_index, 'sos_index']))
+            else:
+                self._forward_sos_indices.append(None)
+
+    def _compute_additive_trait_matrix(
+        self,
+        X,
+        mask,
+        phenotype_index,
+        stacked_trait_weights):
+        """
+        Evaluate all additive traits for one phenotype in a single linear call.
+
+        :param X: Feature tensor describing input sequences and interactions (required).
+        :param mask: Mask tensor which sets corresponding features to zero (required).
+        :param phenotype_index: Phenotype index (required).
+        :param stacked_trait_weights: Stacked additive-trait weights (required).
+        :returns: Tensor of additive trait outputs for the phenotype.
+        """
+        trait_indices = self._forward_trait_indices[phenotype_index]
+        effective_weights = (
+            stacked_trait_weights[list(trait_indices)] *
+            mask[list(trait_indices), phenotype_index, :])
+        if feature_tensor_is_sparse_native(X):
+            if X["indices"].numel() == 0:
+                return torch.zeros(
+                    (len(X["offsets"]), effective_weights.shape[0]),
+                    dtype = effective_weights.dtype,
+                    device = effective_weights.device)
+            embedding_weights = torch.transpose(effective_weights, 0, 1).contiguous()
+            if "values" in X:
+                return F.embedding_bag(
+                    input = X["indices"],
+                    weight = embedding_weights,
+                    offsets = X["offsets"],
+                    mode = "sum",
+                    per_sample_weights = X["values"])
+            return F.embedding_bag(
+                input = X["indices"],
+                weight = embedding_weights,
+                offsets = X["offsets"],
+                mode = "sum")
+        return F.linear(X, effective_weights)
 
     def forward(
         self, 
         select, 
         X,
-        mask):
+        mask = None):
         """
         Forward pass through the model.
 
         :param select: Select tensor which indicates the corresponding phenotype (required).
         :param X: Feature tensor describing input sequences and interactions (required).
-        :param mask: Mask tensor which sets corresponding features to zero (required).
+        :param mask: Mask tensor which sets corresponding features to zero (default:model mask buffer).
         :returns: Output tensor.
         """  
-        #Split select tesnsor into list
-        select_list = [torch.narrow(select, 1, i, 1) for i in range(select.shape[1])]
-
-        # #Split mask tensor into list
-        # mask_list = [torch.narrow(mask, 0, i, 1) for i in range(mask.shape[0])]
+        if mask is None:
+            mask = self.mask
+        self._ensure_forward_metadata()
+        stacked_trait_weights = torch.cat(
+            [layer.weight for layer in self.additivetraits],
+            dim = 0)
 
         #Loop over all phenotypes
         observed_phenotypes = []
         for i in range(len(self.model_design)):
-            #Additive traits
-            # additive_traits = [self.additivetraits[j-1](torch.mul(X, mask_list[i])) for j in self.model_design.loc[i,'trait']]
-            additive_traits = [self.additivetraits[j-1](torch.mul(
-                X, 
-                torch.reshape(torch.narrow(torch.narrow(mask, 0, j-1, 1), 1, i, 1), (1, -1)))) for j in self.model_design.loc[i,'trait']]
+            additive_trait_matrix = self._compute_additive_trait_matrix(
+                X = X,
+                mask = mask,
+                phenotype_index = i,
+                stacked_trait_weights = stacked_trait_weights)
+            additive_traits = [
+                torch.narrow(additive_trait_matrix, 1, j, 1)
+                for j in range(additive_trait_matrix.shape[1])]
             #Molecular phenotypes
-            if self.model_design.loc[i,'transformation'] not in ["SumOfSigmoids"]:
+            if self._forward_transformations[i] not in ["SumOfSigmoids"]:
                 globalparams = self.globalparams[i]
-                transformed_trait = get_transformation(self.model_design.loc[i,'transformation'], custom = self.custom_transformations)(additive_traits, globalparams)           
-            elif self.model_design.loc[i,'transformation'] == "SumOfSigmoids":
+                transformed_trait = get_transformation(
+                    self._forward_transformations[i],
+                    custom = self.custom_transformations)(additive_traits, globalparams)
+            elif self._forward_transformations[i] == "SumOfSigmoids":
                 #SumOfSigmoids layers
-                transformed_trait = None
+                transformed_trait = additive_trait_matrix
+                sos_index = self._forward_sos_indices[i]
                 for j in range(len(self.sumofsigmoids_list)):
-                    if j == 0:
-                        transformed_trait = torch.sigmoid(self.sumofsigmoids_list[j][int(self.model_design.loc[i,'sos_index'])](torch.cat(additive_traits, 1)))
-                    elif j != (len(self.sumofsigmoids_list)-1):
-                        transformed_trait = torch.sigmoid(self.sumofsigmoids_list[j][int(self.model_design.loc[i,'sos_index'])](transformed_trait))
-                    else:
-                        if self.sos_outputlinear:
-                            transformed_trait = self.sumofsigmoids_list[j][int(self.model_design.loc[i,'sos_index'])](transformed_trait)
-                        else:
-                            transformed_trait = torch.sigmoid(self.sumofsigmoids_list[j][int(self.model_design.loc[i,'sos_index'])](transformed_trait))
+                    transformed_trait = self.sumofsigmoids_list[j][sos_index](transformed_trait)
+                    if j != (len(self.sumofsigmoids_list)-1) or not self.sos_outputlinear:
+                        transformed_trait = torch.sigmoid(transformed_trait)
 
             #Observed phenotypes
-            observed_phenotypes += [torch.mul(self.linears[i](transformed_trait), select_list[i])]
+            observed_phenotypes += [torch.mul(
+                self.linears[i](transformed_trait),
+                torch.narrow(select, 1, i, 1))]
         #Sum observed phenotypes
         return torch.stack(observed_phenotypes, dim=0).sum(dim=0)
 
@@ -197,26 +429,6 @@ class MochiModel(torch.nn.Module):
             # self.linears[i].bias.data.fill_(0)
             self.linears[i].weight.data.fill_(linear_weight[i])
             self.linears[i].bias.data.fill_(linear_bias[i])
-
-    def get_data_loaders(
-        self, 
-        data, 
-        batch_size):
-        """
-        Get list of dataloaders.
-
-        :param data: Dictionary of dictionaries of tensors as output by MochiData.get_data (required).
-        :param batch_size: Minibatch size (required).
-        :returns: Tuple of dataloaders.
-        """ 
-        dataloader_list = []
-        for k in ['training', 'validation', 'test']:
-            dataloader_list.append(FastTensorDataLoader(
-                data[k]["select"], 
-                data[k]["X"], 
-                data[k]["y"], 
-                data[k]["y_wt"], batch_size=batch_size, shuffle=True))
-        return tuple(dataloader_list)
 
     def calculate_l1l2_norm(self):      
         """
@@ -250,6 +462,8 @@ class MochiModel(torch.nn.Module):
         loss_function, 
         optimizer, 
         device, 
+        scaler = None,
+        use_amp = False,
         l1_lambda = 0, 
         l2_lambda = 0):
         """
@@ -258,67 +472,83 @@ class MochiModel(torch.nn.Module):
         :param dataloader: Dataloader (required).
         :param loss_function: Loss function (required).
         :param optimizer: Optimizer (required).
-        :param device: cpu or cuda (required).
+        :param device: Target torch device for batch preparation (required).
+        :param scaler: CUDA AMP gradient scaler; required when `use_amp` is True (default:None).
+        :param use_amp: Whether to use automatic mixed precision during forward and loss computation (default:False).
         :param l1_lambda: Lambda factor applied to L1 norm (default:0).
         :param l2_lambda: Lambda factor applied to L2 norm (default:0).
+        :raises ValueError: If AMP is enabled without a gradient scaler.
         :returns: Nothing.
         """ 
-        size = dataloader.dataset_len
+        if use_amp and scaler is None:
+            raise ValueError("A gradient scaler is required when AMP is enabled.")
         self.train()
-        batch = 0
-        mask = self.mask.to(device)
-        for select, X, y, y_wt in dataloader:
-            batch += 1
-            select, X, y, y_wt = select.to(device), X.to(device), y.to(device), y_wt.to(device)
-            # Regularisation of additive trait parameters (excluding WT)
-            l1_norm, l2_norm = self.calculate_l1l2_norm()
-            # Compute prediction error (weighted by measurement error) + regularization terms
-            pred = self(select, X, mask)
-            loss = sum(loss_function(pred, y, y_wt))/len(y) + l1_lambda * l1_norm + l2_lambda * l2_norm
-            # Backpropagation
+        for select, X, y, y_wt in DevicePrefetchLoader(dataloader, device):
             optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            with torch.amp.autocast(device_type = device.type, enabled = use_amp):
+                # Regularisation of additive trait parameters (excluding WT)
+                l1_norm, l2_norm = self.calculate_l1l2_norm()
+                # Compute prediction error (weighted by measurement error) + regularization terms
+                pred = self(select, X)
+                loss = sum(loss_function(pred, y, y_wt))/len(y) + l1_lambda * l1_norm + l2_lambda * l2_norm
+            # Backpropagation
+            if use_amp:
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                optimizer.step()
   
     def validate_model(
         self, 
         dataloader, 
         loss_function, 
         device, 
+        use_amp = False,
         l1_lambda = 0, 
         l2_lambda = 0, 
         data_WT = None):
         """
         Validate model.
 
-        :param dataloader: Dataloader (required).
+        Evaluate every validation batch without computing gradients, then record
+        mean validation loss, WT additive-trait coefficients, and optional WT
+        residuals in ``training_history``.
+
+        :param dataloader: Validation dataloader yielding ``select``, ``X``,
+            ``y``, and ``y_wt`` batches (required).
         :param loss_function: Loss function (required).
-        :param optimizer: Optimizer (required).
-        :param device: cpu or cuda (required).
+        :param device: Target torch device for batch preparation (required).
+        :param use_amp: Whether to use automatic mixed precision for inference
+            and loss computation (default:False).
         :param l1_lambda: Lambda factor applied to L1 norm (default:0).
         :param l2_lambda: Lambda factor applied to L2 norm (default:0).
-        :param data_WT: Dictionary of tensors corresponding to WT sequences only (default:0).
+        :param data_WT: Optional dictionary containing ``select``, ``X``, and
+            ``y`` tensors for WT sequences used to record residuals
+            (default:None).
         :returns: Nothing.
         """ 
-        size = dataloader.dataset_len
         num_batches = len(dataloader)
         self.eval()
         val_loss = 0
-        val_WT_resid = []
+        val_WT_resid = None
         with torch.no_grad():
-            mask = self.mask.to(device)
-            for select, X, y, y_wt in dataloader:
-                select, X, y, y_wt = select.to(device), X.to(device), y.to(device), y_wt.to(device)
-                # Regularisation of additive trait parameters (excluding WT)
-                l1_norm, l2_norm = self.calculate_l1l2_norm()
-                # Compute prediction error (weighted by measurement error) + regularization terms
-                pred = self(select, X, mask)
-                val_loss += (sum(loss_function(pred, y, y_wt))/len(y) + l1_lambda * l1_norm + l2_lambda * l2_norm).item()
+            for select, X, y, y_wt in DevicePrefetchLoader(dataloader, device):
+                with torch.amp.autocast(device_type = device.type, enabled = use_amp):
+                    # Regularisation of additive trait parameters (excluding WT)
+                    l1_norm, l2_norm = self.calculate_l1l2_norm()
+                    # Compute prediction error (weighted by measurement error) + regularization terms
+                    pred = self(select, X)
+                    val_loss += (sum(loss_function(pred, y, y_wt))/len(y) + l1_lambda * l1_norm + l2_lambda * l2_norm).item()
             #Training history - WT residuals
-            if data_WT!=None:
-                select_WT, X_WT, y_WT = data_WT['select'].to(device), data_WT['X'].to(device), data_WT['y'].to(device)
-                pred_WT = self(select_WT, X_WT, mask)
-                val_WT_resid = list(np.asarray((y_WT - pred_WT).detach().cpu()))
+            if data_WT is not None:
+                select_WT = move_tensor_to_device(data_WT['select'], device)
+                X_WT = prepare_feature_tensor(data_WT['X'], device)
+                y_WT = move_tensor_to_device(data_WT['y'], device)
+                with torch.amp.autocast(device_type = device.type, enabled = use_amp):
+                    pred_WT = self(select_WT, X_WT)
+                val_WT_resid = np.asarray((y_WT - pred_WT).detach().cpu()).reshape(-1).tolist()
         val_loss /= num_batches
         #Save training history - validation loss
         self.training_history["val_loss"].append(val_loss)
@@ -326,7 +556,7 @@ class MochiModel(torch.nn.Module):
         for i in range(len(self.additivetraits)):
             self.training_history['additivetrait'+str(i+1)+"_WT"].append(self.additivetraits[i].weight.detach().cpu().numpy().flatten()[0])
         #Save training history - WT residuals
-        if val_WT_resid != []:
+        if val_WT_resid is not None:
             for i in range(len(self.model_design)):
                 self.training_history['residual'+str(i+1)+"_WT"].append(float(val_WT_resid[i]))
 
@@ -454,9 +684,6 @@ class MochiTask():
         :param sos_outputlinear: boolean indicating whether final sumOfSigmoids should be linear rather than sigmoidal (default:False).
         :returns: MochiTask object.
         """ 
-        #Get CPU or GPU device
-        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        # print(f"Using {self.device} device")
         #initialize remaining attributes
         self.directory = directory
         if data != None:
@@ -465,11 +692,16 @@ class MochiTask():
                 os.mkdir(self.directory)
             except FileExistsError:
                 if os.path.exists(os.path.join(self.directory, 'saved_models')):
-                    print("Error: Task directory with saved models already exists.")
+                    logger.info("Error: Task directory with saved models already exists.")
                     raise ValueError
             self.models = []
             self.data = data
             self.batch_size = [int(i) for i in str(batch_size).split(",")]
+            self.device, self.device_reason = choose_compute_device()
+            self.use_amp, self.amp_reason = choose_amp_enabled(self.device)
+            logger.info(f"Using {self.device} device ({self.device_reason})")
+            if self.device.type == "cuda":
+                logger.info(f"AMP {'enabled' if self.use_amp else 'disabled'} ({self.amp_reason})")
             self.learn_rate = [float(i) for i in str(learn_rate).split(",")]
             self.num_epochs = num_epochs
             self.num_epochs_grid = num_epochs_grid
@@ -483,7 +715,7 @@ class MochiTask():
             self.sos_outputlinear = sos_outputlinear
         else:
             #Load saved models
-            # print("Loading task.")
+            # logger.info("Loading task.")
             self.load()
 
     def save(
@@ -498,47 +730,68 @@ class MochiTask():
 
         #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Task cannot be saved. Invalid MochiTask instance.")
+            logger.info("Error: Task cannot be saved. Invalid MochiTask instance.")
             raise ValueError
 
         #Output models directory
         directory = os.path.join(self.directory, 'saved_models')
+        os.makedirs(self.directory, exist_ok = True)
 
         #Create output model directory
         try:
             os.mkdir(directory)
         except FileExistsError:
             if overwrite==True:
-                print("Warning: Saved models directory already exists. Previous models will be overwritten.")
+                if os.environ.get("MOCHI_PARALLEL_MODE", "").lower() not in {"1", "true", "yes"}:
+                    logger.info("Warning: Saved models directory already exists. Previous models will be overwritten.")
             else:
-                print("Error: Saved models directory already exists. Set 'overwrite'=True to overwrite previous models.")
+                logger.info("Error: Saved models directory already exists. Set 'overwrite'=True to overwrite previous models.")
                 raise ValueError
 
-        #Delete entire directory contents and create fresh directory
-        shutil.rmtree(directory)
-        os.mkdir(directory)
+        temp_suffix = uuid.uuid4().hex
+        temp_directory = os.path.join(
+            os.path.dirname(directory),
+            f".{os.path.basename(directory)}.tmp.{temp_suffix}")
+        backup_directory = os.path.join(
+            os.path.dirname(directory),
+            f".{os.path.basename(directory)}.bak.{temp_suffix}")
+        shutil.rmtree(temp_directory, ignore_errors = True)
+        shutil.rmtree(backup_directory, ignore_errors = True)
+        os.makedirs(temp_directory, exist_ok = True)
 
         #Save unpickleable objects
         temp_custom_transformations = copy.deepcopy(self.data.custom_transformations)
 
-        #Save models using torch.save
-        if len(self.models)==0:
-            print("Warning: No fit models. Saving metadata only.")
-        for i in range(len(self.models)):
-            self.models[i].custom_transformations = None
-            torch.save(self.models[i], os.path.join(directory, 'model_'+str(i)+'.pth'))
-            self.models[i].custom_transformations = temp_custom_transformations
+        try:
+            #Save models using torch.save
+            if len(self.models)==0:
+                logger.info("Warning: No fit models. Saving metadata only.")
+            for i in range(len(self.models)):
+                self.models[i].custom_transformations = None
+                torch.save(self.models[i], os.path.join(temp_directory, 'model_'+str(i)+'.pth'))
+                self.models[i].custom_transformations = temp_custom_transformations
 
-        #Save remaining (non-built-in) attributes
-        self.data.custom_transformations = None
-        save_dict = {}
-        for i in self.__dict__.keys():
-            #Exclude built-in objects and torch models
-            if not i.startswith("__") and i != "models":
-                save_dict[i] = self.__dict__[i]
-        with bz2.BZ2File(os.path.join(directory, 'data.pbz2'), 'w') as f:
-            cPickle.dump(save_dict, f, pickle.HIGHEST_PROTOCOL)
-        self.data.custom_transformations = temp_custom_transformations
+            #Save remaining (non-built-in) attributes
+            self.data.custom_transformations = None
+            save_dict = {}
+            for i in self.__dict__.keys():
+                #Exclude built-in objects and torch models
+                if not i.startswith("__") and i != "models":
+                    save_dict[i] = self.__dict__[i]
+            with bz2.BZ2File(os.path.join(temp_directory, 'data.pbz2'), 'w') as f:
+                cPickle.dump(save_dict, f, pickle.HIGHEST_PROTOCOL)
+
+            if os.path.exists(directory):
+                os.rename(directory, backup_directory)
+            os.rename(temp_directory, directory)
+            shutil.rmtree(backup_directory, ignore_errors = True)
+        except Exception:
+            shutil.rmtree(temp_directory, ignore_errors = True)
+            if os.path.exists(backup_directory) and not os.path.exists(directory):
+                os.rename(backup_directory, directory)
+            raise
+        finally:
+            self.data.custom_transformations = temp_custom_transformations
 
     def load(self):
         """
@@ -551,7 +804,7 @@ class MochiTask():
 
         #Check if model directory exists
         if not os.path.exists(directory):
-            print("Error: Saved models directory does not exist.")
+            logger.info("Error: Saved models directory does not exist.")
             raise ValueError
 
         #All files in directory
@@ -559,7 +812,7 @@ class MochiTask():
 
         #Check data exists (no models required)
         if not ('data.pyc' in files or 'data.pbz2' in files):
-            print("Error: Saved models directory structure incorrect.")
+            logger.info("Error: Saved models directory structure incorrect.")
             raise ValueError
 
         #Load (non-built-in) attributes except models
@@ -575,7 +828,8 @@ class MochiTask():
         for i in load_dict.keys():
             exec("self."+i+" = load_dict['"+i+"']")
         #Get CPU or GPU device (to undo loading of this attribute)
-        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        self.device, self.device_reason = choose_compute_device()
+        self.use_amp, self.amp_reason = choose_amp_enabled(self.device)
 
         #Restore custom transformations
         self.data.restore_custom_transformations()
@@ -586,9 +840,12 @@ class MochiTask():
             if i.startswith("model_"):
                 model_index = int(i[6:(len(i)-4)])
                 if model_index >= len(self.models) or model_index < 0:
-                    print("Error: Saved models index format incorrect.")
+                    logger.info("Error: Saved models index format incorrect.")
                     raise ValueError
-                self.models[model_index] = torch.load(os.path.join(directory, i), map_location=self.device)
+                self.models[model_index] = torch.load(
+                    os.path.join(directory, i),
+                    map_location = self.device,
+                    weights_only = False)
                 #Restore custom transformations
                 self.models[model_index].custom_transformations = self.data.custom_transformations
                 #Add globalparams if legacy model
@@ -597,17 +854,18 @@ class MochiTask():
 
     def new_model(
         self,
-        data):
+        mask):
         """
         Create a new MochiModel object.
 
-        :param data: Dictionary of dictionaries of tensors as output by MochiData.get_data (required).
+        :param mask: Fold-specific mask tensor (required).
         :returns: A new MochiModel object.
         """ 
+        input_shape = len(self.data.get_feature_names())
         #Create a new model
         model = MochiModel(
-            input_shape = data['training']['X'].shape[1],
-            mask = data['training']['mask'],
+            input_shape = input_shape,
+            mask = mask,
             model_design = self.data.model_design,
             custom_transformations = self.data.custom_transformations,
             sos_architecture = self.sos_architecture,
@@ -656,7 +914,7 @@ class MochiTask():
 
         #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Cannot get global weights. Invalid MochiTask instance.")
+            logger.info("Error: Cannot get global weights. Invalid MochiTask instance.")
             raise ValueError
 
         #Output weights directory
@@ -676,7 +934,7 @@ class MochiTask():
         models_subset = [i for i in self.models if ((i.metadata.grid_search==grid_search) & (i.metadata.fold in folds))]
         #Check if at least one model remaining
         if len(models_subset)==0:
-            print("No models satisfying criteria.")
+            logger.info("No models satisfying criteria.")
             return
 
         #Construct weight list
@@ -707,7 +965,7 @@ class MochiTask():
 
         #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Cannot get linear weights. Invalid MochiTask instance.")
+            logger.info("Error: Cannot get linear weights. Invalid MochiTask instance.")
             raise ValueError
 
         #Output weights directory
@@ -727,7 +985,7 @@ class MochiTask():
         models_subset = [i for i in self.models if ((i.metadata.grid_search==grid_search) & (i.metadata.fold in folds))]
         #Check if at least one model remaining
         if len(models_subset)==0:
-            print("No models satisfying criteria.")
+            logger.info("No models satisfying criteria.")
             return
 
         #Construct weight list
@@ -805,7 +1063,7 @@ class MochiTask():
         try:
             labels = np.array([trans_dict[i] for i in labels])
         except KeyError:
-            print(f"Warning: Aligning additive traits using K-means clustering failed.")
+            logger.info(f"Warning: Aligning additive traits using K-means clustering failed.")
             return []
 
         #Assign columns to DataFrames, preserving original order
@@ -815,10 +1073,10 @@ class MochiTask():
 
         #Check each DataFrame is complete
         if sum([i.shape[1]!=n for i in optimized_dfs]) != 0:
-            print(f"Warning: Aligning additive traits using K-means clustering failed.")
+            logger.info(f"Warning: Aligning additive traits using K-means clustering failed.")
             return []
 
-        print(f"Aligning additive traits using K-means clustering succeeded.")
+        logger.info(f"Aligning additive traits using K-means clustering succeeded.")
 
         #Sort columns by name
         for i in range(len(optimized_dfs)):
@@ -892,7 +1150,7 @@ class MochiTask():
 
         #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Cannot get additive trait weights. Invalid MochiTask instance.")
+            logger.info("Error: Cannot get additive trait weights. Invalid MochiTask instance.")
             raise ValueError
 
         #Output weights directory
@@ -921,7 +1179,7 @@ class MochiTask():
         models_subset = [i for i in self.models if ((i.metadata.grid_search==grid_search) & (i.metadata.fold in folds))]
         #Check if at least one model remaining
         if len(models_subset)==0:
-            print("No models satisfying criteria.")
+            logger.info("No models satisfying criteria.")
             return
 
         #Construct weight list
@@ -939,11 +1197,12 @@ class MochiTask():
                 mask = pd.DataFrame(np.asarray(mask.detach().cpu())).iloc[phenotypes_with_trait,:].sum(axis=0)
                 
                 #Weight data frame
+                feature_names = list(self.data.get_feature_names())
                 at_list[-1] += [pd.DataFrame({
-                    "id": np.array(list(self.data.Xohi.columns)),
-                    "id_ref": ['WT']+['_'.join([smi[:1]+str(int(smi[1:-1])+seq_position_offset)+smi[-1:] for smi in mi.split("_")]) for mi in list(self.data.Xohi.columns[1:])],
-                    "Pos": [None]+['_'.join([str(int(smi[1:-1])) for smi in mi.split("_")]) for mi in list(self.data.Xohi.columns[1:])],
-                    "Pos_ref": [None]+['_'.join([str(int(smi[1:-1])+seq_position_offset) for smi in mi.split("_")]) for mi in list(self.data.Xohi.columns[1:])],
+                    "id": np.array(feature_names),
+                    "id_ref": ['WT']+['_'.join([smi[:1]+str(int(smi[1:-1])+seq_position_offset)+smi[-1:] for smi in mi.split("_")]) for mi in feature_names[1:]],
+                    "Pos": [None]+['_'.join([str(int(smi[1:-1])) for smi in mi.split("_")]) for mi in feature_names[1:]],
+                    "Pos_ref": [None]+['_'.join([str(int(smi[1:-1])+seq_position_offset) for smi in mi.split("_")]) for mi in feature_names[1:]],
                     "fold_"+str(models_subset[i].metadata.fold): additivetrait_parameters})]
                 #Remove weights not reported on by a single corresponding phenotype
                 at_list[-1][-1] = at_list[-1][-1].loc[mask!=0,:]
@@ -957,20 +1216,23 @@ class MochiTask():
             agg_list = []
             for i in range(len(at_list)):
                 grouped = at_list[i].groupby("Pos_ref")
-                agg_list += [pd.merge(
-                        pd.DataFrame(grouped.apply(
-                            self.wavg, 
-                            absolute_value = aggregate_absolute_value, 
-                            suffix = ['', '_kcal/mol'][int(RT!=None)])), 
-                        pd.DataFrame(grouped.apply(
-                            self.wavg, 
+                agg_list += [grouped.apply(
+                    lambda group: pd.Series({
+                        "mean": self.wavg(
+                            group,
+                            absolute_value = aggregate_absolute_value,
+                            suffix = ['', '_kcal/mol'][int(RT!=None)]),
+                        "sigma": self.wavg(
+                            group,
                             error_only = True,
-                            suffix = ['', '_kcal/mol'][int(RT!=None)])), 
-                    on = "Pos_ref")]
+                            suffix = ['', '_kcal/mol'][int(RT!=None)])
+                    })
+                ).reset_index()]
                 agg_list[-1] = agg_list[-1].sort_values(
                     by="Pos_ref",
-                    key=lambda x: np.array([int(i) for i in agg_list[-1].index]))
-                agg_list[-1].columns = ['mean', 'sigma']
+                    key=lambda positions: positions.map(
+                        lambda position: tuple(
+                            int(component) for component in position.split("_"))))
             #Save aggregated model weights
             file_prefix = ["weights_agg_", "weights_agg_abs_"][int(aggregate_absolute_value)]
             for i in range(len(agg_list)):
@@ -1018,25 +1280,25 @@ class MochiTask():
 
         #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Grid search cannot be performed. Invalid MochiTask instance.")
+            logger.info("Error: Grid search cannot be performed. Invalid MochiTask instance.")
             raise ValueError
 
         #Check if valid MochiData
         if not self.data.is_valid_instance():
-            print("Error: Grid search cannot be performed. Invalid MochiData instance.")
+            logger.info("Error: Grid search cannot be performed. Invalid MochiData instance.")
             raise ValueError
 
         #Check if grid search has already been performed
         grid_search_models = [i for i in self.models if (i.grid_search==True) and (i.fold==fold)]
         if len(grid_search_models)!=0:
             if overwrite==False:
-                print("Grid search already performed. Set 'overwrite'=True to overwrite previous grid search results.")
+                logger.info("Grid search already performed. Set 'overwrite'=True to overwrite previous grid search results.")
                 return
             else:
-                print("Deleting previous grid search results.")
+                logger.info("Deleting previous grid search results.")
                 [self.models.remove(i) for i in grid_search_models]
 
-        print("Performing grid search...")
+        logger.info("Performing grid search...")
         #List of hyperparameter combinations
         batch_params = list(itertools.product(
             self.batch_size,
@@ -1065,7 +1327,7 @@ class MochiTask():
                     init_weights = init_weights,
                     fix_weights = fix_weights)
         except ValueError:
-            print("Error: Grid search failed.")
+            logger.info("Error: Grid search failed.")
             raise ValueError
 
     def adjust_WT_phenotype(
@@ -1081,13 +1343,13 @@ class MochiTask():
         :returns: Nothing.
         """ 
         if len(self.models)>0 and (model_id in range(len(self.models)) or model_id == -1):
-            print("Adjusting WT using model: "+str(model_id))
+            logger.info("Adjusting WT using model: "+str(model_id))
             for i in range(len(self.data.model_design)):
-                num_epochs_avg = int(self.models[model_id].metadata.num_epochs*epoch_proportion)
+                num_epochs_avg = max(1, int(self.models[model_id].metadata.num_epochs*epoch_proportion))
                 WT_correct = sum(self.models[model_id].training_history['residual'+str(i+1)+'_WT'][-num_epochs_avg:])/num_epochs_avg
                 self.data.fitness.loc[(self.data.fdata.vtable['WT']==True) & self.data.phenotypes['phenotype_'+str(i+1)]==True,'fitness'] += (-WT_correct)
         else:
-            print("Error: Invalid model index for WT adjustment.")
+            logger.info("Error: Invalid model index for WT adjustment.")
             raise ValueError
 
     def fit_best(
@@ -1114,32 +1376,35 @@ class MochiTask():
 
         #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Model cannot be fit. Invalid MochiTask instance.")
+            logger.info("Error: Model cannot be fit. Invalid MochiTask instance.")
             raise ValueError
 
         #Check if valid MochiData
         if not self.data.is_valid_instance():
-            print("Error: Model cannot be fit. Invalid MochiData instance.")
+            logger.info("Error: Model cannot be fit. Invalid MochiData instance.")
             raise ValueError
 
         #Check if grid search models present
         grid_search_models = [i for i in self.models if (i.metadata.grid_search==True) and (i.metadata.fold==grid_search_fold)]
         if len(grid_search_models)==0:
-            print("Error: No grid search models available.")
+            logger.info("Error: No grid search models available.")
             raise ValueError
 
         #Grid search model with best performance
-        perf_list = np.asarray([sum(i.training_history['val_loss'][-int(i.metadata.num_epochs_grid*epoch_proportion):])/int(i.metadata.num_epochs_grid*epoch_proportion) for i in grid_search_models])
+        perf_list = np.asarray([
+            sum(i.training_history['val_loss'][-max(1, int(i.metadata.num_epochs_grid*epoch_proportion)):]) /
+            max(1, int(i.metadata.num_epochs_grid*epoch_proportion))
+            for i in grid_search_models])
         #Check that at least one grid search model validation loss isn't NA
         if len(perf_list[~np.isnan(perf_list)])!=0:
             best_model_index = [i for i in range(len(perf_list)) if perf_list[i]==np.nanmin(perf_list)][0]
         else:
-            print("Error: No valid grid search models available.")
+            logger.info("Error: No valid grid search models available.")
             raise ValueError
 
         #Print best grid search model
-        print("Best model:")
-        print(grid_search_models[best_model_index].metadata)
+        logger.info("Best model:")
+        logger.info(grid_search_models[best_model_index].metadata)
 
         #Fit model using best hyperparameters
         self.fit(
@@ -1176,7 +1441,7 @@ class MochiTask():
 
         #Check if valid MochiTask
         if 'models' not in dir(input_task):
-            print("Error: Cannot initialize weights using supplied MochiTask. Invalid MochiTask instance.")
+            logger.info("Error: Cannot initialize weights using supplied MochiTask. Invalid MochiTask instance.")
             raise ValueError
 
         #Model subset
@@ -1184,12 +1449,12 @@ class MochiTask():
 
         #Check if at least one model remaining
         if len(models_subset)==0:
-            print("Error: Cannot initialize weights using supplied MochiTask. No models satisfying criteria.")
+            logger.info("Error: Cannot initialize weights using supplied MochiTask. No models satisfying criteria.")
             raise ValueError
 
         #Check if more than one model remaining
         if len(models_subset)>1:
-            print("Warning: Initialising weights using first model satisfying criteria.")
+            logger.info("Warning: Initialising weights using first model satisfying criteria.")
 
         #Model to use for model weight initialization 
         input_model = models_subset[0]
@@ -1204,7 +1469,9 @@ class MochiTask():
             model_addt = model.get_submodule('additivetraits')
             input_addt = input_model.get_submodule('additivetraits')
             shared_traits = [i for i in self.data.additive_trait_names if i in input_task.data.additive_trait_names]
-            shared_weights = [i for i in self.data.Xohi.columns if i in input_task.data.Xohi.columns]
+            current_feature_names = list(self.data.get_feature_names())
+            input_feature_names = list(input_task.data.get_feature_names())
+            shared_weights = [i for i in current_feature_names if i in input_feature_names]
             #Loop over shared traits
             for tname in shared_traits:
                 model_ti = self.data.additive_trait_names.index(tname)
@@ -1218,7 +1485,7 @@ class MochiTask():
                 input_weights = [item for sublist in input_weights for item in sublist]
                 input_weights = np.asarray(input_weights[0].detach().cpu())
                 #Model weight initialization
-                model_weights = [input_weights[list(input_task.data.Xohi.columns).index(i)] if i in shared_weights else model_weights[list(self.data.Xohi.columns).index(i)] for i in self.data.Xohi.columns]
+                model_weights = [input_weights[input_feature_names.index(i)] if i in shared_weights else model_weights[current_feature_names.index(i)] for i in current_feature_names]
                 with torch.no_grad():
                     model_addt[model_ti].weight = torch.nn.Parameter(torch.tensor(np.asarray([model_weights])))
                 n_init_addt += 1
@@ -1237,7 +1504,7 @@ class MochiTask():
                     shared_keys = [k for k in model_glob[model_pi].keys() if k in input_glob[input_pi].keys()]
                     #Check if at least one global parameter matches
                     if len(shared_keys) == 0:
-                        print("Warning: No shared global parameters for phenotype: "+pname)
+                        logger.info("Warning: No shared global parameters for phenotype: "+pname)
                     #Copy all shared parameters
                     for k in shared_keys:
                         with torch.no_grad():
@@ -1280,8 +1547,8 @@ class MochiTask():
                     n_init_lins += 1
 
         #Total number of weights initialized
-        print("Weights initialized from MochiTask:")
-        print("Additive layers = "+str(n_init_addt)+"\nGlobal parameters = "+str(n_init_glob)+"\nSigmoidal layers = "+str(n_init_sigm)+"\nLinear layers = "+str(n_init_lins))
+        logger.info("Weights initialized from MochiTask:")
+        logger.info("Additive layers = "+str(n_init_addt)+"\nGlobal parameters = "+str(n_init_glob)+"\nSigmoidal layers = "+str(n_init_sigm)+"\nLinear layers = "+str(n_init_lins))
 
     def weights_require_grad(
         self,
@@ -1297,24 +1564,24 @@ class MochiTask():
 
         #Check if dictionary has valid keys
         if sum([i for i in fix_weights.keys() if i not in ['phenotype', 'trait', 'global']])!=0:
-            print("Error: Invalid fix_weights argument: layer types must be either 'phenotype', 'trait' or 'global'.")
+            logger.info("Error: Invalid fix_weights argument: layer types must be either 'phenotype', 'trait' or 'global'.")
             raise ValueError
 
         #Check if dictionary has valid values
         #Phenotypes
         if 'phenotype' in fix_weights.keys():
             if sum([i for i in fix_weights['phenotype'] if i not in self.data.phenotype_names])!=0:
-                print("Error: Invalid fix_weights phenotype names.")
+                logger.info("Error: Invalid fix_weights phenotype names.")
                 raise ValueError
         #Traits
         if 'trait' in fix_weights.keys():
             if sum([i for i in fix_weights['trait'] if i not in self.data.additive_trait_names])!=0:
-                print("Error: Invalid fix_weights trait names.")
+                logger.info("Error: Invalid fix_weights trait names.")
                 raise ValueError
         # #Global parameters
         # fix_weights['global']
         # if sum([i for i in fix_weights['global'] if i not in self.data.phenotype_names])!=0:
-        #     print("Error: Invalid fix_weights phenotype names.")
+        #     logger.info("Error: Invalid fix_weights phenotype names.")
         #     raise ValueError
 
         #Linear parameters
@@ -1379,23 +1646,37 @@ class MochiTask():
 
         #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Model cannot be fit. Invalid MochiTask instance.")
+            logger.info("Error: Model cannot be fit. Invalid MochiTask instance.")
             raise ValueError
 
         #Check if valid MochiData
         if not self.data.is_valid_instance():
-            print("Error: Model cannot be fit. Invalid MochiData instance.")
+            logger.info("Error: Model cannot be fit. Invalid MochiData instance.")
             raise ValueError
 
-        #Load model data
-        model_data = self.data.get_data(
+        #Load split metadata without materializing full fold feature tensors.
+        split_data = self.data.get_split_observation_data(
             fold = fold, 
             seed = seed,
             training_resample = training_resample)
 
-        #Load WT model data
-        model_data_WT = self.data.get_data_index(
-            indices = list(self.data.fdata.vtable.loc[self.data.fdata.vtable['WT']==True,:].index))
+        # Load WT model data for validation-history diagnostics. This is a
+        # small selected-row dense materialization, not the main training path.
+        wt_indices = list(self.data.fdata.vtable.loc[self.data.fdata.vtable['WT']==True,:].index)
+        model_data_WT = {
+            'select': torch.tensor(
+                self.data.phenotypes.iloc[wt_indices,:].to_numpy(dtype = np.float32, copy = True),
+                dtype = torch.float32),
+            'X': torch.tensor(
+                self.data.materialize_feature_matrix(
+                    row_indices = wt_indices,
+                    dtype = self.data.get_feature_numpy_dtype()),
+                dtype = self.data.get_feature_tensor_dtype()),
+            'y': torch.reshape(
+                torch.tensor(
+                    self.data.fitness.iloc[wt_indices,:]['fitness'].to_numpy(dtype = np.float32, copy = True),
+                    dtype = torch.float32),
+                (-1, 1))}
 
         #Set random seeds
         torch.manual_seed(seed)
@@ -1405,7 +1686,7 @@ class MochiTask():
         np.random.seed(seed)
 
         #Instantiate model
-        self.models += [self.new_model(model_data)]
+        self.models += [self.new_model(split_data['training']['mask'])]
         model = self.models[-1]
 
         #initialize model weights
@@ -1444,18 +1725,34 @@ class MochiTask():
             loss_function_name = loss_function_name,
             sos_architecture = sos_architecture,
             sos_outputlinear = sos_outputlinear)
-        print("Fitting model:")
-        print(model.metadata)
+        logger.info("Fitting model:")
+        logger.info(model.metadata)
 
-        #Load model data
-        train_dataloader, valid_dataloader, test_dataloader = model.get_data_loaders(model_data, batch_size)
-
+        train_dataloader = MaterializingRowDataLoader(
+            data = self.data,
+            row_indices = split_data['training']['row_indices'],
+            select = split_data['training']['select'],
+            y = split_data['training']['y'],
+            y_wt = split_data['training']['y_wt'],
+            device = self.device,
+            batch_size = batch_size,
+            shuffle = True)
+        valid_dataloader = MaterializingRowDataLoader(
+            data = self.data,
+            row_indices = split_data['validation']['row_indices'],
+            select = split_data['validation']['select'],
+            y = split_data['validation']['y'],
+            y_wt = split_data['validation']['y_wt'],
+            device = self.device,
+            batch_size = batch_size,
+            shuffle = False)
         #Construct loss function and Optimizer
         if loss_function_name == 'WeightedL1':
             loss_function = MochiWeightedL1Loss()
         elif loss_function_name == 'GaussianNLL':
             loss_function = MochiGaussianNLLLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=learn_rate)
+        scaler = torch.amp.GradScaler('cuda', enabled = self.use_amp)
 
         #Scheduler
         scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=scheduler_gamma)
@@ -1470,15 +1767,18 @@ class MochiTask():
                 loss_function, 
                 optimizer,
                 self.device, 
-                l1_regularization_factor, 
-                l2_regularization_factor)
+                scaler = scaler,
+                use_amp = self.use_amp,
+                l1_lambda = l1_regularization_factor, 
+                l2_lambda = l2_regularization_factor)
             model.validate_model(
                 valid_dataloader, 
                 loss_function, 
                 self.device, 
-                l1_regularization_factor, 
-                l2_regularization_factor, 
-                model_data_WT)
+                use_amp = self.use_amp,
+                l1_lambda = l1_regularization_factor, 
+                l2_lambda = l2_regularization_factor, 
+                data_WT = model_data_WT)
 
             #Check scheduler and early-stopping criteria
             if epoch >= (2*scheduler_epochs):
@@ -1487,7 +1787,7 @@ class MochiTask():
                     #...and WT coefficients not changing, stop training
                     if sum([np.std(model.training_history['additivetrait'+str(i+1)+"_WT"][-scheduler_epochs:])>0.001 for i in range(len(model.additivetraits))])==0:
                         if early_stopping:
-                            print("Stopping early: coefficients not changing and validation loss not decreasing.")
+                            logger.info("Stopping early: coefficients not changing and validation loss not decreasing.")
                             break
                     #Decrease learning rate by gamma
                     scheduler.step()
@@ -1495,9 +1795,10 @@ class MochiTask():
             #Status
             if epoch % epoch_status == 0: 
                 model_status = model.get_status()
-                print(f"Epoch {epoch+1}; "+model_status)    
-        print("Done!")
+                logger.info(f"Epoch {epoch+1}; "+model_status)
+        logger.info("Done!")
 
+    @torch.inference_mode()
     def predict_all(
         self,
         folds = None,
@@ -1507,22 +1808,26 @@ class MochiTask():
         """
         Model predictions on all data.
 
-        :param output_path: Output file path (required).
         :param folds: list of cross-validation folds (default:None i.e. all).
         :param grid_search: Whether or not to include grid_search models (default:False).
-        :param data: Optional MochiData object to use for prediction (default:model data).
+        :param data: Optional MochiData object with a feature schema compatible
+            with the fitted models (default:model data).
         :param save: Save DataFrame to "predictions/predicted_phenotypes_all.txt" (default:True).
         :returns: DataFrame of variants with phenotypes predictions.
+
+        Features are processed in bounded blocks to avoid materializing the
+        complete feature matrix. Sparse feature matrices remain sparse through
+        batch preparation. This method runs in PyTorch inference mode.
         """ 
 
         #Check if valid MochiTask
         if 'models' not in dir(self):
-            print("Error: Cannot make predictions. Invalid MochiTask instance.")
+            logger.info("Error: Cannot make predictions. Invalid MochiTask instance.")
             raise ValueError
 
         #Check if valid MochiData
         if not self.data.is_valid_instance():
-            print("Error: Cannot make predictions. Invalid MochiData instance.")
+            logger.info("Error: Cannot make predictions. Invalid MochiData instance.")
             raise ValueError
 
         #Output predictions directory
@@ -1542,54 +1847,99 @@ class MochiTask():
         models_subset = [i for i in self.models if ((i.metadata.grid_search==grid_search) & (i.metadata.fold in folds))]
         #Check if at least one model remaining
         if len(models_subset)==0:
-            print("No models satisfying criteria.")
+            logger.info("No models satisfying criteria.")
             return
 
         #Model data
         if data is None:
             data = self.data
-        model_data = data.get_data_index()
-        model_data_loader = FastTensorDataLoader(
-            model_data["select"], 
-            model_data["X"], batch_size=1024, shuffle=False)
+        row_indices_all = np.arange(len(data.phenotypes), dtype = np.int64)
+        block_rows = max(
+            1,
+            int(os.environ.get(
+                "MOCHI_PREDICT_BLOCK_ROWS",
+                os.environ.get("MOCHI_FEATURE_BLOCK_ROWS", "8192"))))
+        batch_size = 1024
+        feature_numpy_dtype = data.get_feature_numpy_dtype()
+        feature_tensor_dtype = data.get_feature_tensor_dtype()
+        sparse_native = data.is_sparse_feature_matrix()
 
         #Predictions on all data
         pred_list = []
         at_list = []
         for i in range(len(models_subset)):
             model = models_subset[i]
+            model.eval()
             #Model predictions
             max_at = max([len(j) for j in model.model_design.trait])
-            mask = model.mask.to(self.device)
-            # mask_list = [torch.narrow(mask, 0, j, 1) for j in range(mask.shape[0])]
-            y_pred_list = []
-            at_pred_list = []
-            for select, X in model_data_loader:
-                select, X = select.to(self.device), X.to(self.device)
-                #Predicted phenotype
-                y_pred_list += [model(select, X, mask).detach().cpu().numpy().flatten()]
+            mask = model.mask
+            stacked_trait_weights = torch.cat(
+                [layer.weight for layer in model.additivetraits],
+                dim = 0)
+            y_pred = np.empty(len(row_indices_all), dtype = np.float32)
+            at_pred = np.empty((len(row_indices_all), max_at), dtype = np.float32)
+            for block_start in range(0, len(row_indices_all), block_rows):
+                block_stop = min(block_start + block_rows, len(row_indices_all))
+                block_row_indices = row_indices_all[block_start:block_stop]
+                select_block = torch.tensor(
+                    data.phenotypes.iloc[block_row_indices,:].to_numpy(dtype = np.float32, copy = True),
+                    dtype = torch.float32)
+                block_offset = block_start
+                if sparse_native:
+                    X_block = data.feature_sparse_matrix[block_row_indices]
+                    block_iter = (
+                        (
+                            select_block[batch_start:min(batch_start + batch_size, len(block_row_indices))],
+                            prepare_feature_tensor(
+                                build_sparse_feature_batch(
+                                    X_block[batch_start:min(batch_start + batch_size, len(block_row_indices))]),
+                                self.device))
+                        for batch_start in range(0, len(block_row_indices), batch_size))
+                else:
+                    X_block = torch.tensor(
+                        data.materialize_feature_matrix(
+                            row_indices = block_row_indices,
+                            dtype = feature_numpy_dtype),
+                        dtype = feature_tensor_dtype)
+                    block_iter = FastTensorDataLoader(
+                        select_block,
+                        X_block,
+                        batch_size = batch_size,
+                        shuffle = False)
+                for select, X in block_iter:
+                    select = move_tensor_to_device(select, self.device)
+                    if not sparse_native:
+                        X = prepare_feature_tensor(X, self.device)
+                    #Predicted phenotype
+                    with torch.amp.autocast(device_type = self.device.type, enabled = self.use_amp):
+                        y_pred_batch = model(select, X, mask).detach().cpu().numpy().flatten()
 
-                #Additive traits
-                additive_traits = []
-                select_list = [torch.narrow(select, 1, j, 1) for j in range(select.shape[1])]
-                #Loop over phenotypes
-                for pi in range(len(model.model_design)):
-                    #Additive traits for this phenotype
-                    additive_traits_p = []
-                    for at_pi in range(max_at):
-                        if at_pi<len(model.model_design.loc[pi,'trait']):
-                            # additive_traits_p += [model.additivetraits[model.model_design.loc[pi,'trait'][at_pi]-1](torch.mul(X, mask_list[pi]))]
-                            additive_traits_p += [model.additivetraits[model.model_design.loc[pi,'trait'][at_pi]-1](torch.mul(
-                                X, 
-                                torch.reshape(torch.narrow(torch.narrow(mask, 0, model.model_design.loc[pi,'trait'][at_pi]-1, 1), 1, pi, 1), (1, -1))))]
-                        else:
-                            additive_traits_p += [torch.mul(torch.clone(additive_traits_p[0]),0)]
-                    #Select
-                    additive_traits += [torch.concat([torch.mul(j, select_list[pi]) for j in additive_traits_p], dim=1)]
-                at_pred_list += [sum(additive_traits).detach().cpu().numpy()]
-            #Concatenate
-            y_pred = np.concatenate(y_pred_list)
-            at_pred = np.concatenate(at_pred_list)
+                    #Additive traits
+                    additive_traits = []
+                    select_list = [torch.narrow(select, 1, j, 1) for j in range(select.shape[1])]
+                    #Loop over phenotypes
+                    for pi in range(len(model.model_design)):
+                        additive_trait_matrix = model._compute_additive_trait_matrix(
+                            X = X,
+                            mask = mask,
+                            phenotype_index = pi,
+                            stacked_trait_weights = stacked_trait_weights)
+                        additive_traits_p = []
+                        for at_pi in range(max_at):
+                            if at_pi < additive_trait_matrix.shape[1]:
+                                additive_traits_p += [torch.narrow(additive_trait_matrix, 1, at_pi, 1)]
+                            else:
+                                additive_traits_p += [torch.zeros(
+                                    (select.shape[0], 1),
+                                    dtype = additive_trait_matrix.dtype,
+                                    device = additive_trait_matrix.device)]
+                        #Select
+                        additive_traits += [torch.concat([torch.mul(j, select_list[pi]) for j in additive_traits_p], dim=1)]
+                    at_pred_batch = sum(additive_traits).detach().cpu().numpy()
+                    batch_stop = block_offset + len(y_pred_batch)
+                    y_pred[block_offset:batch_stop] = y_pred_batch
+                    at_pred[block_offset:batch_stop,:] = at_pred_batch
+                    block_offset = batch_stop
             #Target data frame
             y_df = pd.DataFrame({
                 'fold_'+str(model.metadata.fold): y_pred})
@@ -1609,7 +1959,7 @@ class MochiTask():
         pred_df['ci95'] = pred_df['std']*1.96*2
         #Select data frame
         select_df = pd.DataFrame(
-            model_data["select"].detach().cpu().numpy(), 
+            data.phenotypes.iloc[row_indices_all,:].to_numpy(dtype = np.float32, copy = True),
             columns = data.phenotype_names)
         #Fold data frame
         fold_df = pd.DataFrame({
