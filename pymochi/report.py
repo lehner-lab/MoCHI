@@ -323,8 +323,32 @@ class MochiReport:
             output_path = os.path.join(directory, "WT_residual_epoch.pdf"),
             folds = [1])
 
-        #Predictions on all data for all models
-        prediction_df = self.task.predict_all()
+        # Predictions on all data through bounded sparse batches. Import here
+        # to avoid the project/report module import cycle at module load time.
+        from pymochi.project import predict_fast
+
+        task_data = self.task.data
+        sequences = task_data.fdata.vtable[task_data.fdata.variantCol].astype(str)
+        fast_predictions = predict_fast(
+            task_directory = self.task.directory,
+            task = self.task,
+            sequences = sequences,
+            select = task_data.phenotypes.to_numpy(dtype = np.float32, copy = True),
+            include_additive_traits = True)
+        variant_df = task_data.fdata.vtable.reset_index(drop = True).copy()
+        phenotype_df = pd.DataFrame(
+            task_data.phenotypes.to_numpy(dtype = np.float32, copy = True),
+            columns = task_data.phenotype_names)
+        fold_df = pd.DataFrame({'Fold': np.asarray(task_data.cvgroups.fold)})
+        prediction_df = pd.concat(
+            [variant_df, phenotype_df, fast_predictions.drop(columns = 'sequence'), fold_df],
+            axis = 1)
+        prediction_directory = os.path.join(self.task.directory, 'predictions')
+        os.makedirs(prediction_directory, exist_ok = True)
+        prediction_df.to_csv(
+            os.path.join(prediction_directory, "predicted_phenotypes_all.txt"),
+            sep = "\t",
+            index = False)
 
         self.plot_test_performance(
             input_df = prediction_df,

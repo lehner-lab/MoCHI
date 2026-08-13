@@ -5,6 +5,7 @@ REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 MOCHI_REPO="${MOCHI_REPO:-${REPO_ROOT}}"
 MOCHI_VENV="${MOCHI_VENV:-${MOCHI_REPO}/.venv}"
 PYTHON_BIN="${PYTHON_BIN:-${MOCHI_VENV}/bin/python}"
+MOCHI_ENTRYPOINT="${MOCHI_ENTRYPOINT:-${MOCHI_REPO}/pymochi/bin/run_mochi.py}"
 MOCHI_ARGS_FILE="${MOCHI_ARGS_FILE:-}"
 RUN_LABEL="${RUN_LABEL:-mochi_batch_compare}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-/tmp}"
@@ -38,7 +39,7 @@ export XDG_CACHE_HOME="${LOCAL_UV_CACHE}"
 
 MOCHI_CMD=(
     "${PYTHON_BIN}"
-    "${MOCHI_REPO}/pymochi/bin/run_mochi.py"
+    "${MOCHI_ENTRYPOINT}"
 )
 
 if [ -n "${MOCHI_ARGS_FILE}" ]; then
@@ -64,6 +65,7 @@ printf '\n' >> "${COMMAND_FILE}"
     echo "start_time=$(date -Is)"
     echo "repo_root=${REPO_ROOT}"
     echo "mochi_repo=${MOCHI_REPO}"
+    echo "mochi_entrypoint=${MOCHI_ENTRYPOINT}"
     echo "output_dir=${OUTPUT_DIR}"
     echo "mochi_args_file=${MOCHI_ARGS_FILE}"
     echo "python=${PYTHON_BIN}"

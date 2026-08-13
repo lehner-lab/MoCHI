@@ -19,7 +19,8 @@ def mochiJobScript = { Map opts ->
     def runOutputDir = "${params.output_root}/${params.run_name}"
     def jobOutputDir = opts.jobOutputDir
     def deviceExport = opts.device ? "export MOCHI_DEVICE='${formatArgValue(opts.device)}'" : ""
-    def cliArgs = params.forwarded_mochi_args + (opts.args ?: [:])
+    def entrypointExport = opts.entrypoint ? "export MOCHI_ENTRYPOINT=\"${formatArgValue(opts.entrypoint)}\"" : ""
+    def cliArgs = (opts.includeForwarded == false ? [:] : params.forwarded_mochi_args) + (opts.args ?: [:])
     """
     mkdir -p "${jobOutputDir}"
     cat > mochi_nextflow_args.txt <<'EOF'
@@ -35,6 +36,7 @@ EOF
     export MOCHI_PARALLEL_MODE="1"
     export MOCHI_ARGS_FILE="\$PWD/mochi_nextflow_args.txt"
     ${deviceExport}
+    ${entrypointExport}
 
     "${params.nextflow_root}/scripts/run_mochi_lsf_gpu.sh"
     ${opts.afterRun ?: ""}
