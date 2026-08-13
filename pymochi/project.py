@@ -4,6 +4,7 @@ MoCHI project module
 """
 
 from loguru import logger
+import itertools
 import os
 import pickle
 import shutil
@@ -11,6 +12,7 @@ import torch
 import pathlib
 import numpy as np
 import copy
+from scipy import sparse as sp
 from pathlib import Path
 from pymochi.data import *
 from pymochi.models import *
@@ -1241,7 +1243,10 @@ def predict_fast(
     sequences,
     phenotype_index = 0,
     batch_size = 2048,
-    output_file = None):
+    output_file = None,
+    select = None,
+    include_additive_traits = False,
+    task = None):
     """
     Predict fitness for new variant sequences using a saved MochiTask, without
     reconstructing MochiData from training variants.
@@ -1256,11 +1261,18 @@ def predict_fast(
     :param phenotype_index: 0-based index of the phenotype to predict (default:0).
     :param batch_size: Forward-pass batch size (default:2048).
     :param output_file: If supplied, save TSV results to this path (optional).
+    :param select: Optional N x phenotype-count selection matrix. When omitted,
+        predict ``phenotype_index`` for every input sequence (default:None).
+    :param include_additive_traits: Include per-fold additive trait values
+        required by report plots (default:False).
+    :param task: Optional already-loaded MochiTask, avoiding a disk reload
+        (default:None).
     :returns: DataFrame with columns sequence, fold_1, …, mean, std, ci95.
     """
 
-    # --- Step 1: load task from disk ---
-    task = MochiTask(directory=str(task_directory))
+    # --- Step 1: load task from disk when no fitted task was supplied ---
+    if task is None:
+        task = MochiTask(directory=str(task_directory))
     feature_names = list(task.data.get_feature_names())
     wildtype = task.data.fdata.wildtype
     n_features = len(feature_names)
@@ -1268,9 +1280,16 @@ def predict_fast(
     sequences = list(sequences)
     N = len(sequences)
 
-    if phenotype_index < 0 or phenotype_index >= n_phenotypes:
+    if batch_size < 1:
+        raise ValueError("batch_size must be positive.")
+    if select is None and (phenotype_index < 0 or phenotype_index >= n_phenotypes):
         print("Error: phenotype_index out of range.")
         return
+    if select is not None:
+        select = np.asarray(select, dtype = np.float32)
+        if select.shape != (N, n_phenotypes):
+            raise ValueError(
+                "select must have one row per sequence and one column per phenotype.")
 
     # --- Step 2: build mutation-lookup dicts (one-time O(N_features)) ---
     wt_col = feature_names.index('WT')
@@ -1285,66 +1304,113 @@ def predict_fast(
         else:
             interaction_to_col[frozenset(parts)] = col
 
-    # --- Step 3: encode sequences -> scipy CSR (N x N_features, uint8) ---
+    # --- Step 3: encode and predict one bounded sparse batch at a time ---
     wt_len = len(wildtype)
-    rows, cols = [], []
-    for row_idx, seq in enumerate(sequences):
-        if len(seq) != wt_len:
-            print(f"Error: sequence {row_idx} length {len(seq)} != WT length {wt_len}.")
-            return
-        mutations = [
-            wildtype[i] + str(i + 1) + seq[i]
-            for i in range(wt_len) if seq[i] != wildtype[i]
-        ]
-        # WT feature always active
-        rows.append(row_idx)
-        cols.append(wt_col)
-        # order-1 features
-        for m in mutations:
-            if m in single_mut_to_col:
-                rows.append(row_idx)
-                cols.append(single_mut_to_col[m])
-        # order >= 2 interaction features
-        for r in range(2, len(mutations) + 1):
-            for combo in itertools.combinations(mutations, r):
-                key = frozenset(combo)
-                if key in interaction_to_col:
-                    rows.append(row_idx)
-                    cols.append(interaction_to_col[key])
+    def sparse_feature_batch(sequence_batch, start_index):
+        """Encode one input batch without allocating an N x n_features matrix."""
+        rows, cols = [], []
+        for row_index, sequence in enumerate(sequence_batch):
+            if len(sequence) != wt_len:
+                raise ValueError(
+                    f"sequence {start_index + row_index} length {len(sequence)} "
+                    f"!= WT length {wt_len}.")
+            mutations = [
+                wildtype[position] + str(position + 1) + sequence[position]
+                for position in range(wt_len) if sequence[position] != wildtype[position]
+            ]
+            rows.append(row_index)
+            cols.append(wt_col)
+            for mutation in mutations:
+                column = single_mut_to_col.get(mutation)
+                if column is not None:
+                    rows.append(row_index)
+                    cols.append(column)
+            for order in range(2, len(mutations) + 1):
+                for combination in itertools.combinations(mutations, order):
+                    column = interaction_to_col.get(frozenset(combination))
+                    if column is not None:
+                        rows.append(row_index)
+                        cols.append(column)
+        return sp.csr_matrix(
+            (np.ones(len(rows), dtype=np.uint8), (rows, cols)),
+            shape=(len(sequence_batch), n_features),
+            dtype=np.uint8)
 
-    X_csr = sp.csr_matrix(
-        (np.ones(len(rows), dtype=np.uint8), (rows, cols)),
-        shape=(N, n_features),
-        dtype=np.uint8)
-
-    # --- Step 4: select tensor (all rows predict the same phenotype) ---
-    select = torch.zeros(N, n_phenotypes, dtype=torch.float32)
-    select[:, phenotype_index] = 1.0
-
-    # --- Step 5: filter to non-grid-search (i.e. fit_best) models ---
+    # --- Step 4: filter to non-grid-search (i.e. fit_best) models ---
     models_subset = [m for m in task.models if not m.metadata.grid_search]
     if len(models_subset) == 0:
         print("Error: no fit_best models found in task.")
         return
 
-    # --- Step 6: batched forward pass per CV-fold model ---
+    # --- Step 5: batched forward pass per CV-fold model ---
     fold_predictions = []
+    additive_trait_predictions = []
     for model in models_subset:
         model.eval()
         y_preds = []
+        max_at = max(len(traits) for traits in model.model_design.trait)
+        at_pred = (
+            np.empty((N, max_at), dtype = np.float32)
+            if include_additive_traits else None)
+        stacked_trait_weights = (
+            torch.cat([layer.weight for layer in model.additivetraits], dim = 0)
+            if include_additive_traits else None)
         with torch.no_grad():
             for start in range(0, N, batch_size):
                 end = min(start + batch_size, N)
+                sequence_batch = sequences[start:end]
                 X_payload = prepare_feature_tensor(
-                    build_sparse_feature_batch(X_csr[start:end]),
+                    build_sparse_feature_batch(
+                        sparse_feature_batch(sequence_batch, start)),
                     task.device)
-                sel = select[start:end].to(task.device)
+                if select is None:
+                    sel = torch.zeros(
+                        len(sequence_batch),
+                        n_phenotypes,
+                        dtype = torch.float32,
+                        device = task.device)
+                    sel[:, phenotype_index] = 1.0
+                else:
+                    sel = torch.tensor(
+                        select[start:end],
+                        dtype = torch.float32,
+                        device = task.device)
                 pred = model(sel, X_payload, model.mask)
                 y_preds.append(pred.detach().cpu().numpy().flatten())
+                if include_additive_traits:
+                    additive_traits = []
+                    select_list = [
+                        torch.narrow(sel, 1, phenotype, 1)
+                        for phenotype in range(sel.shape[1])]
+                    for phenotype in range(len(model.model_design)):
+                        additive_trait_matrix = model._compute_additive_trait_matrix(
+                            X = X_payload,
+                            mask = model.mask,
+                            phenotype_index = phenotype,
+                            stacked_trait_weights = stacked_trait_weights)
+                        traits = [
+                            (
+                                torch.narrow(additive_trait_matrix, 1, trait, 1)
+                                if trait < additive_trait_matrix.shape[1]
+                                else torch.zeros(
+                                    (sel.shape[0], 1),
+                                    dtype = additive_trait_matrix.dtype,
+                                    device = additive_trait_matrix.device))
+                            for trait in range(max_at)]
+                        additive_traits.append(torch.concat(
+                            [trait * select_list[phenotype] for trait in traits],
+                            dim = 1))
+                    at_pred[start:end, :] = sum(additive_traits).cpu().numpy()
         fold_predictions.append(
             ('fold_' + str(model.metadata.fold), np.concatenate(y_preds)))
+        if include_additive_traits:
+            additive_trait_predictions.append(pd.DataFrame(
+                at_pred,
+                columns = [
+                    'fold_' + str(model.metadata.fold) + '_additive_trait' + str(trait)
+                    for trait in range(max_at)]))
 
-    # --- Step 7: assemble result DataFrame ---
+    # --- Step 6: assemble result DataFrame ---
     result = pd.DataFrame({'sequence': sequences})
     for fold_name, preds in fold_predictions:
         result[fold_name] = preds
@@ -1352,6 +1418,8 @@ def predict_fast(
     result['mean'] = result[fold_cols].mean(axis=1)
     result['std'] = result[fold_cols].std(axis=1)
     result['ci95'] = result['std'] * 1.96 * 2
+    if include_additive_traits:
+        result = pd.concat([result, *additive_trait_predictions], axis = 1)
 
     if output_file is not None:
         result.to_csv(str(output_file), sep='\t', index=False)
