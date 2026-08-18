@@ -158,7 +158,7 @@ EOF
     export OUTPUT_DIR="${outputDir}"
     export MOCHI_ARGS_FILE="\$PWD/mochi_nextflow_args.txt"
 
-    "${params.nextflow_root}/scripts/run_mochi_lsf_gpu.sh"
+    "${params.nextflow_root}/scripts/run_mochi_task.sh"
     cp "${outputDir}/benchmark_manifest.env" "benchmark_manifest.env"
     """
 }

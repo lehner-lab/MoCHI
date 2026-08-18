@@ -25,6 +25,28 @@ MONITOR_INTERVAL_SECONDS="${MONITOR_INTERVAL_SECONDS:-30}"
 
 mkdir -p "${OUTPUT_DIR}" "${LOCAL_UV_CACHE}"
 
+if [ -n "${LSB_JOBID:-}" ]; then
+    SCHEDULER="lsf"
+    SCHEDULER_JOB_ID="${LSB_JOBID}"
+    SCHEDULER_JOB_NAME="${LSB_JOBNAME:-unknown}"
+    SCHEDULER_QUEUE="${LSB_QUEUE:-unknown}"
+elif [ -n "${SLURM_JOB_ID:-}" ]; then
+    SCHEDULER="slurm"
+    SCHEDULER_JOB_ID="${SLURM_JOB_ID}"
+    SCHEDULER_JOB_NAME="${SLURM_JOB_NAME:-unknown}"
+    SCHEDULER_QUEUE="${SLURM_JOB_PARTITION:-unknown}"
+elif [ -n "${PBS_JOBID:-}" ]; then
+    SCHEDULER="pbs"
+    SCHEDULER_JOB_ID="${PBS_JOBID}"
+    SCHEDULER_JOB_NAME="${PBS_JOBNAME:-unknown}"
+    SCHEDULER_QUEUE="${PBS_QUEUE:-unknown}"
+else
+    SCHEDULER="local"
+    SCHEDULER_JOB_ID="unknown"
+    SCHEDULER_JOB_NAME="unknown"
+    SCHEDULER_QUEUE="unknown"
+fi
+
 if [ ! -x "${PYTHON_BIN}" ]; then
     echo "Expected Python interpreter not found at ${PYTHON_BIN}" >&2
     echo "Run bootstrap_mochi_uv.sh from the MoCHI root first." >&2
@@ -57,9 +79,10 @@ printf '%q ' "${MOCHI_CMD[@]}" > "${COMMAND_FILE}"
 printf '\n' >> "${COMMAND_FILE}"
 
 {
-    echo "job_id=${LSB_JOBID:-unknown}"
-    echo "job_name=${LSB_JOBNAME:-unknown}"
-    echo "queue=${LSB_QUEUE:-unknown}"
+    echo "scheduler=${SCHEDULER}"
+    echo "job_id=${SCHEDULER_JOB_ID}"
+    echo "job_name=${SCHEDULER_JOB_NAME}"
+    echo "queue=${SCHEDULER_QUEUE}"
     echo "host=$(hostname -f || hostname)"
     echo "cwd=$(pwd)"
     echo "start_time=$(date -Is)"
@@ -163,7 +186,8 @@ ELAPSED_SECONDS="$((END_EPOCH - START_EPOCH))"
 } >> "${JOB_META}"
 
 {
-    echo "job_id=${LSB_JOBID:-unknown}"
+    echo "scheduler=${SCHEDULER}"
+    echo "job_id=${SCHEDULER_JOB_ID}"
     echo "output_dir=${OUTPUT_DIR}"
     echo "time_log=${TIME_LOG}"
     echo "resource_log=${RESOURCE_LOG}"

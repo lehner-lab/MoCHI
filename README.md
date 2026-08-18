@@ -1,8 +1,4 @@
 ![example workflow](https://github.com/lehner-lab/MoCHI/actions/workflows/CI.yaml/badge.svg)
-[![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat)](http://bioconda.github.io/recipes/pymochi/README.html)
-[![Anaconda-Server Badge](https://anaconda.org/bioconda/pymochi/badges/version.svg?branch=master&kill_cache=1)](https://anaconda.org/bioconda/pymochi)
-[![Anaconda-Server Badge](https://anaconda.org/bioconda/pymochi/badges/latest_release_relative_date.svg?branch=master&kill_cache=1)](https://anaconda.org/bioconda/pymochi)
-[![Anaconda-Server Badge](https://anaconda.org/bioconda/pymochi/badges/downloads.svg?branch=master&kill_cache=1)](https://anaconda.org/bioconda/pymochi)
 
 <p align="left">
   <img src="./Mochi.png" width="100">
@@ -16,8 +12,9 @@ Welcome to the GitHub repository for MoCHI: Neural networks to fit interpretable
 
 1. **[Installation](#installation)**
 1. **[Usage](#usage)**
-   1. **[Option A: MoCHI command line tool](#option-a-mochi-command-line-tool)**
-   1. **[Option B: Custom Python script](#option-b-custom-python-script)**
+   1. **[Default: Nextflow](#default-nextflow)**
+   1. **[Direct command line tool](#direct-command-line-tool)**
+   1. **[Custom Python script](#custom-python-script)**
    1. **[Demo](#demo-mochi)**
 1. **[Manual](#manual)**
 1. **[Bugs and feedback](#bugs-and-feedback)**
@@ -25,16 +22,26 @@ Welcome to the GitHub repository for MoCHI: Neural networks to fit interpretable
 
 # Installation
 
-The easiest way to install MoCHI is by using the [bioconda package](http://bioconda.github.io/recipes/pymochi/README.html):
-```
-conda install -c bioconda pymochi
+MoCHI uses [uv](https://docs.astral.sh/uv/) to create its Python environment and install the locked dependencies. From a clone of this repository, run:
+
+```bash
+cd MoCHI
+bash bootstrap_mochi_uv.sh
 ```
 
-See the full [Installation Instructions](docs/INSTALLATION.md) for further details and alternative installation options.
+This installs uv if necessary, creates `.venv`, and synchronizes the environment from `pyproject.toml` and `uv.lock`.
+
+The [Bioconda package](http://bioconda.github.io/recipes/pymochi/README.html) remains available for the legacy MoCHI 1.1 release on Python 3.9:
+
+```bash
+conda create -n pymochi -c conda-forge -c bioconda pymochi
+```
+
+It does not install the current source version or its locked environment, so uv is recommended for current development and Nextflow runs.
 
 # Usage
 
-You can run a standard MoCHI workflow using the command line tool or a custom analysis by taking advantage of the "pymochi" package in your own python script.
+The default way to run a standard MoCHI workflow is through Nextflow. The command line tool remains available for direct runs, and the `pymochi` package can be used for custom analyses.
 
 MoCHI requires a plain text model design file containing a table describing the measured phenotypes and how they relate to the underlying additive (biophysical) traits. The table should have the following 4 tab-separated columns (see example [here](pymochi/data/model_design_example.txt)):
  - `trait`: One or more additive trait names 
@@ -42,19 +49,34 @@ MoCHI requires a plain text model design file containing a table describing the 
  - `phenotype`: A unique phenotype name e.g. Abundance, Binding or Kinase Activity
  - `file`: Path to DiMSum output (.RData) or plain text file with variant fitness and error estimates for the corresponding phenotype(s) (nucleotide sequence example [here](https://github.com/lehner-lab/MoCHI/blob/master/pymochi/data/fitness_example_nt.txt), amino acid sequence example [here](https://github.com/lehner-lab/MoCHI/blob/master/pymochi/data/fitness_example_aa.txt))
 
-## Option A: MoCHI command line tool
+## Default: Nextflow
+
+After [installing with uv](#installation), install [Nextflow](https://www.nextflow.io/) and Java, then run the portable local profile:
+
+```bash
+cd MoCHI
+bash nextflow/scripts/run_mochi_nextflow.sh \
+    --run_name my-mochi-run \
+    --model_design /path/to/model_design.tsv
+```
+
+The default `local` profile runs tasks on the current host. For LSF, set `NEXTFLOW_PROFILE=lsf` and use the LSF master launcher. See [the Nextflow run guide](nextflow/RUN.md) for scheduler configuration, resume instructions, and additional options.
+
+## Direct command line tool
 
 Replace `MY_MODEL` with the path to your model design file (see example [here](pymochi/data/model_design_example.txt)).
-```
-run_mochi.py --model_design MY_MODEL
+
+```bash
+uv run run_mochi.py --model_design MY_MODEL
 ```
 
 Get help with additional command line parameters:
-```
-run_mochi.py -h
+
+```bash
+uv run run_mochi.py -h
 ```
 
-## Option B: Custom Python script
+## Custom Python script
 
 Below is an example of a custom MoCHI workflow (written in Python) to infer the underlying free energies of folding and binding from [doubledeepPCA](https://www.nature.com/articles/s41586-022-04586-4) data.
 
@@ -121,8 +143,9 @@ Report plots, predictions and additive trait summaries will be saved to the `my_
 ## Demo MoCHI
 
 Run the demo to ensure that you have a working MoCHI installation (expected run time <10min):
-```
-demo_mochi.py
+
+```bash
+uv run demo_mochi.py
 ```
 
 # Manual

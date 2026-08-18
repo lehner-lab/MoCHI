@@ -43,7 +43,10 @@ build_host_exclude_select() {
 
 build_gpu_request() {
     local mode="${1}"
-    local request="num=1:mode=${mode}:j_exclusive=no:gpack=${GPU_GPACK:-yes}"
+    local request="num=1:mode=${mode}:j_exclusive=no"
+    if [ -n "${GPU_GPACK:-}" ]; then
+        request="${request}:gpack=${GPU_GPACK}"
+    fi
     if [ -n "${GMODEL:-}" ]; then
         request="${request}:gmodel=${GMODEL}"
     fi
@@ -79,9 +82,11 @@ run_nextflow_master() {
     cli_output_root="$(param_value_from_args output_root "$@")"
 
     RUN_NAME="${RUN_NAME:-${cli_run_name:-mochi-benchmark-$(date +%Y%m%d_%H%M%S)}}"
-    OUTPUT_ROOT="${OUTPUT_ROOT:-${cli_output_root:-/lustre/scratch124/humgen/teams_v2/hgi/eh19/work-data/mochi-dev}}"
+    OUTPUT_ROOT="${OUTPUT_ROOT:-${cli_output_root:-${PWD}/results}}"
     WORK_DIR="${WORK_DIR:-${OUTPUT_ROOT%/}/${RUN_NAME}/work}"
     MOCHI_VENV="${MOCHI_VENV:-${REPO_ROOT}/.venv}"
+    NEXTFLOW_BIN="${NEXTFLOW_BIN:-nextflow}"
+    NEXTFLOW_PROFILE="${NEXTFLOW_PROFILE:-lsf}"
     RESUME="${RESUME:-0}"
 
     mkdir -p "${OUTPUT_ROOT%/}/${RUN_NAME}"
@@ -91,16 +96,27 @@ run_nextflow_master() {
         exit 1
     fi
 
-    source /etc/profile.d/modules.sh
-    module load HGI/common/nextflow/25.10.4
+    if [ -n "${NEXTFLOW_MODULE:-}" ]; then
+        if [ ! -r /etc/profile.d/modules.sh ]; then
+            echo "Environment Modules is unavailable; cannot load ${NEXTFLOW_MODULE}" >&2
+            exit 1
+        fi
+        source /etc/profile.d/modules.sh
+        module load "${NEXTFLOW_MODULE}"
+    fi
+    if ! command -v "${NEXTFLOW_BIN}" >/dev/null 2>&1; then
+        echo "Nextflow executable not found: ${NEXTFLOW_BIN}" >&2
+        echo "Install Nextflow and Java, set NEXTFLOW_BIN, or set NEXTFLOW_MODULE." >&2
+        exit 1
+    fi
 
-    local queue="${QUEUE:-gpu}"
+    local queue="${QUEUE:-}"
     local max_memory_retries="${MAX_MEMORY_RETRIES:-3}"
     local parallel_folds="${PARALLEL_FOLDS:-1}"
     local host_exclude_select=""
     local grid_cluster_options=""
     local fold_cluster_options=""
-    host_exclude_select="$(build_host_exclude_select "${GPU_HOST_EXCLUDE:-farm22-gpu0203}")"
+    host_exclude_select="$(build_host_exclude_select "${GPU_HOST_EXCLUDE:-}")"
     grid_cluster_options="$(build_cluster_options "${GRID_GPU_MODE:-shared}" "${host_exclude_select}")"
     fold_cluster_options="$(build_cluster_options "${FOLD_GPU_MODE:-exclusive_process}" "${host_exclude_select}")"
     export MOCHI_GPU_QUEUE="${queue}"
@@ -112,6 +128,7 @@ run_nextflow_master() {
 
     nextflow_args=(
         run "${NEXTFLOW_ROOT}/main.nf"
+        -profile "${NEXTFLOW_PROFILE}"
         -c "${NEXTFLOW_ROOT}/nextflow.config"
         -work-dir "${WORK_DIR}"
         --repo_root "${REPO_ROOT}"
@@ -126,7 +143,7 @@ run_nextflow_master() {
         nextflow_args+=(-resume)
     fi
 
-    nextflow "${nextflow_args[@]}"
+    "${NEXTFLOW_BIN}" "${nextflow_args[@]}"
 }
 
 if [ "${1:-}" = "--run-nextflow-master" ]; then
@@ -135,13 +152,13 @@ if [ "${1:-}" = "--run-nextflow-master" ]; then
     exit 0
 fi
 
-MASTER_QUEUE="${MASTER_QUEUE:-oversubscribed}"
+MASTER_QUEUE="${MASTER_QUEUE:-}"
 MASTER_CPUS="${MASTER_CPUS:-1}"
 MASTER_MEMORY_GB="${MASTER_MEMORY_GB:-4}"
 MASTER_MEMORY_MB="${MASTER_MEMORY_MB:-$((MASTER_MEMORY_GB * 1024))}"
 
 RUN_NAME="${RUN_NAME:-mochi-benchmark-$(date +%Y%m%d_%H%M%S)}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-/lustre/scratch124/humgen/teams_v2/hgi/eh19/work-data/mochi-dev}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-${PWD}/results}"
 LOG_DIR="${OUTPUT_ROOT%/}/${RUN_NAME}"
 RESUME="${RESUME:-0}"
 export RUN_NAME OUTPUT_ROOT RESUME
@@ -176,13 +193,17 @@ echo "  job_name: ${JOB_NAME}"
 echo "  logs: ${LOG_DIR}/nextflow-master.%J.{log,err}"
 echo "  submit_script: ${JOB_SCRIPT}"
 
-bsub \
-    -env all \
-    -q "${MASTER_QUEUE}" \
-    -n "${MASTER_CPUS}" \
-    -M "${MASTER_MEMORY_MB}" \
-    -R "select[mem>${MASTER_MEMORY_MB}] rusage[mem=${MASTER_MEMORY_MB}] span[hosts=1]" \
-    -J "${JOB_NAME}" \
-    -o "${LOG_DIR}/nextflow-master.%J.log" \
-    -e "${LOG_DIR}/nextflow-master.%J.err" \
-    bash "${JOB_SCRIPT}"
+bsub_args=(
+    -env all
+    -n "${MASTER_CPUS}"
+    -M "${MASTER_MEMORY_MB}"
+    -R "select[mem>${MASTER_MEMORY_MB}] rusage[mem=${MASTER_MEMORY_MB}] span[hosts=1]"
+    -J "${JOB_NAME}"
+    -o "${LOG_DIR}/nextflow-master.%J.log"
+    -e "${LOG_DIR}/nextflow-master.%J.err"
+)
+if [ -n "${MASTER_QUEUE}" ]; then
+    bsub_args+=(-q "${MASTER_QUEUE}")
+fi
+
+bsub "${bsub_args[@]}" bash "${JOB_SCRIPT}"
