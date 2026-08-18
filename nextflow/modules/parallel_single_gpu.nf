@@ -38,7 +38,7 @@ EOF
     ${deviceExport}
     ${entrypointExport}
 
-    "${params.nextflow_root}/scripts/run_mochi_lsf_gpu.sh"
+    "${params.nextflow_root}/scripts/run_mochi_task.sh"
     ${opts.afterRun ?: ""}
     """
 }
@@ -70,7 +70,7 @@ process RUN_GRID_SEARCH_CONDITION {
 }
 
 process MERGE_GRID_SEARCH_CONDITIONS {
-    label "summary_lsf_cpu"
+    label "cpu_summary"
 
     input:
     path grid_condition_done
@@ -116,7 +116,7 @@ process RUN_FOLD {
 }
 
 process MERGE_FOLDS {
-    label "summary_lsf_cpu"
+    label "cpu_summary"
 
     input:
     path grid_ready
@@ -168,7 +168,7 @@ process RUN_SPARSE_STAGE_GRID_SEARCH_CONDITION {
 }
 
 process MERGE_SPARSE_STAGE_GRID_SEARCH {
-    label "summary_lsf_cpu"
+    label "cpu_summary"
     tag "stage-${stage}-grid-merge"
 
     input:
@@ -218,7 +218,7 @@ process RUN_SPARSE_STAGE_FOLD {
 }
 
 process MERGE_SPARSE_STAGE_FOLDS {
-    label "summary_lsf_cpu"
+    label "cpu_summary"
     tag "stage-${stage}-merge"
 
     input:
